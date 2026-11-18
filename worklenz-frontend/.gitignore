@@ -33,3 +33,4 @@ vitest-*.json
 # scripts cache
 scripts/.translation_cache.json
 !.env.production
+.vercel
