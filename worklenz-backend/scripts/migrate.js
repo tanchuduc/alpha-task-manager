@@ -4,6 +4,7 @@
 // Loads .env and runs node-pg-migrate with DATABASE_URL built from DB_* vars.
 // Usage: node scripts/migrate.js <up|down|create> [args...]
 
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 require('dotenv').config();
 
 const { spawnSync } = require('child_process');

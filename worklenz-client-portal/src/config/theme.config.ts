@@ -13,7 +13,7 @@ export const getThemeConfig = (
   return {
   algorithm: currentTheme === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
   token: {
-    colorPrimary: primaryColor || '#1890ff',
+    colorPrimary: primaryColor || (currentTheme === 'dark' ? '#ff8542' : '#f47830'),
     borderRadius: 6,
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
     colorBgLayout: currentTheme === 'dark' ? '#141414' : '#f5f5f5',

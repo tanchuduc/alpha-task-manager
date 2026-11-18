@@ -23,7 +23,7 @@ const SPIN_SHAPE = [
   { rot: 240, w: 20, h: 10 }, // bar3
 ];
 
-const BAR_COLORS = ['#9ca3af', '#93c5fd','#9ca3af'];
+const BAR_COLORS = ['#f47830', '#ff9c5e', '#e0651d'];
 
 function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
 function ease(t: number) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; }

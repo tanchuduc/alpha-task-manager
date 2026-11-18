@@ -67,3 +67,4 @@ dist-sdk
 keys/*.p8
 
 debug.json
+.vercel

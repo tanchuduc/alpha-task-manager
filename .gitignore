@@ -24,6 +24,9 @@ scratch/
 .env.*
 !.env.example
 !.env.template
+!worklenz-frontend/.env.production
+!worklenz-client-portal/.env.production
+scratch_*.js
 
 # Locally generated TLS certificates and private keys
 nginx/ssl/*.pem
@@ -103,3 +106,5 @@ worklenz-backend/database/migrations-private/
 
 # Frontend dependency backup
 /worklenz-frontend/node_modules.bak/
+.vercel
+.wrangler

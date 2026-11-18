@@ -19,7 +19,7 @@ This file defines the UI design rules for this repository. Use it as the source 
 Use theme tokens from Ant Design `ConfigProvider` and `theme.useToken()`.
 
 Baseline repo tokens currently include:
-- `colorPrimary: #1890ff`
+- `colorPrimary: #f47830` (Alpha Books Orange)
 - `borderRadius: 6`
 - `colorBgLayout`: `#f5f5f5` (light), `#141414` (dark)
 - `colorBgContainer`: `#ffffff` (light), `#1f1f1f` (dark)

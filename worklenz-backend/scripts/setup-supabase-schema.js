@@ -9,6 +9,7 @@
  * Or set DATABASE_URL in worklenz-backend/.env
  */
 
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');

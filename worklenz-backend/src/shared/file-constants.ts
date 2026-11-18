@@ -19,8 +19,16 @@ class FileConstants {
     const key = fileName.toString();
 
     if (!FileConstants.EMAIL_TEMPLATES_MAP[key]) {
-      const url = path.join(__dirname, FileConstants.EMAIL_TEMPLATES_BASE, `${fileName}.html`);
-      FileConstants.EMAIL_TEMPLATES_MAP[key] = fs.readFileSync(url, "utf8");
+      try {
+        const url = path.join(__dirname, FileConstants.EMAIL_TEMPLATES_BASE, `${fileName}.html`);
+        if (fs.existsSync(url)) {
+          FileConstants.EMAIL_TEMPLATES_MAP[key] = fs.readFileSync(url, "utf8");
+        } else {
+          FileConstants.EMAIL_TEMPLATES_MAP[key] = "<div>Alpha Work Notification</div>";
+        }
+      } catch {
+        FileConstants.EMAIL_TEMPLATES_MAP[key] = "<div>Alpha Work Notification</div>";
+      }
     }
 
     return FileConstants.EMAIL_TEMPLATES_MAP[key];
@@ -30,9 +38,17 @@ class FileConstants {
     const key = fileName.toString();
 
     if (!FileConstants.PUG_EMAIL_TEMPLATES_MAP[key]) {
-      const filePath = path.join(__dirname, FileConstants.EMAIL_TEMPLATES_BASE, "email-notifications", `${fileName}.pug`);
-      const template = pug.compileFile(filePath);
-      FileConstants.PUG_EMAIL_TEMPLATES_MAP[key] = template;
+      try {
+        const filePath = path.join(__dirname, FileConstants.EMAIL_TEMPLATES_BASE, "email-notifications", `${fileName}.pug`);
+        if (fs.existsSync(filePath)) {
+          const template = pug.compileFile(filePath);
+          FileConstants.PUG_EMAIL_TEMPLATES_MAP[key] = template;
+        } else {
+          FileConstants.PUG_EMAIL_TEMPLATES_MAP[key] = () => "<div>Alpha Work Notification</div>";
+        }
+      } catch {
+        FileConstants.PUG_EMAIL_TEMPLATES_MAP[key] = () => "<div>Alpha Work Notification</div>";
+      }
     }
 
     return FileConstants.PUG_EMAIL_TEMPLATES_MAP[key];
@@ -108,7 +124,16 @@ class FileConstants {
 
   static getRelease() {
     if (FileConstants.release === null) {
-      FileConstants.release = fs.readFileSync(path.join(__dirname, "../../release"), "utf8").trim();
+      try {
+        const releasePath = path.join(__dirname, "../../release");
+        if (fs.existsSync(releasePath)) {
+          FileConstants.release = fs.readFileSync(releasePath, "utf8").trim();
+        } else {
+          FileConstants.release = process.env.APP_VERSION || "v1.0.0";
+        }
+      } catch {
+        FileConstants.release = process.env.APP_VERSION || "v1.0.0";
+      }
     }
     return FileConstants.release;
   }

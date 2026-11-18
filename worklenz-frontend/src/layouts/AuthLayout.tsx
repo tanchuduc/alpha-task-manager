@@ -42,13 +42,15 @@ const AuthLayout = () => {
       {showFixedLogo && (
         <img
           src={logoSrc}
-          alt="Worklenz"
+          alt="Alpha Books"
           style={{
             position: 'fixed',
             top: 24,
             left: 28,
-            height: 28,
+            height: 32,
             width: 'auto',
+            maxWidth: 160,
+            objectFit: 'contain',
             zIndex: 2,
           }}
         />

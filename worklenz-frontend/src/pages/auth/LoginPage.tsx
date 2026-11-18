@@ -162,12 +162,12 @@ const LoginPage: React.FC = () => {
 
   const validationRules = {
     email: [
-      { required: true, message: t('emailRequired') },
-      { type: 'email', message: t('validationMessages.email') },
+      { required: true, message: t('emailRequired', { defaultValue: 'Vui lòng nhập Email!' }) },
+      { type: 'email', message: t('validationMessages.email', { defaultValue: 'Vui lòng nhập địa chỉ email hợp lệ' }) },
     ],
     password: [
-      { required: true, message: t('passwordRequired') },
-      { min: 8, message: t('validationMessages.password') },
+      { required: true, message: t('passwordRequired', { defaultValue: 'Vui lòng nhập Mật khẩu!' }) },
+      { min: 8, message: t('validationMessages.password', { defaultValue: 'Mật khẩu phải có ít nhất 8 ký tự' }) },
     ],
   };
 
@@ -267,7 +267,10 @@ const LoginPage: React.FC = () => {
 
   return (
     <>
-      <PageHeader title={t('headline')} description={t('headerDescription')} />
+      <PageHeader
+        title={t('headline', { defaultValue: 'Chào mừng đến với Alpha Books' })}
+        description={t('headerDescription', { defaultValue: 'Đăng nhập vào không gian làm việc Alpha Books của bạn' })}
+      />
 
       {(enableGoogleLogin || enableAppleLogin) && (
         <>
@@ -275,33 +278,35 @@ const LoginPage: React.FC = () => {
             type="secondary"
             style={{ display: 'block', textAlign: 'center', fontSize: 12, marginBottom: 10 }}
           >
-            {t('signInWithLabel')}
+            {t('signInWithLabel', { defaultValue: 'Đăng nhập bằng' })}
           </Typography.Text>
           <Flex gap={10} style={{ marginBottom: 24 }}>
             {enableGoogleLogin && (
               <Button
                 size="large"
                 onClick={handleGoogleLogin}
-                aria-label={t('signInWithGoogleAriaLabel')}
+                aria-label={t('signInWithGoogleAriaLabel', { defaultValue: 'Đăng nhập bằng Google' })}
                 style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
               >
                 <img src={googleIcon} alt="" style={{ width: 18, height: 18 }} />
-                {t('signInWithGoogleButton')}
+                {t('signInWithGoogleButton', { defaultValue: 'Google' })}
               </Button>
             )}
             {enableAppleLogin && (
               <Button
                 size="large"
                 onClick={handleAppleLogin}
-                aria-label={t('signInWithAppleAriaLabel')}
+                aria-label={t('signInWithAppleAriaLabel', { defaultValue: 'Đăng nhập bằng Apple' })}
                 style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
               >
                 <img src={appleIcon} alt="" style={{ width: 16, height: 16 }} />
-                {t('signInWithAppleButton')}
+                {t('signInWithAppleButton', { defaultValue: 'Apple' })}
               </Button>
             )}
           </Flex>
-          <Divider style={{ margin: '0 0 22px', fontSize: 12 }}>{t('orText')}</Divider>
+          <Divider style={{ margin: '0 0 22px', fontSize: 12 }}>
+            {t('orText', { defaultValue: 'hoặc' })}
+          </Divider>
         </>
       )}
 
@@ -316,10 +321,14 @@ const LoginPage: React.FC = () => {
       >
         {step === 'email' ? (
           <>
-            <Form.Item name="email" label={t('emailLabel')} rules={validationRules.email as Rule[]}>
+            <Form.Item
+              name="email"
+              label={t('emailLabel', { defaultValue: 'Email' })}
+              rules={validationRules.email as Rule[]}
+            >
               <Input
                 size="large"
-                placeholder={t('emailPlaceholder')}
+                placeholder={t('emailPlaceholder', { defaultValue: 'nhanvien@alphabooks.vn' })}
                 autoFocus
                 onPressEnter={e => {
                   e.preventDefault();
@@ -339,7 +348,7 @@ const LoginPage: React.FC = () => {
                   : undefined
               }
             >
-              {t('nextButton')}
+              {t('nextButton', { defaultValue: 'Tiếp tục' })}
             </Button>
           </>
         ) : (
@@ -349,17 +358,25 @@ const LoginPage: React.FC = () => {
                 {confirmedEmail}
               </Typography.Text>
               <Typography.Link onClick={changeEmail} style={{ fontSize: 12.5, fontWeight: 600 }}>
-                {t('changeEmailLink')}
+                {t('changeEmailLink', { defaultValue: 'Thay đổi' })}
               </Typography.Link>
             </Flex>
 
-            <Form.Item name="password" label={t('passwordLabel')} rules={validationRules.password as Rule[]}>
-              <Input.Password size="large" placeholder={t('passwordPlaceholder')} autoFocus />
+            <Form.Item
+              name="password"
+              label={t('passwordLabel', { defaultValue: 'Mật khẩu' })}
+              rules={validationRules.password as Rule[]}
+            >
+              <Input.Password
+                size="large"
+                placeholder={t('passwordPlaceholder', { defaultValue: 'Nhập mật khẩu của bạn' })}
+                autoFocus
+              />
             </Form.Item>
 
             <div style={{ textAlign: 'right', marginTop: -10, marginBottom: 14 }}>
               <Link to="/auth/forgot-password" className="blue-link" style={{ fontSize: 12 }}>
-                {t('forgotPasswordButton')}
+                {t('forgotPasswordButton', { defaultValue: 'Quên mật khẩu?' })}
               </Link>
             </div>
 
@@ -376,30 +393,30 @@ const LoginPage: React.FC = () => {
                   : undefined
               }
             >
-              {t('loginButton')}
+              {t('loginButton', { defaultValue: 'Đăng nhập' })}
             </Button>
 
             <Typography.Paragraph
               type="secondary"
               style={{ fontSize: 11.5, textAlign: 'center', marginTop: 12, marginBottom: 0 }}
             >
-              {t('bySigningInText')}{' '}
+              {t('bySigningInText', { defaultValue: 'Bằng cách đăng nhập, bạn đồng ý với' })}{' '}
               <a
-                href="https://worklenz.com/terms/"
+                href="https://alphabooks.vn"
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ fontWeight: 700, textDecoration: 'underline' }}
               >
-                {t('termsOfServiceLink')}
+                {t('termsOfServiceLink', { defaultValue: 'Điều khoản dịch vụ' })}
               </a>{' '}
-              {t('andText')}{' '}
+              {t('andText', { defaultValue: 'và' })}{' '}
               <a
-                href="https://worklenz.com/privacy/"
+                href="https://alphabooks.vn"
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ fontWeight: 700, textDecoration: 'underline' }}
               >
-                {t('privacyPolicyLink')}
+                {t('privacyPolicyLink', { defaultValue: 'Chính sách bảo mật' })}
               </a>
               .
             </Typography.Paragraph>
@@ -408,9 +425,11 @@ const LoginPage: React.FC = () => {
       </Form>
 
       <Flex justify="center" gap={4} style={{ marginTop: 26, fontSize: 12.5 }}>
-        <Typography.Text type="secondary">{t('dontHaveAccountText')}</Typography.Text>
+        <Typography.Text type="secondary">
+          {t('dontHaveAccountText', { defaultValue: 'Chưa có tài khoản?' })}
+        </Typography.Text>
         <Link to="/auth/signup" className="blue-link" style={{ fontWeight: 600 }}>
-          {t('signupButton')}
+          {t('signupButton', { defaultValue: 'Đăng ký' })}
         </Link>
       </Flex>
     </>

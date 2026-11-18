@@ -7,16 +7,14 @@ import {
 } from '@/shared/antd-imports';
 import dayjs from 'dayjs';
 import { DatePresetKey, getDatePresetRange } from '@/utils/date-presets';
+import logoLight from '@/assets/images/worklenz-light-mode.png';
+import logoDark from '@/assets/images/worklenz-dark-mode.png';
 
 // logos
-export const LOGO_LIGHT =
-  'https://s3.us-west-2.amazonaws.com/worklenz.com/assets/worklenz-light-mode.png';
-export const LOGO_DARK =
-  'https://s3.us-west-2.amazonaws.com/worklenz.com/assets/worklenz-dark-mode.png';
-export const XMAS_LOGO_LIGHT =
-  'https://s3.us-west-2.amazonaws.com/worklenz.com/assets/worklenz-xmas-light.webp';
-export const XMAS_LOGO_DARK =
-  'https://s3.us-west-2.amazonaws.com/worklenz.com/assets/worklenz-xmas-dark.webp';
+export const LOGO_LIGHT = logoLight;
+export const LOGO_DARK = logoDark;
+export const XMAS_LOGO_LIGHT = logoLight;
+export const XMAS_LOGO_DARK = logoDark;
 
 export const avatarNamesMap: { [x: string]: string } = {
   A: '#154c9b',
@@ -159,10 +157,8 @@ export const API_BASE_URL = '/api/v1';
 export const AUTH_API_BASE_URL = '/secure';
 export const CLIENT_PORTAL_API_BASE_URL = '/api/client-portal';
 
-// Fixed brand blue for primary button backgrounds on the login, signup, and
-// account-setup pages specifically - same value in both light and dark mode,
-// deliberately not tied to the app-wide theme.config.ts colorPrimary token.
-export const AUTH_PRIMARY_BUTTON_COLOR = '#067efc';
+// Primary brand color for auth pages (Alpha Books Orange)
+export const AUTH_PRIMARY_BUTTON_COLOR = '#f47830';
 
 export const DEFAULT_TASK_NAME = 'Untitled Task';
 

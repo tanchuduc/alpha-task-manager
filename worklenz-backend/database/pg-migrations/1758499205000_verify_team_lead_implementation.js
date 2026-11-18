@@ -120,7 +120,7 @@ BEGIN
         SELECT EXISTS(
             SELECT 1 FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname = 'public' AND p.proname = 'is_team_lead_by_hierarchy'
+            WHERE n.nspname IN ('public', 'alpha_work') AND p.proname = 'is_team_lead_by_hierarchy'
         ) INTO function_exists;
         
         IF NOT function_exists THEN
@@ -131,7 +131,7 @@ BEGIN
         SELECT EXISTS(
             SELECT 1 FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname = 'public' AND p.proname = 'get_team_lead_managed_members'
+            WHERE n.nspname IN ('public', 'alpha_work') AND p.proname = 'get_team_lead_managed_members'
         ) INTO function_exists;
         
         IF NOT function_exists THEN
@@ -142,7 +142,7 @@ BEGIN
         SELECT EXISTS(
             SELECT 1 FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname = 'public' AND p.proname = 'can_team_lead_access_member'
+            WHERE n.nspname IN ('public', 'alpha_work') AND p.proname = 'can_team_lead_access_member'
         ) INTO function_exists;
         
         IF NOT function_exists THEN
@@ -169,7 +169,7 @@ BEGIN
         SELECT EXISTS(
             SELECT 1 FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname = 'public' AND p.proname = 'can_access_team_management'
+            WHERE n.nspname IN ('public', 'alpha_work') AND p.proname = 'can_access_team_management'
         ) INTO function_exists;
         
         IF NOT function_exists THEN
@@ -180,7 +180,7 @@ BEGIN
         SELECT EXISTS(
             SELECT 1 FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname = 'public' AND p.proname = 'can_access_billing'
+            WHERE n.nspname IN ('public', 'alpha_work') AND p.proname = 'can_access_billing'
         ) INTO function_exists;
         
         IF NOT function_exists THEN
@@ -191,7 +191,7 @@ BEGIN
         SELECT EXISTS(
             SELECT 1 FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname = 'public' AND p.proname = 'get_user_permissions_summary'
+            WHERE n.nspname IN ('public', 'alpha_work') AND p.proname = 'get_user_permissions_summary'
         ) INTO function_exists;
         
         IF NOT function_exists THEN
@@ -215,7 +215,7 @@ BEGIN
     -- Test team_lead_managed_members view
     SELECT EXISTS(
         SELECT 1 FROM pg_views 
-        WHERE schemaname = 'public' AND viewname = 'team_lead_managed_members'
+        WHERE schemaname IN ('public', 'alpha_work') AND viewname = 'team_lead_managed_members'
     ) INTO view_exists;
     
     IF NOT view_exists THEN
@@ -225,7 +225,7 @@ BEGIN
     -- Test other views
     SELECT EXISTS(
         SELECT 1 FROM pg_views 
-        WHERE schemaname = 'public' AND viewname = 'team_lead_member_stats'
+        WHERE schemaname IN ('public', 'alpha_work') AND viewname = 'team_lead_member_stats'
     ) INTO view_exists;
     
     IF NOT view_exists THEN
@@ -244,7 +244,7 @@ BEGIN
     -- Test reports_to_member_id index
     SELECT EXISTS(
         SELECT 1 FROM pg_indexes 
-        WHERE schemaname = 'public' 
+        WHERE schemaname IN ('public', 'alpha_work') 
         AND tablename = 'team_members' 
         AND indexname = 'idx_reports_to_member_id'
     ) INTO index_exists;
@@ -287,7 +287,7 @@ SELECT
     CASE WHEN COUNT(*) >= 3 THEN 'PASS' ELSE 'FAIL' END as status
 FROM pg_proc p
 JOIN pg_namespace n ON p.pronamespace = n.oid
-WHERE n.nspname = 'public' 
+WHERE n.nspname IN ('public', 'alpha_work') 
   AND p.proname IN ('is_team_lead_by_hierarchy', 'get_team_lead_managed_members', 'can_team_lead_access_member')
 
 UNION ALL
@@ -299,7 +299,7 @@ SELECT
     CASE WHEN COUNT(*) >= 3 THEN 'PASS' ELSE 'FAIL' END as status
 FROM pg_proc p
 JOIN pg_namespace n ON p.pronamespace = n.oid
-WHERE n.nspname = 'public' 
+WHERE n.nspname IN ('public', 'alpha_work') 
   AND p.proname IN ('can_access_team_management', 'can_access_billing', 'get_user_permissions_summary')
 
 UNION ALL
@@ -310,7 +310,7 @@ SELECT
     COUNT(*) as count,
     CASE WHEN COUNT(*) >= 2 THEN 'PASS' ELSE 'FAIL' END as status
 FROM pg_views 
-WHERE schemaname = 'public' 
+WHERE schemaname IN ('public', 'alpha_work') 
   AND viewname LIKE 'team_lead_%';
 
 

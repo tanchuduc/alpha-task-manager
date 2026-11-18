@@ -1,0 +1,39 @@
+{
+  "headline": "Chào mừng đến với Alpha Books",
+  "headerDescription": "Đăng nhập vào không gian làm việc Alpha Books của bạn.",
+  "signInWithLabel": "Đăng nhập bằng",
+  "orText": "hoặc",
+  "emailLabel": "Email",
+  "emailPlaceholder": "nhanvien@alphabooks.vn",
+  "emailRequired": "Vui lòng nhập Email của bạn!",
+  "nextButton": "Tiếp tục",
+  "changeEmailLink": "Thay đổi",
+  "passwordLabel": "Mật khẩu",
+  "passwordPlaceholder": "Nhập mật khẩu của bạn",
+  "passwordRequired": "Vui lòng nhập Mật khẩu!",
+  "loginButton": "Đăng nhập",
+  "signupButton": "Đăng ký",
+  "forgotPasswordButton": "Quên mật khẩu?",
+  "signInWithGoogleButton": "Google",
+  "signInWithGoogleAriaLabel": "Đăng nhập bằng Google",
+  "signInWithAppleButton": "Apple",
+  "signInWithAppleAriaLabel": "Đăng nhập bằng Apple",
+  "dontHaveAccountText": "Chưa có tài khoản?",
+  "bySigningInText": "Bằng cách đăng nhập, bạn hiểu và đồng ý với",
+  "andText": "và",
+  "termsOfServiceLink": "Điều khoản dịch vụ",
+  "privacyPolicyLink": "Chính sách bảo mật",
+  "successMessage": "Bạn đã đăng nhập thành công!",
+  "loginError": "Đăng nhập thất bại",
+  "googleLoginError": "Đăng nhập Google thất bại",
+  "appleLoginError": "Đăng nhập Apple thất bại",
+  "validationMessages": {
+    "email": "Vui lòng nhập một địa chỉ email hợp lệ",
+    "password": "Mật khẩu phải có ít nhất 8 ký tự"
+  },
+  "errorMessages": {
+    "loginErrorTitle": "Đăng nhập thất bại",
+    "loginErrorMessage": "Vui lòng kiểm tra lại email và mật khẩu của bạn rồi thử lại"
+  },
+  "rememberMe": "Ghi nhớ đăng nhập"
+}

@@ -134,8 +134,12 @@ html.theme-switching *::after {
 }
 
 .blue-link {
-  color: #1890ff;
-  /* This is Ant Design's default link color */
+  color: #f47830;
+  transition: color 0.2s ease;
+}
+
+.blue-link:hover {
+  color: #e0651d;
 }
 
 .ps__rail-y {

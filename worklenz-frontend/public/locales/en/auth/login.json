@@ -1,10 +1,10 @@
 {
-  "headline": "Welcome back",
-  "headerDescription": "Log in to your Worklenz workspace.",
+  "headline": "Welcome to Alpha Books",
+  "headerDescription": "Log in to your Alpha Books workspace.",
   "signInWithLabel": "Sign in with",
   "orText": "or",
   "emailLabel": "Email",
-  "emailPlaceholder": "you@company.com",
+  "emailPlaceholder": "you@alphabooks.vn",
   "emailRequired": "Please enter your Email!",
   "nextButton": "Next",
   "changeEmailLink": "Change",
