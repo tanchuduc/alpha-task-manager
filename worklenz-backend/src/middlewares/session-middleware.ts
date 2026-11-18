@@ -7,10 +7,21 @@ import { randomBytes } from "crypto";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pgSession = require("connect-pg-simple")(session);
 
+const isProd = isProduction() || process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+const sameSiteEnv = (process.env.SESSION_SAME_SITE || "").toLowerCase();
+const sameSiteValue: "none" | "lax" | "strict" =
+  sameSiteEnv === "lax" || sameSiteEnv === "strict" || sameSiteEnv === "none"
+    ? sameSiteEnv
+    : (isProd ? "none" : "lax");
+const secureValue: boolean =
+  process.env.SESSION_SECURE !== undefined
+    ? process.env.SESSION_SECURE === "true"
+    : (sameSiteValue === "none" ? true : isProd);
+
 const sessionConfig = {
-  name: process.env.SESSION_NAME,
+  name: process.env.SESSION_NAME || "connect.sid",
   secret: process.env.SESSION_SECRET || "development-secret-key",
-  proxy: false,
+  proxy: true,
   resave: false,
   saveUninitialized: true,
   rolling: true,
@@ -21,10 +32,9 @@ const sessionConfig = {
   cookie: {
     path: "/",
     httpOnly: true,
-    // For mobile app support in production, use "none", for local development use "lax"
-    sameSite: "lax" as const,
-    // Secure only in production (HTTPS required for sameSite: "none")
-    secure: false,
+    // Cross-site requests require SameSite=None and Secure=true
+    sameSite: sameSiteValue,
+    secure: secureValue,
     domain: undefined,
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   },

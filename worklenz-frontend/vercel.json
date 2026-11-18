@@ -4,6 +4,18 @@
   "outputDirectory": "build",
   "rewrites": [
     {
+      "source": "/csrf-token",
+      "destination": "https://alphawork-api-two.vercel.app/csrf-token"
+    },
+    {
+      "source": "/secure/:match*",
+      "destination": "https://alphawork-api-two.vercel.app/secure/:match*"
+    },
+    {
+      "source": "/api/:match*",
+      "destination": "https://alphawork-api-two.vercel.app/api/:match*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
