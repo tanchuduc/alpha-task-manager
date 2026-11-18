@@ -16,6 +16,7 @@ const {
   DB_HOST,
   DB_PORT = '5432',
   DB_NAME,
+  DATABASE_URL,
   MIGRATION_DB_USER,
   MIGRATION_DB_PASSWORD,
   MIGRATION_DB_HOST,
@@ -29,12 +30,15 @@ const migrationDbHost = MIGRATION_DB_HOST || DB_HOST || 'localhost';
 const migrationDbPort = MIGRATION_DB_PORT || DB_PORT;
 const migrationDbName = MIGRATION_DB_NAME || DB_NAME;
 
-if (!migrationDbUser || !migrationDbName) {
-  console.error('Missing migration database credentials (MIGRATION_DB_USER/DB_USER and MIGRATION_DB_NAME/DB_NAME).');
-  process.exit(1);
-}
+let databaseUrl = DATABASE_URL;
 
-const databaseUrl = `postgresql://${migrationDbUser}:${encodeURIComponent(migrationDbPassword || '')}@${migrationDbHost}:${migrationDbPort}/${migrationDbName}`;
+if (!databaseUrl) {
+  if (!migrationDbUser || !migrationDbName) {
+    console.error('Missing migration database credentials (DATABASE_URL or MIGRATION_DB_USER/DB_USER and MIGRATION_DB_NAME/DB_NAME).');
+    process.exit(1);
+  }
+  databaseUrl = `postgresql://${migrationDbUser}:${encodeURIComponent(migrationDbPassword || '')}@${migrationDbHost}:${migrationDbPort}/${migrationDbName}`;
+}
 
 // Invoke the underlying JS entrypoint directly with `node` rather than the
 // .bin/node-pg-migrate shim - on Windows that shim has no extension, which
