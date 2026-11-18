@@ -14,10 +14,6 @@ const baseConfig: any = {
   idleTimeoutMillis: 30000,
 };
 
-if (sslConfig) {
-  baseConfig.ssl = sslConfig;
-}
-
 if (process.env.DATABASE_URL || process.env.DB_URL) {
   baseConfig.connectionString = process.env.DATABASE_URL || process.env.DB_URL;
 } else {
@@ -26,6 +22,10 @@ if (process.env.DATABASE_URL || process.env.DB_URL) {
   baseConfig.database = process.env.DB_NAME;
   baseConfig.host = process.env.DB_HOST;
   baseConfig.port = +(process.env.DB_PORT as string) || 5432;
+}
+
+if (sslConfig) {
+  baseConfig.ssl = sslConfig;
 }
 
 export default baseConfig;
