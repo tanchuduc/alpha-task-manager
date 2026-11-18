@@ -15,6 +15,14 @@ types.setTypeParser(1082, (val: string) => val); // 1082 is the OID for DATE typ
 
 const pool = new pg.Pool(dbConfig);
 
+const targetSchema = process.env.DB_SCHEMA || "alpha_work";
+pool.on("connect", (client: PoolClient) => {
+  client.query(`SET search_path TO ${targetSchema}, public, extensions;`).catch((err: Error) => {
+    // eslint-disable-next-line no-console
+    console.error("Failed to set search_path on connect", err);
+  });
+});
+
 pool.on("error", (err: Error) => {
   // eslint-disable-next-line no-console
   console.error("pg idle client error", err, err.message, err.stack);

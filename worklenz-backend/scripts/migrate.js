@@ -54,7 +54,8 @@ const privateMigrationsDir = path.join(__dirname, '..', 'database', 'pg-migratio
 const userArgs = process.argv.slice(2);
 
 function run(dir) {
-  const defaultArgs = ['--migrations-dir', dir];
+  const schema = process.env.DB_SCHEMA || 'alpha_work';
+  const defaultArgs = ['--migrations-dir', dir, '--schema', schema];
 
   // Allow unrun migrations from feature branches merged out of timestamp order
   // to run without failing checkOrder positional assertion.
