@@ -1,111 +1,19 @@
-import { useEffect } from 'react';
-import { Button, Divider, Flex, Modal, theme, Typography, Steps } from '@/shared/antd-imports';
-import { TeamOutlined, RightOutlined, UserDeleteOutlined } from '@ant-design/icons';
-import { useTranslation } from 'react-i18next';
-import { useAppSumoTracking } from '@/hooks/useAppSumoTracking';
-import { AppSumoUpsellEvents } from '@/types/mixpanel-events.types';
+import React from 'react';
 
 interface SeatLimitModalProps {
-  open: boolean;
-  onClose: () => void;
-  currentMembers: number;
-  planLimit: number;
-  businessLimit: number;
-  isAppSumoUser: boolean;
-  onUpgrade: () => void;
-  onDeactivate: () => void;
+  open?: boolean;
+  onClose?: () => void;
+  currentMembers?: number;
+  planLimit?: number;
+  businessLimit?: number;
+  isAppSumoUser?: boolean;
+  onUpgrade?: () => void;
+  onDeactivate?: () => void;
 }
 
 export const SeatLimitModal: React.FC<SeatLimitModalProps> = () => {
   // Seat limits are disabled for Alpha Work internal edition
   return null;
 };
-        {/* Icon and Title Section */}
-        <Flex vertical gap={16} align="center">
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: '50%',
-              backgroundColor: token.colorPrimaryBg,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <TeamOutlined style={{ fontSize: 32, color: token.colorPrimary }} />
-          </div>
-          <Typography.Title level={3} style={{ margin: 0, textAlign: 'center' }}>
-            {t('seatLimitReached', { defaultValue: 'Seat Limit Reached' })}
-          </Typography.Title>
-        </Flex>
 
-        {/* Description Section */}
-        <Flex vertical gap={16} style={{ textAlign: 'center' }}>
-          <Typography.Paragraph style={{ fontSize: 15, margin: 0, lineHeight: 1.6 }}>
-            {isAppSumoUser
-              ? t('seatLimitLifetimeDealMessage', {
-                  defaultValue: 'Your lifetime deal includes {{planLimit}} members. Deactivate a member to invite someone new, or upgrade to Business for {{businessLimit}} members.',
-                  planLimit,
-                  businessLimit,
-                })
-              : t('seatLimitMessage', {
-                  defaultValue: `Your plan includes ${planLimit} members. Upgrade to Business for ${businessLimit} members, or deactivate an inactive member to invite someone new.`,
-                  planLimit,
-                  businessLimit,
-                })}
-          </Typography.Paragraph>
-
-          {/* Seat Usage Stats */}
-          <Flex
-            justify="center"
-            gap={24}
-            style={{
-              padding: '16px 24px',
-              backgroundColor: token.colorBgLayout,
-              borderRadius: token.borderRadius,
-              border: `1px solid ${token.colorBorder}`,
-            }}
-          >
-            <Flex vertical align="center" gap={4}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t('currentMembers', { defaultValue: 'Current Members' })}
-              </Typography.Text>
-              <Typography.Title level={4} style={{ margin: 0, color: token.colorError }}>
-                {currentMembers}
-              </Typography.Title>
-            </Flex>
-            <Divider type="vertical" style={{ height: 'auto', margin: 0 }} />
-            <Flex vertical align="center" gap={4}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t('planLimit', { defaultValue: 'Plan Limit' })}
-              </Typography.Text>
-              <Typography.Title level={4} style={{ margin: 0 }}>
-                {planLimit}
-              </Typography.Title>
-            </Flex>
-            <Divider type="vertical" style={{ height: 'auto', margin: 0 }} />
-            <Flex vertical align="center" gap={4}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t('afterUpgrade', { defaultValue: 'After Upgrade' })}
-              </Typography.Text>
-              <Typography.Title level={4} style={{ margin: 0, color: token.colorSuccess }}>
-                {businessLimit}
-              </Typography.Title>
-            </Flex>
-          </Flex>
-        </Flex>
-
-        {/* Action Buttons */}
-        <Flex vertical gap={16}>
-          <Button size="large" block icon={<UserDeleteOutlined />} onClick={onDeactivate}>
-            {t('deactivateTooltip', { defaultValue: 'Deactivate member' })}
-          </Button>
-          <Button type="primary" size="large" block onClick={onUpgrade}>
-            {t('upgradeToBusiness', { defaultValue: 'Upgrade to Business' })}
-          </Button>
-        </Flex>
-      </Flex>
-    </Modal>
-  );
-};
+export default SeatLimitModal;
