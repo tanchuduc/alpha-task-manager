@@ -15,11 +15,9 @@ export type NavRoutesType = {
   guestExcluded?: boolean; // Hide for guest-only users
 };
 
-// Shared by desktop (navbar.tsx) and mobile (MobileMenuButton.tsx) so both
-// surfaces gate the exact same routes for free-plan users instead of each
-// re-deriving the rule independently.
-export const isRouteGatedForFreePlan = (route: NavRoutesType, isFreePlan: boolean): boolean =>
-  !route.freePlanFeature && isFreePlan;
+// In Alpha Work internal edition, no routes are gated for free plan
+export const isRouteGatedForFreePlan = (_route: NavRoutesType, _isFreePlan: boolean): boolean =>
+  false;
 
 export const navRoutes: NavRoutesType[] = [
   {
@@ -41,15 +39,14 @@ export const navRoutes: NavRoutesType[] = [
     adminOnly: true,
     freePlanFeature: false,
   },
-  {
-    name: 'client-portal',
-    // Bare surface root — resolves to whichever item is pinned as default
-    // (or 'clients' if nothing is pinned) via the client-portal index route.
-    path: '/worklenz/client-portal',
-    adminOnly: true,
-    freePlanFeature: false,
-    selfHostedExcluded: true,
-  },
+  // Client portal is disabled for Alpha Work internal edition
+  // {
+  //   name: 'client-portal',
+  //   path: '/worklenz/client-portal',
+  //   adminOnly: true,
+  //   freePlanFeature: false,
+  //   selfHostedExcluded: true,
+  // },
   {
     name: 'finance',
     path: '/worklenz/finance',

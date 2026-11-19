@@ -121,7 +121,6 @@ const HomeLayout = memo(() => {
 
       {createPortal(<TaskDrawer />, document.body, 'home-task-drawer')}
       {createPortal(<ProjectSettingsModal onClose={() => {}} />, document.body, 'project-settings-modal')}
-      {createPortal(<SurveyPromptModal />, document.body, 'survey-modal')}
     </>
   );
 });

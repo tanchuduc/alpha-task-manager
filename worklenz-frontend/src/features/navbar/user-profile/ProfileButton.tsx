@@ -170,25 +170,6 @@ const ProfileButton = ({ isOwnerOrAdmin }: ProfileButtonProps) => {
               {t('adminCenter', { defaultValue: 'Admin Center' })}
             </Link>
           )}
-          {isOwnerOrAdmin && (
-            <Link
-              to="/worklenz/admin-center/billing"
-              style={itemStyle}
-              onMouseEnter={handleItemMouseEnter}
-              onMouseLeave={handleItemMouseLeave}
-              onClick={() => {
-                trackMixpanelEvent('billing_profile_dropdown_click', {
-                  user_type: currentSession?.subscription_type?.toLowerCase(),
-                  is_owner_or_admin: true,
-                });
-              }}
-            >
-              <span style={iconStyle}>
-                <CreditCardOutlined />
-              </span>
-              {t('billing', { defaultValue: 'Billing' })}
-            </Link>
-          )}
           <Link
             to="/worklenz/settings/profile"
             style={itemStyle}
@@ -200,19 +181,6 @@ const ProfileButton = ({ isOwnerOrAdmin }: ProfileButtonProps) => {
             </span>
             {t('settings', { defaultValue: 'Settings' })}
           </Link>
-          {!isLicenseExpired && (
-            <div
-              onClick={() => { setMobileModalOpen(true); setDropdownOpen(false); }}
-              onMouseEnter={handleItemMouseEnter}
-              onMouseLeave={handleItemMouseLeave}
-              style={{ ...itemStyle, cursor: 'pointer', fontWeight: 600 }}
-            >
-              <span style={iconStyle}>
-                <MobileOutlined />
-              </span>
-              {t('getMobileApp', { defaultValue: 'Get Mobile App' })}
-            </div>
-          )}
           <div
             onClick={() => toggleThemeWithTransition(dispatch)}
             onMouseEnter={handleItemMouseEnter}

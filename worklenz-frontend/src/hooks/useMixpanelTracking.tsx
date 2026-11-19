@@ -8,12 +8,9 @@ export const useMixpanelTracking = () => {
   const auth = useAuthService();
 
   const { token, isProductionEnvironment } = useMemo(() => {
-    const host = window.location.host;
-    const isProduction = host === 'app.worklenz.com';
-
     return {
-      token: isProduction ? import.meta.env.VITE_MIXPANEL_TOKEN : null,
-      isProductionEnvironment: isProduction,
+      token: null,
+      isProductionEnvironment: false,
     };
   }, []);
 

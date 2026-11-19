@@ -337,15 +337,8 @@ const Navbar = () => {
               {isDesktop && (
                 <Flex>
                   <Flex gap={12} align="center">
-                    {!isSelfHostedDeployment && <TrialDaysBadge />}
-                    {!isSelfHostedDeployment &&
-                      isOwnerOrAdmin &&
-                      showUpgradeTypes.includes(
-                        currentSession?.subscription_type as ISUBSCRIPTION_TYPE
-                      ) && <UpgradePlanButton showModal redirectToBilling={false} />}
                     <ConnectionStatusIndicator />
                     <Flex align="center" gap={6}>
-                      <WhatsNewTag />
                       <QuickActionButton
                         canInviteMembers={canInviteMembers}
                         isInviteRestricted={Boolean(currentSession?.is_expired)}
@@ -363,7 +356,6 @@ const Navbar = () => {
               )}
               {isTablet && !isDesktop && (
                 <Flex gap={12} align="center">
-                  {!isSelfHostedDeployment && <TrialDaysBadge />}
                   <SwitchTeamButton />
                   <NotificationButton />
                   <ProfileButton isOwnerOrAdmin={isOwnerOrAdmin} />
@@ -372,7 +364,6 @@ const Navbar = () => {
               )}
               {isMobile && (
                 <Flex gap={12} align="center">
-                  {!isSelfHostedDeployment && <TrialDaysBadge />}
                   <NotificationButton />
                   <ProfileButton isOwnerOrAdmin={isOwnerOrAdmin} />
                   <MobileMenuButton routes={filteredRoutes} isFreePlan={isFreePlan} />
@@ -385,10 +376,6 @@ const Navbar = () => {
 
       {canInviteMembers && createPortal(<InviteTeamMembers />, document.body, 'invite-team-members')}
       {createPortal(<NotificationDrawer />, document.body, 'notification-drawer')}
-      {createPortal(<AddClientDrawer />, document.body, 'add-client-drawer')}
-      {createPortal(<UpgradePromptModal />, document.body, 'upgrade-prompt-modal')}
-      {createPortal(<WhatsNewModal />, document.body, 'whats-new-modal')}
-      {createPortal(<WhatsNewReleaseViewerModal />, document.body, 'whats-new-release-viewer-modal')}
     </Col>
   );
 };

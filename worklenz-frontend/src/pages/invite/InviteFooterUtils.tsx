@@ -84,18 +84,6 @@ const InviteFooterUtils: React.FC<InviteFooterUtilsProps> = ({
         style={{ color: token?.colorTextTertiary }}
         title={isDarkMode ? t('switchToLightMode') : t('switchToDarkMode')}
       />
-      <Dropdown menu={{ items: languageMenuItems }} placement="topRight" trigger={['click']}>
-        <Button
-          type="text"
-          size="small"
-          icon={<GlobalOutlined />}
-          className="flex items-center space-x-2"
-          style={{ color: token?.colorTextTertiary }}
-        >
-          <span>{currentLanguage.flag}</span>
-          <span className="hidden sm:inline">{currentLanguage.label}</span>
-        </Button>
-      </Dropdown>
     </div>
   );
 };

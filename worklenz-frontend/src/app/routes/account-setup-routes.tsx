@@ -1,21 +1,8 @@
-import { RouteObject } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
-import { SuspenseFallback } from '@/components/suspense-fallback/suspense-fallback';
-import ChunkErrorHandler from '@/utils/chunk-error-handler';
-const AccountSetup = lazy(
-  ChunkErrorHandler.wrapLazyImport(
-    () => import('@/pages/account-setup/account-setup'),
-    'AccountSetup'
-  )
-);
+import { RouteObject, Navigate } from 'react-router-dom';
 
 const accountSetupRoute: RouteObject = {
   path: '/worklenz/setup',
-  element: (
-    <Suspense fallback={<SuspenseFallback />}>
-      <AccountSetup />
-    </Suspense>
-  ),
+  element: <Navigate to="/worklenz/home" replace />,
 };
 
 export default accountSetupRoute;

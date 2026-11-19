@@ -64,15 +64,6 @@ export const adminCenterItems: AdminCenterMenuItems[] = [
     element: React.createElement(Projects),
   },
   {
-    key: 'billing',
-    name: 'billing',
-    defaultValue: 'Billing',
-    endpoint: 'billing',
-    icon: React.createElement(CreditCardOutlined),
-    element: React.createElement(Billing),
-    selfHostedExcluded: true,
-  },
-  {
     key: 'settings',
     name: 'settings',
     defaultValue: 'Settings',

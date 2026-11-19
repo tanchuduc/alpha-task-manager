@@ -60,11 +60,7 @@ const AuthenticatingPage: React.FC = () => {
         setSession(session.user);
         dispatch(setUser(session.user));
 
-        if (!session.user.setup_completed) {
-          return navigate('/worklenz/setup');
-        }
-
-        // Redirect based on setup status
+        // Always redirect directly to worklenz workspace without setup wizard in Alpha Work
         setTimeout(() => {
           handleSuccessRedirect(session.user);
         }, REDIRECT_DELAY);

@@ -37,11 +37,10 @@ const normalizeLanguageCode = (lang?: string | null): ILanguageType | null => {
  * @returns The detected supported language or English as fallback
  */
 const getDefaultLanguage = (): ILanguageType => {
-  const browserLang = navigator.language;
-  return normalizeLanguageCode(browserLang) || Language.EN;
+  return Language.VI;
 };
 
-const DEFAULT_LANGUAGE: ILanguageType = getDefaultLanguage();
+const DEFAULT_LANGUAGE: ILanguageType = Language.VI;
 
 /**
  * Gets the current language from local storage

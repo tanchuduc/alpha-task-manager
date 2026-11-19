@@ -26,59 +26,7 @@ export const isAppSumoBusiness = (session: ILocalSession | null): boolean => {
  * AppSumo Pro (LTD with fewer than 5 codes) does not.
  */
 export const hasBusinessFeatureAccess = (session: ILocalSession | null): boolean => {
-  if (!session) return false;
-
-  // Self-hosted deployments include Business features. The backend provides
-  // this UI hint and remains the enforcement point for protected APIs.
-  if (session.business_features_enabled === true) {
-    return true;
-  }
-
-  // PRIORITY 1: Manual override flag (highest priority)
-  if (isTruthyFlag(session.business_plan_override)) {
-    return true;
-  }
-
-  // AppSumo Business unlocks Business features; AppSumo Pro does not —
-  // but AppSumo Pro may still be on an official Business plan trial below.
-  if (
-    session.subscription_type === ISUBSCRIPTION_TYPE.LIFE_TIME_DEAL &&
-    isAppSumoBusiness(session)
-  ) {
-    return true;
-  }
-
-  // Check for active Business plan trial
-  if (session.active_plan_trial === 'BUSINESS_LARGE' && session.plan_trial_end_date) {
-    const trialEndDate = new Date(session.plan_trial_end_date);
-    if (trialEndDate > new Date()) {
-      return true; // Active Business trial grants access
-    }
-  }
-
-  // Check for Business trial subscription type (from deserialize_user)
-  if (session.subscription_type === 'BUSINESS_TRIAL') {
-    return true;
-  }
-
-  // ANNUAL_BUSINESS subscription type qualifies
-  if (session.subscription_type === ISUBSCRIPTION_TYPE.ANNUAL_BUSINESS) {
-    return true;
-  }
-
-  // SELF_HOSTED users have the same privileges as business plan users
-  if (session.subscription_type === ISUBSCRIPTION_TYPE.SELF_HOSTED) {
-    return true;
-  }
-
-  // Only PADDLE subscription type qualifies for plan-based access
-  if (session.subscription_type !== ISUBSCRIPTION_TYPE.PADDLE) {
-    return false;
-  }
-
-  // Check if plan_name indicates business or enterprise plan
-  const planName = session.plan_name?.toLowerCase() || '';
-  return planName.includes('business') || planName.includes('enterprise');
+  return true;
 };
 
 /**
@@ -118,83 +66,25 @@ const ALWAYS_ENFORCED_FEATURES = new Set([
  * enforcing them; until then it reproduces the legacy plan checks, or the caller's `legacy` rule.
  */
 export const canUseFeature = (
-  session: ILocalSession | null,
-  feature: string,
-  legacy?: (session: ILocalSession) => boolean
+  _session: ILocalSession | null,
+  _feature: string,
+  _legacy?: (_session: ILocalSession) => boolean
 ): boolean => {
-  if (!session) return false;
-  const entitlements = session.entitlements;
-  if (entitlements && (entitlements.enforced || ALWAYS_ENFORCED_FEATURES.has(feature))) {
-    return entitlements.features.includes(feature);
-  }
-  // `legacy` keeps today's behavior for gates that differ from "Business only" (not in the set above).
-  if (legacy) return legacy(session);
-  return LEGACY_BUSINESS_FEATURES.has(feature) ? hasBusinessFeatureAccess(session) : true;
+  return true;
 };
 
 /**
  * Checks if user is on a business plan specifically
  */
-export const isBusinessPlan = (session: ILocalSession | null): boolean => {
-  if (!session) return false;
-
-  // PRIORITY 1: Manual override flag (highest priority)
-  if (isTruthyFlag(session.business_plan_override)) {
-    return true;
-  }
-
-  // AppSumo Business counts as Business; AppSumo Pro does not.
-  if (session.subscription_type === ISUBSCRIPTION_TYPE.LIFE_TIME_DEAL) {
-    return isAppSumoBusiness(session);
-  }
-
-  // Check for active Business plan trial
-  if (session.subscription_type === 'BUSINESS_TRIAL') {
-    return true;
-  }
-
-  if (session.active_plan_trial === 'BUSINESS_LARGE' && session.plan_trial_end_date) {
-    const trialEndDate = new Date(session.plan_trial_end_date);
-    if (trialEndDate > new Date()) {
-      return true;
-    }
-  }
-
-  // ANNUAL_BUSINESS is considered a business plan
-  if (session.subscription_type === ISUBSCRIPTION_TYPE.ANNUAL_BUSINESS) {
-    return true;
-  }
-
-  // SELF_HOSTED users are considered to have business plan privileges
-  if (session.subscription_type === ISUBSCRIPTION_TYPE.SELF_HOSTED) {
-    return true;
-  }
-
-  if (session.subscription_type !== ISUBSCRIPTION_TYPE.PADDLE) {
-    return false;
-  }
-
-  const planName = session.plan_name?.toLowerCase() || '';
-  return planName.includes('business');
+export const isBusinessPlan = (_session: ILocalSession | null): boolean => {
+  return true;
 };
 
 /**
  * Checks if user is on an enterprise plan specifically
  */
-export const isEnterprisePlan = (session: ILocalSession | null): boolean => {
-  if (!session) return false;
-
-  // SELF_HOSTED users are considered to have enterprise plan privileges
-  if (session.subscription_type === ISUBSCRIPTION_TYPE.SELF_HOSTED) {
-    return true;
-  }
-
-  if (session.subscription_type !== ISUBSCRIPTION_TYPE.PADDLE) {
-    return false;
-  }
-
-  const planName = session.plan_name?.toLowerCase() || '';
-  return planName.includes('enterprise');
+export const isEnterprisePlan = (_session: ILocalSession | null): boolean => {
+  return true;
 };
 
 /**
@@ -208,23 +98,8 @@ export const isFreeUser = (session: ILocalSession | null): boolean => {
 /**
  * True when a trial license is past the grace period. Free plans are not expired trials.
  */
-export const isExpiredTrialSession = (session: ILocalSession | null): boolean => {
-  if (!session) return false;
-  if (
-    session.subscription_type === ISUBSCRIPTION_TYPE.FREE ||
-    session.subscription_status?.toLowerCase() === 'free'
-  ) {
-    return false;
-  }
-  if (session.subscription_type !== ISUBSCRIPTION_TYPE.TRIAL) return false;
-  if (session.is_expired) return true;
-
-  const expireDateStr = session.valid_till_date || session.trial_expire_date;
-  if (!expireDateStr) return false;
-  const expiryDate = new Date(expireDateStr);
-  if (Number.isNaN(expiryDate.getTime())) return false;
-  const diffDays = Math.ceil((Date.now() - expiryDate.getTime()) / (1000 * 60 * 60 * 24));
-  return diffDays > 7;
+export const isExpiredTrialSession = (_session: ILocalSession | null): boolean => {
+  return false;
 };
 
 /**

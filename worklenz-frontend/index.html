@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="./favicon.ico" />
@@ -34,21 +34,21 @@
     <!-- Preload critical resources -->
     <link
       rel="preload"
-      href="/locales/en/common.json"
+      href="/locales/vi/common.json"
       as="fetch"
       type="application/json"
       crossorigin
     />
     <link
       rel="preload"
-      href="/locales/en/auth/login.json"
+      href="/locales/vi/auth/login.json"
       as="fetch"
       type="application/json"
       crossorigin
     />
     <link
       rel="preload"
-      href="/locales/en/navbar.json"
+      href="/locales/vi/navbar.json"
       as="fetch"
       type="application/json"
       crossorigin
@@ -72,18 +72,11 @@
 
     <!-- Environment configuration -->
     <script src="/env-config.js"></script>
-
-    <!-- Analytics Module -->
-    <script src="/js/analytics.js" defer></script>
-    <!-- Clarity Analytics -->
-    <script src="/js/clarity.js" defer></script>
   </head>
 
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     <script type="module" src="./src/index.tsx"></script>
-    <!-- HubSpot Integration Module -->
-    <script src="/js/hubspot.js"></script>
   </body>
 </html>

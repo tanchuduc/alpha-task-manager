@@ -818,7 +818,6 @@ const ProjectList: React.FC = () => {
         document.body,
         'project-settings-modal'
       )}
-      {createPortal(<SurveyPromptModal />, document.body, 'project-survey-modal')}
     </div>
   );
 };

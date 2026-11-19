@@ -9,7 +9,8 @@ i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    fallbackLng: 'en',
+    lng: 'vi',
+    fallbackLng: 'vi',
     defaultNS: 'common',
     ns: ['common', 'home', 'task-drawer/task-drawer', 'all-project-list', 'project-view-docs'], // Preload namespaces used on first paint
 
@@ -18,7 +19,7 @@ i18n
     },
 
     detection: {
-      order: ['localStorage', 'navigator'],
+      order: ['localStorage'],
       caches: ['localStorage'],
     },
 
@@ -26,7 +27,7 @@ i18n
 
     backend: {
       // Bump when locale JSON changes so browsers do not keep a stale translation file.
-      loadPath: '/locales/{{lng}}/{{ns}}.json?v=20261118-alphabooks',
+      loadPath: '/locales/{{lng}}/{{ns}}.json?v=20261119-alphawork',
     },
 
     react: {
