@@ -1,6 +1,4 @@
-import RateCardSettings from '@/pages/settings/rate-card-settings/RateCardSettings';
 import {
-  AppstoreOutlined,
   BankOutlined,
   FileZipOutlined,
   GlobalOutlined,
@@ -13,15 +11,11 @@ import {
   TagsOutlined,
   TeamOutlined,
   UserOutlined,
-  UserSwitchOutlined,
   BulbOutlined,
-  DeleteOutlined,
-  DollarCircleOutlined,
   ApiOutlined,
   UsergroupAddOutlined,
-  QuestionCircleOutlined,
 } from '@/shared/antd-imports';
-import { MobileOutlined, SwapOutlined } from '@ant-design/icons';
+import { SwapOutlined } from '@ant-design/icons';
 import React, { ReactNode, lazy } from 'react';
 import { ILocalSession } from '@/types/auth/local-session.types';
 import { canUseFeature } from '@/utils/subscription-utils';
@@ -29,11 +23,9 @@ const ProfileSettings = lazy(() => import('../../pages/settings/profile/profile-
 const NotificationsSettings = lazy(
   () => import('../../pages/settings/notifications/notifications-settings')
 );
-const ClientsSettings = lazy(() => import('../../pages/settings/clients/clients-settings'));
 const DepartmentsSettings = lazy(
   () => import('@/pages/settings/departments/departments-settings')
 );
-const PracticesSettings = lazy(() => import('@/pages/settings/practices/practices-settings'));
 const JobTitlesSettings = lazy(() => import('@/pages/settings/job-titles/job-titles-settings'));
 const LabelsSettings = lazy(() => import('../../pages/settings/labels/LabelsSettings'));
 const CategoriesSettings = lazy(
@@ -58,12 +50,8 @@ const LanguageAndRegionSettings = lazy(
   () => import('@/pages/settings/language-and-region/language-and-region-settings')
 );
 const AppearanceSettings = lazy(() => import('@/pages/settings/appearance/appearance-settings'));
-const AccountDeletion = lazy(() => import('@/pages/settings/account-deletion/AccountDeletion'));
 const IntegrationsSettings = lazy(
   () => import('@/pages/settings/integrations/IntegrationsSettings')
-);
-const MobileAppSettings = lazy(
-  () => import('@/pages/settings/mobile-app/mobile-app-settings')
 );
 const ConfigurationSettings = lazy(
   () => import('@/pages/settings/configuration/configuration-settings')
@@ -71,8 +59,6 @@ const ConfigurationSettings = lazy(
 const OrganizationCurrencySettings = lazy(
   () => import('@/pages/settings/organization-currency/organization-currency-settings')
 );
-
-const HelpSettings = lazy(() => import('@/pages/settings/help/help-settings'));
 
 // type of menu item in settings sidebar
 type SettingMenuItem = {

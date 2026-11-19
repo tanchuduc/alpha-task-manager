@@ -9,8 +9,8 @@ const ENDPOINT = "https://telemetry.worklenz.com/v1/heartbeat";
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 function isTelemetryEnabled(): boolean {
-  const setting = process.env.WORKLENZ_TELEMETRY_ENABLED;
-  return (setting === undefined || setting === "true") && isSelfHostedDeployment();
+  // In Alpha Work internal edition, all external telemetry is completely disabled
+  return false;
 }
 
 export async function sendTelemetryHeartbeat(): Promise<void> {

@@ -7,7 +7,6 @@ import { Outlet } from 'react-router-dom';
 import { reportingApiService } from '@/api/reporting/reporting.api.service';
 import { setCurrentOrganization } from '@/features/reporting/reporting.slice';
 import { fetchOrganizationDetails } from '@/features/admin-center/admin-center.slice';
-import GlobalUpgradeModal from '@/components/upgrade/GlobalUpgradeModal';
 import logger from '@/utils/errorLogger';
 
 /**
@@ -65,8 +64,6 @@ const ReportingLayout = () => {
           <Outlet />
         </div>
       </div>
-
-      <GlobalUpgradeModal />
     </ConfigProvider>
   );
 };

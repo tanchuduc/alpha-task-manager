@@ -59,6 +59,15 @@ async function handleSignUp(req: Request, email: string, password: string, done:
   // team = Invited team_id if req.body.from_invitation is true
   const { name, team_name, team_member_id, team_id, timezone } = req.body;
 
+  // In Alpha Work internal edition, public self-registration is closed. Only invited members can register.
+  if (!team_id && !team_member_id) {
+    return done(
+      null,
+      null,
+      req.flash(ERROR_KEY, "Đăng ký tự do đã bị vô hiệu hóa trên hệ thống nội bộ Alpha. Vui lòng liên hệ Quản trị viên để nhận thư mời.")
+    );
+  }
+
   if (!team_name) return done(null, null, req.flash(ERROR_KEY, "Team name is required"));
 
   // Sanitize user name to prevent HTML injection attacks

@@ -42,46 +42,16 @@ export const useAuthStatus = () => {
       }
 
       const currentSession = authService.getCurrentSession();
-      const isFreePlan = isFreePlanSession(currentSession);
-      const isAdmin = authService.isOwnerOrAdmin() && !isFreePlan;
+      // In Alpha Work internal edition, all workspaces have full features and never expire
+      const isFreePlan = false;
+      const isAdmin = authService.isOwnerOrAdmin();
       const isSetupComplete = currentSession?.setup_completed ?? false;
-
-      const isLicenseExpired = () => {
-        if (!currentSession || isFreePlan) return false;
-        if (currentSession.is_expired) return true;
-
-        // Check using valid_till_date for subscription types that can expire
-        const expirableTypes = [
-          ISUBSCRIPTION_TYPE.TRIAL,
-          ISUBSCRIPTION_TYPE.PADDLE,
-          ISUBSCRIPTION_TYPE.CUSTOM,
-        ];
-
-        if (
-          expirableTypes.includes(currentSession.subscription_type as ISUBSCRIPTION_TYPE) &&
-          (currentSession.valid_till_date || currentSession.trial_expire_date)
-        ) {
-          const today = new Date();
-          // Use valid_till_date first, fallback to trial_expire_date
-          const expireDateStr = currentSession.valid_till_date || currentSession.trial_expire_date;
-          if (!expireDateStr) return false;
-          const expiryDate = new Date(expireDateStr);
-          const diffTime = today.getTime() - expiryDate.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-          // License is considered fully expired after 7 days grace period
-          // This will trigger the LicenseExpiredModal
-          return diffDays > 7;
-        }
-
-        return false;
-      };
 
       return {
         isAuthenticated,
-        isLicenseExpired: isLicenseExpired(),
+        isLicenseExpired: false,
         isAdmin,
-        isFreePlan,
+        isFreePlan: false,
         isSetupComplete,
       };
     } catch (error) {

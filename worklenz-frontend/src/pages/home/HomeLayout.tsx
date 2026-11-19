@@ -26,9 +26,6 @@ import { fetchProjects } from '@/features/home-page/home-page.slice';
 const HOME_BASE_PATH = '/worklenz/home';
 
 const TaskDrawer = React.lazy(() => import('@/components/task-drawer/task-drawer'));
-const SurveyPromptModal = React.lazy(() =>
-  import('@/components/survey/SurveyPromptModal').then(m => ({ default: m.SurveyPromptModal }))
-);
 
 // Shell for the Home section: left rail, drawers/portals that must survive
 // navigation between sub-views, and the section-wide lookups fetch. Each

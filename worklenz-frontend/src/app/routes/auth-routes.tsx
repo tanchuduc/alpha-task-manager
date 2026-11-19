@@ -58,11 +58,7 @@ const authRoutes = [
       },
       {
         path: 'signup',
-        element: (
-          <Suspense fallback={<SuspenseFallback />}>
-            <SignupPage />
-          </Suspense>
-        ),
+        element: <Navigate to="/auth/login" replace />,
       },
       {
         path: 'forgot-password',

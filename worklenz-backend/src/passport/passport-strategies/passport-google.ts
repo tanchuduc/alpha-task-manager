@@ -64,6 +64,25 @@ async function handleGoogleLogin(req: Request, _accessToken: string, _refreshTok
     if (await isSignupEmailDomainBlocked(body.email))
       return done(null, false, { message: req.flash(ERROR_KEY, getBlockedSignupEmailMessage(req.headers["accept-language"])) });
 
+    // In Alpha Work internal edition: New Google registrations require either an active invitation (state.team)
+    // or an email from an allowed internal domain (default: alphabooks.vn)
+    const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS || "alphabooks.vn")
+      .toLowerCase()
+      .split(",")
+      .map(d => d.trim())
+      .filter(Boolean);
+    const emailDomain = (body.email || "").split("@")[1]?.toLowerCase();
+    const isInternalDomain = emailDomain ? allowedDomains.includes(emailDomain) : false;
+
+    if (!state.team && !isInternalDomain) {
+      return done(null, false, {
+        message: req.flash(
+          ERROR_KEY,
+          "Đăng ký tự do đã bị vô hiệu hóa. Đăng nhập Google chỉ chấp nhận email nội bộ (@alphabooks.vn) hoặc tài khoản có thư mời."
+        )
+      });
+    }
+
     // Register new user
     const q2 = `SELECT register_google_user($1) AS user;`;
     const result2 = await db.query(q2, [JSON.stringify(body)]);

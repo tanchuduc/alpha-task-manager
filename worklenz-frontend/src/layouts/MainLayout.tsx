@@ -2,7 +2,6 @@ import { Layout } from '@/shared/antd-imports';
 import { Outlet, useLocation } from 'react-router-dom';
 import { memo, useMemo } from 'react';
 
-import GlobalUpgradeModal from '@/components/upgrade/GlobalUpgradeModal';
 import { PROJECTS_RAIL_SUB_ROUTES, FINANCE_RAIL_SUB_ROUTES } from '@/features/navigation/nav-registry';
 import { useHomeDashboardSocketSync } from '@/hooks/useHomeDashboardSocketSync';
 import { useScheduleSocketHandlers } from '@/hooks/useScheduleSocketHandlers';
@@ -95,13 +94,9 @@ const MainLayout = memo(() => {
     .join(' ');
 
   return (
-    <>
-      <Layout.Content className={contentClassName}>
-        <Outlet />
-      </Layout.Content>
-
-      <GlobalUpgradeModal />
-    </>
+    <Layout.Content className={contentClassName}>
+      <Outlet />
+    </Layout.Content>
   );
 });
 

@@ -152,12 +152,6 @@ const allowedOrigins = [
     ? [
       `http://localhost:5000`,
       `http://127.0.0.1:5000`,
-      `https://app.worklenz.com`,
-      `https://www.app.worklenz.com`,
-      `https://clients.worklenz.com`,
-      `https://uat.app.worklenz.com`,
-      `https://www.uat.app.worklenz.com`,
-      `https://uat.clients.worklenz.com`,
       `https://appleid.apple.com`, // Allow Apple Sign-In OAuth requests
     ]
     : [
@@ -659,7 +653,8 @@ const csrfRotation = createCsrfRotation(generateToken);
 // Backward compatibility for clients still calling /api/imports (without v1 prefix)
 app.use("/api/v1", isLoggedIn, apiRouter);
 app.use("/api/imports", isLoggedIn, importsApiRouter);
-app.use("/api/client-portal", clientPortalApiRouter);
+// Client portal is disabled for Alpha Work internal edition
+// app.use("/api/client-portal", clientPortalApiRouter);
 
 // Dynamic Addon routers
 loadAddonRouters(app, isLoggedIn);

@@ -11,9 +11,7 @@ export function startCronJobs() {
   startProjectDigestJob();
   startDigestScheduler();
 
-  // Initialize plan trial expiration job
-  startPlanTrialExpirationJob();
-
-  // Retention purge of deleted Client Portal clients (report-only unless CLIENT_PURGE_ENABLED=true)
-  startClientPurgeJob();
+  // In Alpha Work internal edition, trial expiration and client portal purge jobs are disabled
+  // startPlanTrialExpirationJob();
+  // startClientPurgeJob();
 }

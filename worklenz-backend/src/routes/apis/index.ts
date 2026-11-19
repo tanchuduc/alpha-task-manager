@@ -192,8 +192,9 @@ api.get(
   safeControllerFunction(LogsController.getActivityLog)
 );
 
-api.use("/billing", billingApiRouter);
-api.use("/plan-trials", planTrialApiRouter);
+// Billing, plan trials and client-portal APIs are disabled for Alpha Work internal edition
+// api.use("/billing", billingApiRouter);
+// api.use("/plan-trials", planTrialApiRouter);
 api.use("/task-dependencies", taskDependenciesApiRouter);
 
 api.use("/task-recurring", taskRecurringApiRouter);
@@ -214,7 +215,7 @@ api.use("/holidays", holidayApiRouter);
 
 api.use("/logs", userActivityLogsApiRouter);
 
-api.use("/plan-recommendations", planRecommendationApiRouter);
+// api.use("/plan-recommendations", planRecommendationApiRouter);
 
 // Migration and subscription management APIs
 api.use("/migration", migrationApiRouter);
@@ -223,8 +224,8 @@ api.use("/plans", plansApiRouter);
 api.use("/users", usersApiRouter);
 api.use("/imports", importsApiRouter);
 
-// Client portal APIs
-api.use("/client-portal", clientPortalApiRouter);
+// Client portal APIs are disabled for Alpha Work internal edition
+// api.use("/client-portal", clientPortalApiRouter);
 
 // Slack integration APIs
 api.use("/slack", slackApiRouter);

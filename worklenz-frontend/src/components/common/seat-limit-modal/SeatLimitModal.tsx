@@ -16,38 +16,10 @@ interface SeatLimitModalProps {
   onDeactivate: () => void;
 }
 
-export const SeatLimitModal: React.FC<SeatLimitModalProps> = ({
-  open,
-  onClose,
-  currentMembers,
-  planLimit,
-  businessLimit,
-  isAppSumoUser,
-  onUpgrade,
-  onDeactivate,
-}) => {
-  const { t } = useTranslation('settings/team-members');
-  const { token } = theme.useToken();
-  const { trackAppSumoEvent } = useAppSumoTracking();
-
-  useEffect(() => {
-    if (open && isAppSumoUser) {
-      trackAppSumoEvent(AppSumoUpsellEvents.SEAT_LIMIT_MODAL_SHOWN);
-    }
-  }, [open, isAppSumoUser]);
-
-  return (
-    <Modal
-      open={open}
-      onCancel={onClose}
-      closable={true}
-      maskClosable={false} // Cannot dismiss by clicking outside
-      keyboard
-      footer={null}
-      width={540}
-      centered
-    >
-      <Flex vertical gap={24} style={{ padding: '12px 8px 8px' }}>
+export const SeatLimitModal: React.FC<SeatLimitModalProps> = () => {
+  // Seat limits are disabled for Alpha Work internal edition
+  return null;
+};
         {/* Icon and Title Section */}
         <Flex vertical gap={16} align="center">
           <div

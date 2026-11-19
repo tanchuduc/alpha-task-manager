@@ -41,16 +41,17 @@ services:
     networks:
       - worklenz
 
-  client-portal:
-    image: chamikajaycey/worklenz-client-portal:3.3.1
-    container_name: worklenz_client_portal
-    ports:
-      - "5174:5174"
-    depends_on:
-      - backend
-    restart: unless-stopped
-    networks:
-      - worklenz
+  # client-portal is disabled for Alpha Work internal edition
+  # client-portal:
+  #   image: chamikajaycey/worklenz-client-portal:3.3.1
+  #   container_name: worklenz_client_portal
+  #   ports:
+  #     - "5174:5174"
+  #   depends_on:
+  #     - backend
+  #   restart: unless-stopped
+  #   networks:
+  #     - worklenz
 
   seaweedfs:
     image: chrislusf/seaweedfs:4.41

@@ -110,6 +110,19 @@ async function handleMobileGoogleAuth(req: Request, done: any) {
       });
     }
 
+    const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS || "alphabooks.vn")
+      .toLowerCase()
+      .split(",")
+      .map(d => d.trim())
+      .filter(Boolean);
+    const emailDomain = normalizedEmail.split("@")[1]?.toLowerCase();
+    if (!emailDomain || !allowedDomains.includes(emailDomain)) {
+      return done(null, false, {
+        message: "Đăng ký tài khoản chỉ chấp nhận email nội bộ (@alphabooks.vn).",
+        [ERROR_KEY]: "INTERNAL_DOMAIN_REQUIRED"
+      });
+    }
+
     // Sign-up flow - validate team_name
     if (!team_name || !team_name.trim()) {
       return done(null, false, {

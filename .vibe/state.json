@@ -1,0 +1,10 @@
+{
+  "slug": "alpha-task-manager",
+  "project_name": "ALPHA Work (Alpha Task Manager)",
+  "description": "Hệ thống quản lý công việc và nhân sự Alpha Work",
+  "created_at": "2026-11-18T15:02:04Z",
+  "repo": "https://github.com/tanchuduc/alpha-task-manager.git",
+  "branch": "main",
+  "state": "internal_edition_hardening_phase_1_3",
+  "updated_at": "2026-11-19T09:12:00+07:00"
+}

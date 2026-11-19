@@ -424,13 +424,12 @@ const LoginPage: React.FC = () => {
         )}
       </Form>
 
-      <Flex justify="center" gap={4} style={{ marginTop: 26, fontSize: 12.5 }}>
-        <Typography.Text type="secondary">
-          {t('dontHaveAccountText', { defaultValue: 'Chưa có tài khoản?' })}
+      <Flex justify="center" style={{ marginTop: 26, textAlign: 'center' }}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {t('internalNotice', {
+            defaultValue: 'Hệ thống quản lý công việc nội bộ Alpha Books. Nhân viên chưa có tài khoản vui lòng liên hệ Quản trị viên.',
+          })}
         </Typography.Text>
-        <Link to="/auth/signup" className="blue-link" style={{ fontWeight: 600 }}>
-          {t('signupButton', { defaultValue: 'Đăng ký' })}
-        </Link>
       </Flex>
     </>
   );

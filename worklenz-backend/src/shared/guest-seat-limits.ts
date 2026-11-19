@@ -113,48 +113,15 @@ export function resolveEntitlementGuestPlan(subscriptionData: any): { guestLimit
  * @param teamId - The team/workspace ID
  * @returns IGuestLimitInfo with limit info and current usage
  */
-export async function getGuestSeatLimit(teamId: string): Promise<IGuestLimitInfo> {
-  try {
-    const subscriptionData = await checkTeamSubscriptionStatus(teamId);
-    const currentGuestCount = await getActiveGuestCount(teamId);
-
-    // Determine limit: from entitlements when enforcing, else the legacy subscription_type chain
-    const { guestLimit, planTier } = isEnforceMode()
-      ? resolveEntitlementGuestPlan(subscriptionData)
-      : resolveLegacyGuestPlan(subscriptionData);
-
-    const remaining =
-      guestLimit === -1 ? -1 : Math.max(0, guestLimit - currentGuestCount);
-    const canAdd = guestLimit === -1 || currentGuestCount < guestLimit;
-
-    let errorMessage: string | undefined;
-    if (!canAdd) {
-      if (guestLimit === 0) {
-        errorMessage = `Your ${planTier} plan does not include guest access. Upgrade to Professional or Business to add guests.`;
-      } else {
-        errorMessage = `Your ${planTier} plan includes ${guestLimit} guest${guestLimit === 1 ? "" : "s"}. Upgrade to add more guests.`;
-      }
-    }
-
-    return {
-      plan_tier: planTier,
-      guest_limit: guestLimit,
-      current_guest_count: currentGuestCount,
-      remaining_slots: remaining,
-      can_add_guest: canAdd,
-      error_message: errorMessage
-    };
-  } catch (error) {
-    log_error(error);
-    return {
-      plan_tier: "UNKNOWN",
-      guest_limit: 0,
-      current_guest_count: 0,
-      remaining_slots: 0,
-      can_add_guest: false,
-      error_message: "Failed to determine guest limit"
-    };
-  }
+export async function getGuestSeatLimit(_teamId: string): Promise<IGuestLimitInfo> {
+  // In Alpha Work internal edition, guest seats are unlimited
+  return {
+    plan_tier: "INTERNAL",
+    guest_limit: -1,
+    current_guest_count: 0,
+    remaining_slots: -1,
+    can_add_guest: true,
+  };
 }
 
 /**
@@ -164,14 +131,8 @@ export async function getGuestSeatLimit(teamId: string): Promise<IGuestLimitInfo
  * @param teamId - The team/workspace ID
  * @returns boolean - True if a guest can be added, false otherwise
  */
-export async function canAddGuest(teamId: string): Promise<boolean> {
-  try {
-    const limitInfo = await getGuestSeatLimit(teamId);
-    return limitInfo.can_add_guest;
-  } catch (error) {
-    log_error(error);
-    return false;
-  }
+export async function canAddGuest(_teamId: string): Promise<boolean> {
+  return true;
 }
 
 /**

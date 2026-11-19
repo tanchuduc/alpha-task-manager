@@ -27,23 +27,7 @@ export function getAppSumoPopupFrequencyDays(): number {
  * been applied). That is logged to the console only — no Slack alert, since this runs for every
  * eligible app load — and the client falls back to its local gate.
  */
-export async function claimAppSumoPopupSlot(userId: string | undefined): Promise<IAppSumoPopupClaim | null> {
-  const q = `WITH claimed AS (
-               UPDATE users
-                  SET appsumo_popup_last_shown_at = CURRENT_TIMESTAMP
-                WHERE id = $1
-                  AND (appsumo_popup_last_shown_at IS NULL
-                       OR appsumo_popup_last_shown_at <= CURRENT_TIMESTAMP - make_interval(days => $2::int))
-               RETURNING appsumo_popup_last_shown_at
-             )
-             SELECT EXISTS (SELECT 1 FROM claimed) AS should_show;`;
-
-  try {
-    const result = await db.query(q, [userId, getAppSumoPopupFrequencyDays()]);
-    const [data] = result.rows;
-    return { should_show: data?.should_show === true };
-  } catch (error) {
-    log_error(error, null, false);
-    return null;
-  }
+export async function claimAppSumoPopupSlot(_userId: string | undefined): Promise<IAppSumoPopupClaim | null> {
+  // In Alpha Work internal edition, AppSumo promo is completely disabled
+  return { should_show: false };
 }

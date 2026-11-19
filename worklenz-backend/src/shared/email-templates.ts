@@ -8,10 +8,10 @@ import { reserveInvitationEmail } from "../services/security-policy.service";
 
 // Ensure FRONTEND_URL is always an absolute URL with a scheme.
 // Without https://, email clients (e.g. Outlook Safe Links) strip the <a> tag.
-const _rawFrontendUrl = process.env.FRONTEND_URL || "worklenz.com";
+const _rawFrontendUrl = process.env.FRONTEND_URL || "localhost:3000";
 const FRONTEND_URL = (_rawFrontendUrl.startsWith("http") ? _rawFrontendUrl : `https://${_rawFrontendUrl}`).replace(/\/+$/, "");
 
-const DEFAULT_LOGO_URL = "https://s3.us-west-2.amazonaws.com/worklenz.com/email-templates-assets/worklenz-light-mode.png";
+const DEFAULT_LOGO_URL = "https://alphabooks.vn/logo.png";
 
 /**
  * Validates that a URL is a safe http/https URL for use in email templates.
@@ -62,7 +62,7 @@ export function sendWelcomeEmail(email: string, name: string) {
 
   sendEmail({
     to: [email],
-    subject: "Welcome to Worklenz.",
+    subject: "Chào mừng bạn đến với Alpha Work.",
     html: content
   });
 }
@@ -74,7 +74,7 @@ export function sendNewSubscriberNotification(subscriberEmail: string) {
   content = content.replace("[VAR_EMAIL]", sanitize(subscriberEmail));
 
   sendEmail({
-    subject: "Worklenz - New Subscriber.",
+    subject: "Alpha Work - Thông báo thành viên mới.",
     html: content
   });
 }
@@ -97,7 +97,7 @@ export async function sendJoinTeamInvitation(myName: string, teamName: string, t
 
   sendEmail({
     to: [toEmail],
-    subject: `${sanitizePlainText(myName)} has invited you to work with ${sanitizePlainText(teamName)} in Worklenz`,
+    subject: `${sanitizePlainText(myName)} đã mời bạn tham gia nhóm ${sanitizePlainText(teamName)} trên Alpha Work`,
     html: content
   });
 }
@@ -122,7 +122,7 @@ export async function sendRegisterAndJoinTeamInvitation(myName: string, userName
 
   sendEmail({
     to: [toEmail],
-    subject: `${sanitizePlainText(myName)} has invited you to work with ${sanitizePlainText(teamName)} in Worklenz`,
+    subject: `${sanitizePlainText(myName)} đã mời bạn tham gia nhóm ${sanitizePlainText(teamName)} trên Alpha Work`,
     html: content
   });
 }
@@ -139,7 +139,7 @@ export async function sendResetEmail(toEmail: string, user_id: string, hash: str
 
   await sendEmail({
     to: [toEmail],
-    subject: "Set or reset your password on Worklenz.",
+    subject: "Thiết lập lại mật khẩu trên Alpha Work.",
     html: content
   });
 }
@@ -151,7 +151,7 @@ export function sendResetSuccessEmail(toEmail: string) {
 
   sendEmail({
     to: [toEmail],
-    subject: "Your Worklenz password was updated.",
+    subject: "Mật khẩu Alpha Work của bạn đã được cập nhật thành công.",
     html: content
   });
 }

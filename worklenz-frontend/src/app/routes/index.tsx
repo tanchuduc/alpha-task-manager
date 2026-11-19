@@ -6,7 +6,6 @@ import mainRoutes from './main-routes';
 import notFoundRoute from './not-found-route';
 import accountSetupRoute from './account-setup-routes';
 import reportingRoutes from './reporting-routes';
-import clientPortalRoutes from '../../app/routes/client-portal-routes';
 import { useAuthService } from '@/hooks/useAuth';
 import { AuthenticatedLayout } from '@/layouts/AuthenticatedLayout';
 import AppShellLayout from '@/layouts/AppShellLayout';
@@ -64,26 +63,15 @@ export const AdminGuard = memo(({ children }: GuardProps) => {
 AdminGuard.displayName = 'AdminGuard';
 
 export const LicenseExpiryGuard = memo(({ children }: GuardProps) => {
-  const { isLicenseExpired, location } = useAuthStatus();
-
-  const isAdminCenterRoute = location.pathname.includes('/worklenz/admin-center');
-  const isSettingsRoute = location.pathname.includes('/worklenz/settings');
+  const { location } = useAuthStatus();
   const isLicenseExpiredPage = location.pathname.includes('/worklenz/license-expired');
 
-  // NEW: Check if current route is a project view (with or without query params)
-  const isProjectViewRoute = /^\/worklenz\/projects\/[a-f0-9-]{36}/i.test(location.pathname);
-
-  // License is no longer expired for the active team (e.g. user switched to a
-  // different team) — leave the expired-plan page instead of getting stuck on it.
-  if (isLicenseExpiredPage && !isLicenseExpired) {
+  // In Alpha Work internal edition, license never expires.
+  // Redirect away if someone lands on the legacy license-expired page.
+  if (isLicenseExpiredPage) {
     return <Navigate to="/worklenz/home" replace />;
   }
 
-  // Redirect to license expired page if license is expired.
-  // Settings stays reachable so the profile menu can open it.
-  if (isLicenseExpired && !isAdminCenterRoute && !isSettingsRoute && !isLicenseExpiredPage && !isProjectViewRoute) {
-    return <Navigate to="/worklenz/license-expired" replace />;
-  }
   return <>{children}</>;
 });
 
@@ -207,7 +195,6 @@ const publicRoutes = [...rootRoutes, ...authRoutes, notFoundRoute];
 const protectedMainRoutes = wrapRoutes(mainRoutes, AuthAndSetupGuard);
 // Reporting requires auth + setup; View reports is enforced inside reporting-routes.
 const adminRoutes = wrapRoutes(reportingRoutes, AuthAndSetupGuard);
-const adminclientPortalRoutes = wrapRoutes(clientPortalRoutes, AdminGuard);
 const setupRoutes = wrapRoutes([accountSetupRoute], AuthGuard);
 
 // License expiry check function - only wrap top-level routes, not children
@@ -233,7 +220,6 @@ const withLicenseExpiryCheck = (routes: RouteObject[]): RouteObject[] => {
 
 const licenseCheckedMainRoutes = withLicenseExpiryCheck(protectedMainRoutes);
 const licenseCheckedAdminRoutes = withLicenseExpiryCheck(adminRoutes);
-const licenseCheckedClientPortalRoutes = withLicenseExpiryCheck(adminclientPortalRoutes);
 
 // Create optimized router with future flags for better performance
 const router = createBrowserRouter(
@@ -257,7 +243,6 @@ const router = createBrowserRouter(
           children: [
             ...licenseCheckedMainRoutes,
             ...licenseCheckedAdminRoutes,
-            ...licenseCheckedClientPortalRoutes,
           ],
         },
         ...setupRoutes,

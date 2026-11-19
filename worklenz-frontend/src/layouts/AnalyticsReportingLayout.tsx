@@ -2,7 +2,6 @@ import { ConfigProvider } from '@/shared/antd-imports';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useAppSelector } from '@/hooks/useAppSelector';
 import { AnalyticsSidebar } from '@/components/reporting/analytics/AnalyticsSidebar';
-import GlobalUpgradeModal from '@/components/upgrade/GlobalUpgradeModal';
 import { ANALYTICS_BASE_PATH } from '@/lib/reporting/analytics-nav';
 
 /**
@@ -47,8 +46,6 @@ const AnalyticsReportingLayout = () => {
           <Outlet />
         </div>
       </div>
-
-      <GlobalUpgradeModal />
     </ConfigProvider>
   );
 };

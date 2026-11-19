@@ -19,34 +19,10 @@ const parsePositiveInt = (value: unknown): number => {
 };
 
 export const getTeamMemberSeatLimit = (
-  subscriptionData: ISubscriptionDataForLimits | null | undefined,
-  defaultLimit = 25,
+  _subscriptionData?: ISubscriptionDataForLimits | null | undefined,
+  _defaultLimit = 25,
 ): number => {
-  // Per-user Paddle Billing plans are sold by seat: the purchased quantity is the limit, with no
-  // free floor. Lifetime/AppSumo seats still stack on top, as below.
-  if (subscriptionData?.billing_provider === "paddle_billing") {
-    const purchasedSeats = parsePositiveInt(subscriptionData?.quantity);
-    if (purchasedSeats > 0) {
-      const ltdSeats =
-        subscriptionData?.is_ltd === true ? parsePositiveInt(subscriptionData?.ltd_users) : 0;
-      // AppSumo Expansion seats are bought on top of the codes' own seats, so they add up.
-      const isExpansion = /expansion/i.test(String(subscriptionData?.plan_name ?? ""));
-      return isExpansion ? purchasedSeats + ltdSeats : Math.max(purchasedSeats, ltdSeats);
-    }
-  }
-
-  const effectiveUserLimit = parsePositiveInt(
-    subscriptionData?.effective_user_limit,
-  );
-  const quantityLimit = parsePositiveInt(subscriptionData?.quantity);
-
-  // Lifetime/AppSumo codes can grant extra member capacity; keep that entitlement
-  // even when the org is on an active paid subscription.
-  const ltdLimit =
-    subscriptionData?.is_ltd === true
-      ? parsePositiveInt(subscriptionData?.ltd_users)
-      : 0;
-
-  return Math.max(defaultLimit, effectiveUserLimit, quantityLimit, ltdLimit);
+  // In Alpha Work internal edition, seat limits are unlimited for the internal team
+  return 999999;
 };
 

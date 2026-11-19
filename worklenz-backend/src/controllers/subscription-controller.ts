@@ -185,61 +185,27 @@ export default class SubscriptionController extends WorklenzControllerBase {
    */
   @HandleExceptions()
   public static async getCurrentSubscription(req: IWorkLenzRequest, res: IWorkLenzResponse): Promise<IWorkLenzResponse> {
-    const organizationId = req.user?.organization_id;
-    const userId = req.user?.id;
-    
-    if (!organizationId) {
-      return res.status(400).send(new ServerResponse(false, null, "Organization ID is required"));
-    }
-
-    try {
-      if (!userId) {
-        return res.status(400).send(new ServerResponse(false, null, "User ID is required"));
-      }
-      
-      const [currentSubscription, userAnalytics, legacyPlanDetails] = await Promise.all([
-        this.getExistingSubscription(userId),
-        PlanRecommendationService.generateRecommendations(organizationId),
-        this.getLegacyPlanDetails(organizationId)
-      ]);
-
-      if (!currentSubscription) {
-        return res.status(200).send(new ServerResponse(true, {
-          hasSubscription: false,
-          userType: userAnalytics.userAnalytics.userType,
-          legacyPlan: legacyPlanDetails,
-          migrationOptions: userAnalytics.userAnalytics.migrationEligibility
-        }));
-      }
-
-      const subscriptionDetails = {
-        hasSubscription: true,
-        subscription: {
-          id: currentSubscription.id,
-          status: currentSubscription.status,
-          planId: currentSubscription.plan_id,
-          planName: currentSubscription.plan_name,
-          billingCycle: currentSubscription.billing_cycle,
-          currentPrice: currentSubscription.current_price,
-          nextBillingDate: currentSubscription.next_billing_date,
-          userLimit: currentSubscription.user_limit,
-          features: currentSubscription.features
-        },
-        userType: userAnalytics.userAnalytics.userType,
-        legacyPlan: legacyPlanDetails,
-        usage: {
-          currentUsers: userAnalytics.userAnalytics.usageMetrics.totalUsers,
-          storageUsed: userAnalytics.userAnalytics.usageMetrics.storageUsed,
-          projectCount: userAnalytics.userAnalytics.usageMetrics.totalProjects
-        },
-        upgradeOptions: userAnalytics.recommendations.slice(0, 3),
-        migrationHistory: await this.getMigrationHistory(organizationId)
-      };
-
-      return res.status(200).send(new ServerResponse(true, subscriptionDetails));
-    } catch (error) {
-      return res.status(500).send(new ServerResponse(false, null, "Failed to retrieve subscription details"));
-    }
+    // In Alpha Work internal edition, return perpetual active enterprise subscription
+    return res.status(200).send(new ServerResponse(true, {
+      id: "alpha-internal",
+      plan_name: "Alpha Internal Enterprise",
+      subscription_type: "SELF_HOSTED",
+      tier: "business",
+      status: "active",
+      active: true,
+      is_expired: false,
+      seat_limit: 999999,
+      quantity: 999999,
+      hasSubscription: true,
+      subscription: {
+        id: "alpha-internal",
+        status: "active",
+        planId: "business",
+        planName: "Alpha Internal Enterprise",
+        billingCycle: "perpetual",
+        userLimit: 999999,
+      },
+    }));
   }
 
   /**

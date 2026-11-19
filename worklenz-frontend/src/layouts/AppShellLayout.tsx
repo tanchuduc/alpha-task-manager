@@ -4,31 +4,17 @@ import { memo, useMemo } from 'react';
 
 import Navbar from '@/features/navbar/navbar';
 import { useAppSelector } from '../hooks/useAppSelector';
-import { useAuthService } from '../hooks/useAuth';
-import { TrialExpirationAlert } from '@/components/TrialExpirationAlert/TrialExpirationAlert';
 import { ImportProgressNotifier } from '@/components/imports/ImportProgressNotifier';
 import { TaskExportProgressNotifier } from '@/components/projects/task-export/TaskExportProgressNotifier';
-import { MobileAppBanner } from '@/components/mobile-app/MobileAppBanner';
-import { AppSumoPopup } from '@/components/appsumo-popup/AppSumoPopup';
 import { NAV_RAIL_BG_DARK, NAV_RAIL_BG_LIGHT } from '@/components/nav-rail/nav-rail-constants';
 import { PROJECTS_RAIL_SUB_ROUTES, FINANCE_RAIL_SUB_ROUTES } from '@/features/navigation/nav-registry';
-import { shouldShowAppSumoPromo } from '@/utils/subscription-utils';
 
 // Single shared header for every authenticated section (main app, reporting,
 // client portal) so there is exactly one <Navbar/> mount and one header
 // height (52px) instead of each section re-implementing its own.
 const AppShellLayout = memo(() => {
   const themeMode = useAppSelector(state => state.themeReducer.mode);
-  const billingInfo = useAppSelector(state => state.adminCenterReducer.billingInfo);
   const location = useLocation();
-  const authService = useAuthService();
-  const currentSession = authService.getCurrentSession();
-  const isOwnerOrAdmin = authService.isOwnerOrAdmin();
-
-  const isAppSumoUser = useMemo(
-    () => shouldShowAppSumoPromo(currentSession, billingInfo) && isOwnerOrAdmin,
-    [billingInfo, currentSession, isOwnerOrAdmin]
-  );
 
   // Any route nested under /worklenz/projects/ that the rail itself owns —
   // checked against the registry rather than hardcoded paths, so this can't
@@ -78,12 +64,6 @@ const AppShellLayout = memo(() => {
     <Layout className="min-h-screen">
       <ImportProgressNotifier />
       <TaskExportProgressNotifier />
-      <AppSumoPopup
-        isAppSumoUser={isAppSumoUser}
-        frequencyDays={currentSession?.appsumo_popup_frequency_days}
-      />
-      <MobileAppBanner />
-      <TrialExpirationAlert />
 
       <Layout.Header
         className={`sticky top-0 z-[999] flex items-center p-0 ${
