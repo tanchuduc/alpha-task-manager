@@ -1,8 +1,8 @@
 {
-  "overview": "Overview",
-  "timeEntries": "Time Entries",
-  "recurringTasks": "Recurring Tasks",
-  "files": "Files",
-  "docs": "Docs",
-  "templates": "Templates"
+  "overview": "Tổng quan",
+  "timeEntries": "Bảng ghi thời gian",
+  "recurringTasks": "Công việc định kỳ",
+  "files": "Tệp tin",
+  "docs": "Tài liệu",
+  "templates": "Mẫu"
 }

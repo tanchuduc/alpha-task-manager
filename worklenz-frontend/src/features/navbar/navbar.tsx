@@ -9,6 +9,7 @@ import InviteTeamMembers from '../../components/common/invite-team-members/Invit
 import MobileMenuButton from './mobile-menu/MobileMenuButton';
 import NavbarLogo from './NavbarLogo';
 import NotificationButton from '../../components/navbar/notifications/notifications-drawer/notification/notification-button';
+import LanguageSwitcherButton from './language-switcher/LanguageSwitcherButton';
 import ProfileButton from './user-profile/ProfileButton';
 import SwitchTeamButton from './switch-team/SwitchTeamButton';
 import UpgradePlanButton from './upgrade-plan/UpgradePlanButton';
@@ -346,6 +347,7 @@ const Navbar = () => {
                       />
                       {!isGuest && <TimerButton />}
                       <NotificationButton />
+                      <LanguageSwitcherButton />
                       <GlobalSearchButton />
                       <SwitchTeamButton />
                       {/* <HelpButton /> */}
@@ -358,6 +360,7 @@ const Navbar = () => {
                 <Flex gap={12} align="center">
                   <SwitchTeamButton />
                   <NotificationButton />
+                  <LanguageSwitcherButton />
                   <ProfileButton isOwnerOrAdmin={isOwnerOrAdmin} />
                   <MobileMenuButton routes={filteredRoutes} isFreePlan={isFreePlan} />
                 </Flex>
@@ -365,6 +368,7 @@ const Navbar = () => {
               {isMobile && (
                 <Flex gap={12} align="center">
                   <NotificationButton />
+                  <LanguageSwitcherButton />
                   <ProfileButton isOwnerOrAdmin={isOwnerOrAdmin} />
                   <MobileMenuButton routes={filteredRoutes} isFreePlan={isFreePlan} />
                 </Flex>
