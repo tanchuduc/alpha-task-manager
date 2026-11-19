@@ -36,7 +36,7 @@ const TABLE_ROW_HEIGHT = 45;
 const TABLE_HEADER_HEIGHT = 29;
 const LIST_ROW_HEIGHT = 55;
 /** The full list, already narrowed to the tasks the user assigned (My Tasks > Assigned by me). */
-const MY_TASKS_ASSIGNED_BY_ME_PATH = '/worklenz/home/my-tasks?filter=assigned-by-me';
+const MY_TASKS_ASSIGNED_BY_ME_PATH = '/alpha/home/my-tasks?filter=assigned-by-me';
 
 type SortField = 'name' | 'project_name' | 'end_date';
 interface SortState {
@@ -189,7 +189,7 @@ export const HomeAssignedByMeWidget: React.FC = () => {
           <Typography.Paragraph
             ellipsis={{ rows: 1, tooltip: false }}
             onClick={() =>
-              record.project_id && navigate(`/worklenz/projects/${record.project_id}?tab=tasks-list&pinned_tab=tasks-list`)
+              record.project_id && navigate(`/alpha/projects/${record.project_id}?tab=tasks-list&pinned_tab=tasks-list`)
             }
             style={{ margin: 0, paddingInlineEnd: 6, cursor: 'pointer' }}
           >

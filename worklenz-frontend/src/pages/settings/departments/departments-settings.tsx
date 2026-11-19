@@ -176,7 +176,7 @@ const DepartmentsSettings = () => {
             <Tooltip title={t('pinTooltip', { defaultValue: 'Pin to navbar' })} trigger={'hover'}>
               <PinRouteToNavbarButton
                 name="departments"
-                path="/worklenz/settings/departments"
+                path="/alpha/settings/departments"
                 adminOnly
               />
             </Tooltip>

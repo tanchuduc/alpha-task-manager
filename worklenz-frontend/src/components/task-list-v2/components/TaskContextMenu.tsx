@@ -518,7 +518,7 @@ const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
     if (!task.id) return;
 
     try {
-      const taskLink = `${window.location.origin}/worklenz/t/${task.id}`;
+      const taskLink = `${window.location.origin}/alpha/t/${task.id}`;
       await navigator.clipboard.writeText(taskLink);
       message.success(t('contextMenu.linkCopied'));
     } catch (error) {

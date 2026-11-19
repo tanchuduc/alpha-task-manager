@@ -19,7 +19,7 @@ interface GuestRedirectProps {
  */
 const GuestRedirect = ({
   children,
-  blockPathPrefix = '/worklenz/home',
+  blockPathPrefix = '/alpha/home',
 }: GuestRedirectProps) => {
   const authService = useAuthService();
   const session = authService.getCurrentSession();
@@ -35,7 +35,7 @@ const GuestRedirect = ({
       isSessionGuest(session) || Boolean(currentProject?.project?.is_guest);
 
     if (isGuest && location.pathname.startsWith(blockPathPrefix)) {
-      return <Navigate to="/worklenz/projects" replace />;
+      return <Navigate to="/alpha/projects" replace />;
     }
 
     return <>{children}</>;

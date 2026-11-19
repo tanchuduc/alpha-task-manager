@@ -19,7 +19,7 @@ export const parseWorkspaceTab = (value: string | null | undefined): WorkspaceTa
     ? (value as WorkspaceTab)
     : DEFAULT_WORKSPACE_TAB;
 
-export const CLIENTS_PATH = '/worklenz/client-portal/clients';
+export const CLIENTS_PATH = '/alpha/client-portal/clients';
 
 /** The one URL every entry point uses to open a client, so they all land in the same workspace. */
 export const clientWorkspacePath = (clientId: string, tab?: WorkspaceTab): string =>

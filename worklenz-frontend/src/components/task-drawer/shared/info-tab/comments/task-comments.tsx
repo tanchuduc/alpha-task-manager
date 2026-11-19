@@ -427,7 +427,7 @@ const TaskComments = ({ taskId, t, isGuest = false }: { taskId?: string; t: TFun
     if (!commentId) return;
 
     try {
-      const commentLink = `${window.location.origin}/worklenz/c/${commentId}`;
+      const commentLink = `${window.location.origin}/alpha/c/${commentId}`;
 
       await navigator.clipboard.writeText(commentLink);
       message.success(

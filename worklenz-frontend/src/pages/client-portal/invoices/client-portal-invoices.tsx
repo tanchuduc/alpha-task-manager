@@ -43,7 +43,7 @@ const ClientPortalInvoices = () => {
           type="primary"
           size="small"
           icon={<PlusOutlined />}
-          onClick={() => navigate('/worklenz/client-portal/invoices/create')}
+          onClick={() => navigate('/alpha/client-portal/invoices/create')}
         >
           {t('createInvoiceButton', { defaultValue: 'Create Invoice' })}
         </Button>

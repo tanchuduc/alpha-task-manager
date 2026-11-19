@@ -220,7 +220,7 @@ export const AnalyticsSidebar: React.FC = () => {
   );
 
   const activeKey = useMemo(() => {
-    const rest = location.pathname.replace(/^\/worklenz\/reporting\/analytics\/?/, '');
+    const rest = location.pathname.replace(/^\/alpha\/reporting\/analytics\/?/, '');
     if (!rest) return 'all-reports';
     if (rest.startsWith('custom/')) return `custom-${rest.slice('custom/'.length).split('/')[0]}`;
     return rest.split('/')[0];

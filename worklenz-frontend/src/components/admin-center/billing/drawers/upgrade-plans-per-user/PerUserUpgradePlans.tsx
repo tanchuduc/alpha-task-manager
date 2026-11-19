@@ -312,7 +312,7 @@ const PerUserUpgradePlans: React.FC<PerUserUpgradePlansProps> = ({ data }) => {
       if (verified.authenticated) {
         setSession(verified.user);
         dispatch(setUser(verified.user));
-        window.location.href = '/worklenz/admin-center/billing';
+        window.location.href = '/alpha/admin-center/billing';
       }
     } catch (error) {
       message.error(t('messages.error'));

@@ -45,7 +45,7 @@ import './invoices.css';
 import { PortalLoader } from '@/components/client-portal/v2';
 import { RichTextView } from './../shared/rich-text/RichTextView';
 
-const INVOICES_PATH = '/worklenz/client-portal/invoices';
+const INVOICES_PATH = '/alpha/client-portal/invoices';
 
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
 

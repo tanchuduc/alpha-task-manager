@@ -414,7 +414,7 @@ export const InvoicesTable = ({ clientId, embedded = false }: InvoicesTableProps
       key: 'view',
       label: t('viewMenuItem', { defaultValue: 'View' }),
       icon: <EyeOutlined />,
-      onClick: () => navigate(`/worklenz/client-portal/invoices/${invoice.id}`),
+      onClick: () => navigate(`/alpha/client-portal/invoices/${invoice.id}`),
     },
     {
       key: 'download',
@@ -455,7 +455,7 @@ export const InvoicesTable = ({ clientId, embedded = false }: InvoicesTableProps
       record.clientId ? (
         // The row itself opens the invoice, so the client link must not also trigger it.
         <Link
-          to={`/worklenz/client-portal/clients/${record.clientId}`}
+          to={`/alpha/client-portal/clients/${record.clientId}`}
           style={{ textTransform: 'capitalize' }}
           onClick={event => event.stopPropagation()}
         >
@@ -819,7 +819,7 @@ export const InvoicesTable = ({ clientId, embedded = false }: InvoicesTableProps
               onChange={handleTableChange}
               scroll={embedded ? { x: 'max-content' } : { x: 'max-content', y: tableScrollY }}
               onRow={record => ({
-                onClick: () => navigate(`/worklenz/client-portal/invoices/${record.id}`),
+                onClick: () => navigate(`/alpha/client-portal/invoices/${record.id}`),
                 style: { cursor: 'pointer' },
               })}
             />

@@ -81,7 +81,7 @@ const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({ open, onClose
   // Navigate to client portal settings to edit company details
   const handleEditCompanyDetails = () => {
     onClose();
-    navigate('/worklenz/client-portal/settings');
+    navigate('/alpha/client-portal/settings');
   };
 
   // Handle download invoice

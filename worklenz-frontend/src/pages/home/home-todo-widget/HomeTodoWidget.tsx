@@ -13,7 +13,7 @@ import { HomeWidgetCard, WidgetEmpty, WidgetError, WidgetLoading } from '../home
 import { WIDGET_DATA_ATTRIBUTE } from '../home-widgets/widgetInteraction';
 
 const TODO_LIMIT = 6;
-const TODO_PAGE_PATH = '/worklenz/home/todo';
+const TODO_PAGE_PATH = '/alpha/home/todo';
 
 /** The user's personal to-dos: add one, tick one off. The full list lives on the To-do page. */
 export const HomeTodoWidget: React.FC = () => {

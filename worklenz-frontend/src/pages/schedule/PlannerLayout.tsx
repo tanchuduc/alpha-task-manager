@@ -33,7 +33,7 @@ const StatusDrawer = lazy(
   () => import('@/components/project-task-filters/create-status-drawer/create-status-drawer')
 );
 
-const PLANNER_BASE_PATH = '/worklenz/planner';
+const PLANNER_BASE_PATH = '/alpha/planner';
 const PLANNER_FEATURE_KEYS = ['planner_schedule', 'planner_timeline', 'planner_workload'];
 
 // Shell for the Planner section: left rail plus drawers rendered outside the

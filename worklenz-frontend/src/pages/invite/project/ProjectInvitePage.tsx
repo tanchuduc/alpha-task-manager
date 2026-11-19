@@ -117,20 +117,20 @@ const ProjectInvitePage: React.FC = () => {
           } catch {
             // session refresh failed, proceed anyway
           }
-          window.location.href = `/worklenz/projects/${projectId}`;
+          window.location.href = `/alpha/projects/${projectId}`;
         }, 1500);
       } else {
         message.error(response.message || t('joinFailed'));
         // Navigate to home page if join failed (using window.location to bypass auth guards)
         setTimeout(() => {
-          window.location.href = '/worklenz/home';
+          window.location.href = '/alpha/home';
         }, 1500);
       }
     } catch (error: any) {
       message.error(error?.response?.data?.message || t('joinFailed'));
       // Navigate to home page if join failed (using window.location to bypass auth guards)
       setTimeout(() => {
-        window.location.href = '/worklenz/home';
+        window.location.href = '/alpha/home';
       }, 1500);
     } finally {
       setSubmitting(false);

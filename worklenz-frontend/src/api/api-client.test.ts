@@ -20,7 +20,7 @@ const PERMISSION_ERROR_BODY = {
   body: null,
   message: "You do not have permission to modify this task. Only non-guest members of the task's team can make changes.",
 };
-const ORIGINAL_HREF = 'http://localhost/worklenz/reporting/overview';
+const ORIGINAL_HREF = 'http://localhost/alpha/reporting/overview';
 
 interface LoadedClient {
   apiClient: AxiosInstance;
@@ -66,7 +66,7 @@ describe('apiClient CSRF retry handling', () => {
     Object.defineProperty(window, 'location', {
       configurable: true,
       writable: true,
-      value: { href: ORIGINAL_HREF, pathname: '/worklenz/reporting/overview' },
+      value: { href: ORIGINAL_HREF, pathname: '/alpha/reporting/overview' },
     });
   });
 

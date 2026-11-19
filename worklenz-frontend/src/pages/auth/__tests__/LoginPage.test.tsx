@@ -289,7 +289,7 @@ describe('LoginPage', () => {
     renderWithProviders(<LoginPage />);
 
     await waitFor(() => {
-      expect(window.location.href).toBe('/worklenz/home');
+      expect(window.location.href).toBe('/alpha/home');
     });
   });
 });

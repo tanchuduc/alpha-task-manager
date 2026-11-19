@@ -42,6 +42,13 @@ async function main() {
   await client.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
   await client.query(`SET search_path TO ${targetSchema}, public, extensions;`);
 
+  try {
+    await client.query(`ALTER ROLE CURRENT_USER SET search_path TO ${targetSchema}, public, extensions;`);
+    console.log(`\x1b[32m[Setup] Set default search_path for CURRENT_USER to "${targetSchema}, public, extensions"\x1b[0m`);
+  } catch (err) {
+    console.warn(`[Setup] Note on ALTER ROLE: ${err.message}`);
+  }
+
   const sqlDir = path.join(__dirname, '..', 'database', 'sql');
   const files = [
     '0_extensions.sql',
@@ -72,6 +79,25 @@ async function main() {
     } catch (err) {
       console.warn(`\x1b[33m  ⚠ Notice on ${file}: ${err.message}\x1b[0m`);
       // Many scripts contain CREATE ... IF NOT EXISTS, so notices/duplicates are expected
+    }
+  }
+
+  // Ensure base seeds are executed in targetSchema
+  const seedFunctions = [
+    'sys_insert_task_priorities',
+    'sys_insert_project_access_levels',
+    'sys_insert_task_status_categories',
+    'sys_insert_project_statuses',
+    'sys_insert_project_healths',
+    'sys_insert_license_types',
+    'sys_insert_project_templates'
+  ];
+  for (const fn of seedFunctions) {
+    try {
+      await client.query(`SELECT ${fn}();`);
+      console.log(`\x1b[32m  ✔ Seeded via ${fn}()\x1b[0m`);
+    } catch (err) {
+      // Ignore duplicates
     }
   }
 

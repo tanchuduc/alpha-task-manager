@@ -109,7 +109,7 @@ const TaskDrawerHeader = ({ t, canCreateTask, isGuest = false }: TaskDrawerHeade
     if (!selectedTaskId) return;
 
     try {
-      const taskLink = `${window.location.origin}/worklenz/t/${selectedTaskId}`;
+      const taskLink = `${window.location.origin}/alpha/t/${selectedTaskId}`;
 
       await navigator.clipboard.writeText(taskLink);
 
@@ -461,7 +461,7 @@ const TaskDrawerHeader = ({ t, canCreateTask, isGuest = false }: TaskDrawerHeade
                     style={{
                       padding: 0,
                     }}
-                    onClick={() => navigate(`/worklenz/t/${copiedTaskId}`)}
+                    onClick={() => navigate(`/alpha/t/${copiedTaskId}`)}
                   >
                     {tDuplicate('copyToProject.openTask', { defaultValue: 'Open task' })}
                   </Button>

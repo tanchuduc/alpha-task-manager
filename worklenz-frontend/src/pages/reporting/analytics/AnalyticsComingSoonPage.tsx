@@ -12,7 +12,7 @@ const AnalyticsComingSoonPage: React.FC = () => {
   const { customReports } = useAnalyticsCustomReports();
 
   const title = useMemo(() => {
-    const rest = location.pathname.replace(/^\/worklenz\/reporting\/analytics\/?/, '');
+    const rest = location.pathname.replace(/^\/alpha\/reporting\/analytics\/?/, '');
     if (rest.startsWith('custom/')) {
       const id = rest.slice('custom/'.length).split('/')[0];
       const custom = customReports.find(r => r.id === id);

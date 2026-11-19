@@ -20,5 +20,5 @@ export const getDefaultAuthenticatedPath = (user?: {
   owner?: boolean;
   is_admin?: boolean;
 } | null): string => {
-  return isSessionGuest(user) ? '/worklenz/projects' : '/worklenz/home';
+  return isSessionGuest(user) ? '/alpha/projects' : '/alpha/home';
 };

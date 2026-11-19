@@ -44,7 +44,7 @@ const TaskShortLinkRedirect = () => {
         const commentId = searchParams.get('comment');
         const commentQuery = commentId ? `&comment=${encodeURIComponent(commentId)}` : '';
         navigate(
-          `/worklenz/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list&task=${taskId}${fromQuery}${commentQuery}`,
+          `/alpha/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list&task=${taskId}${fromQuery}${commentQuery}`,
           { replace: true }
         );
       } catch (error) {
@@ -96,7 +96,7 @@ const TaskShortLinkRedirect = () => {
         </Text>
       }
       extra={
-        <Button type="primary" onClick={() => navigate('/worklenz/projects')}>
+        <Button type="primary" onClick={() => navigate('/alpha/projects')}>
           Back to projects
         </Button>
       }

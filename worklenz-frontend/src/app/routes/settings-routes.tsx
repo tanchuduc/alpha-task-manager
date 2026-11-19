@@ -22,9 +22,9 @@ const SettingsGuard = ({
 
   if (!hasAccess) {
     if (isExpiredTrialSession(currentSession)) {
-      return <Navigate to="/worklenz/settings/profile" replace />;
+      return <Navigate to="/alpha/settings/profile" replace />;
     }
-    return <Navigate to="/worklenz/unauthorized" replace />;
+    return <Navigate to="/alpha/unauthorized" replace />;
   }
 
   return <>{children}</>;

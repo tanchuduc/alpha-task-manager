@@ -195,7 +195,7 @@ interface RoadmapDocumentProps {
 }
 
 export const RoadmapDocument = ({ model }: RoadmapDocumentProps) => (
-  <Document title={`Roadmap - ${model.projectName}`} author="Worklenz">
+  <Document title={`Roadmap - ${model.projectName}`} author="Alpha Books">
     <Page size="A4" orientation="landscape" style={styles.page}>
       <Text style={styles.title}>Roadmap</Text>
       <Text style={styles.project}><PdfTextRuns text={model.projectName} /></Text>

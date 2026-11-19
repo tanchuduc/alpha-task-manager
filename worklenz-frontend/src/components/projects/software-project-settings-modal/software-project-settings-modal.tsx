@@ -199,7 +199,7 @@ export const SoftwareProjectSettingsModal = ({ onClose }: SoftwareProjectSetting
       handleClose();
 
       if (navigateToProjectOnUpdate) {
-        navigate(`/worklenz/projects/${targetProjectId}?tab=backlog`);
+        navigate(`/alpha/projects/${targetProjectId}?tab=backlog`);
         return;
       }
       if (hasKeyChanged) window.location.reload();
@@ -230,7 +230,7 @@ export const SoftwareProjectSettingsModal = ({ onClose }: SoftwareProjectSetting
       dispatch(setProject({} as IProjectViewModel));
       dispatch(setProjectId(null));
       handleClose();
-      navigate('/worklenz/projects');
+      navigate('/alpha/projects');
       notification.success({
         message: t('softwareSettings.deleted', {
           defaultValue: '"{{name}}" has been permanently deleted.',

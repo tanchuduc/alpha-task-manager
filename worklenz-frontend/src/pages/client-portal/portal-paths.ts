@@ -2,7 +2,7 @@
  * Every Client Portal admin URL in one place, so lists, workspace tabs, notifications and the
  * "Needs attention" rows all open an item at exactly the same address.
  */
-export const PORTAL_ROOT = '/worklenz/client-portal';
+export const PORTAL_ROOT = '/alpha/client-portal';
 
 export const PROJECT_TABS = [
   'overview',

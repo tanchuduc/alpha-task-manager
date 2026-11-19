@@ -1079,7 +1079,7 @@ const TeamMembersSettings = () => {
               </Popover>
               <PinRouteToNavbarButton
                 name={t('title', { defaultValue: 'Team Members' })}
-                path="/worklenz/settings/team-members"
+                path="/alpha/settings/team-members"
                 adminOnly={false}
               />
             </Flex>

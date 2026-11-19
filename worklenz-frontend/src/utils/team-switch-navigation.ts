@@ -1,12 +1,12 @@
-const PROJECTS_LIST_PATH = '/worklenz/projects';
-const TASK_SHORT_LINK_PREFIX = '/worklenz/t/';
+const PROJECTS_LIST_PATH = '/alpha/projects';
+const TASK_SHORT_LINK_PREFIX = '/alpha/t/';
 
 /** Team-scoped deep-link params that must not survive a manual team switch. */
 const TEAM_SCOPED_SEARCH_PARAMS = ['task', 'task_project', 'comment', 'from', 'drawer_tab'] as const;
 
-/** Matches `/worklenz/projects/:projectId` where projectId is a UUID. */
+/** Matches `/alpha/projects/:projectId` where projectId is a UUID. */
 const PROJECT_DETAIL_PATH_REGEX =
-  /^\/worklenz\/projects\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/|$)/i;
+  /^\/alpha\/projects\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/|$)/i;
 
 /**
  * Returns where to navigate after a manual team switch.

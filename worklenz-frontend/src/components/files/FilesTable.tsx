@@ -105,7 +105,7 @@ export const FilesTable: React.FC<FilesTableProps> = ({
   const navigate = useNavigate();
 
   const goToProject = (projectId?: string) => {
-    if (projectId) navigate(`/worklenz/projects/${projectId}?tab=all-attachments`);
+    if (projectId) navigate(`/alpha/projects/${projectId}?tab=all-attachments`);
   };
 
   const getProjectColumn = <T extends { project_id: string; project_name: string; project_color: string }>(): TableColumnsType<T>[number] => ({

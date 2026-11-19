@@ -8,7 +8,7 @@ import './reporting-mode-paddle.css';
 /** `custom` = analytics (new), `classic` = legacy reporting (old). */
 export type ReportingMode = 'custom' | 'classic';
 
-export const CLASSIC_REPORTING_PATH = '/worklenz/reporting/overview';
+export const CLASSIC_REPORTING_PATH = '/alpha/reporting/overview';
 export const REPORTING_MODE_STORAGE_KEY = 'worklenz.reportingMode';
 
 interface ReportingModePaddleProps {

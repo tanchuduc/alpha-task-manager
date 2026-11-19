@@ -13,7 +13,7 @@ import { reportingsItems, type ReportingMenuItems } from '@/lib/reporting/report
 import { ReportingModePaddle } from '@/components/reporting/ReportingModePaddle';
 import '@/components/reporting/analytics/analytics-sidebar.css';
 
-const CLASSIC_BASE_PATH = '/worklenz/reporting';
+const CLASSIC_BASE_PATH = '/alpha/reporting';
 const COLLAPSED_STORAGE_KEY = 'worklenz.classicReportingSidebar.collapsed';
 /** Matches useResponsive desktop breakpoint — collapse by default below this. */
 const NARROW_VIEWPORT_QUERY = '(max-width: 1023px)';

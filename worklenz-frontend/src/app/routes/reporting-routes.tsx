@@ -91,7 +91,7 @@ const comingSoonPaths = flatAnalyticsNavItems()
 const reportingRoutes: RouteObject[] = [
   // New Reporting & Analytics — "View reports" (+ paid plan)
   {
-    path: 'worklenz/reporting/analytics',
+    path: 'alpha/reporting/analytics',
     element: (
       <OrganizationPermissionGuard
         permission={ORGANIZATION_PERMISSIONS.VIEW_REPORTS}
@@ -129,7 +129,7 @@ const reportingRoutes: RouteObject[] = [
   },
   // Classic reporting stays Owner/Admin (and non-free) via AdminGuard.
   {
-    path: 'worklenz/reporting',
+    path: 'alpha/reporting',
     element: <ClassicReportingLayout />,
     children: [
       { index: true, element: <NavSurfaceIndexRedirect surfaceKey="reporting" /> },
@@ -138,7 +138,7 @@ const reportingRoutes: RouteObject[] = [
         element: withSuspense(item.element),
       })),
       // Non-matching paths (except /analytics, handled by sibling route) bounce home
-      { path: '*', element: <Navigate to="/worklenz/reporting" replace /> },
+      { path: '*', element: <Navigate to="/alpha/reporting" replace /> },
     ],
   },
 ];

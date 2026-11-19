@@ -55,11 +55,11 @@ interface SettingsQuickLink {
 }
 
 const SETTINGS_QUICK_LINKS: SettingsQuickLink[] = [
-  { label: 'Profile Settings', icon: <UserOutlined />, to: '/worklenz/settings/profile' },
-  { label: 'Workspace Settings', icon: <BankOutlined />, to: '/worklenz/settings/teams' },
-  { label: 'Project Settings', icon: <ProjectOutlined />, to: '/worklenz/settings/categories' },
-  { label: 'Finance Settings', icon: <DollarOutlined />, to: '/worklenz/settings/ratecard' },
-  { label: 'General Settings', icon: <ToolOutlined />, to: '/worklenz/settings/configuration' },
+  { label: 'Profile Settings', icon: <UserOutlined />, to: '/alpha/settings/profile' },
+  { label: 'Workspace Settings', icon: <BankOutlined />, to: '/alpha/settings/teams' },
+  { label: 'Project Settings', icon: <ProjectOutlined />, to: '/alpha/settings/categories' },
+  { label: 'Finance Settings', icon: <DollarOutlined />, to: '/alpha/settings/ratecard' },
+  { label: 'General Settings', icon: <ToolOutlined />, to: '/alpha/settings/configuration' },
 ];
 
 interface HelpQuickLink {

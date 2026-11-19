@@ -40,7 +40,7 @@ const AuthenticatingPage: React.FC = () => {
     if (project) {
       localStorage.removeItem(WORKLENZ_REDIRECT_PROJ_KEY);
       // Full reload matches LoginPage and remounts project state for the post-login redirect.
-      window.location.href = `/worklenz/projects/${project}?tab=tasks-list`;
+      window.location.href = `/alpha/projects/${project}?tab=tasks-list`;
       return;
     }
 

@@ -31,7 +31,7 @@ const SettingSidebar: React.FC = () => {
   const { token } = theme.useToken();
 
   const getCurrentActiveKey = () => {
-    const pathParts = location.pathname.split('/worklenz/settings/');
+    const pathParts = location.pathname.split('/alpha/settings/');
     if (pathParts.length < 2) return '';
     const currentEndpoint = pathParts[1].split('/')[0];
     return settingsItems.find(item => item.endpoint === currentEndpoint)?.key ?? '';
@@ -187,7 +187,7 @@ const SettingSidebar: React.FC = () => {
                   return (
                     <Link
                       key={item.key}
-                      to={`/worklenz/settings/${item.endpoint}`}
+                      to={`/alpha/settings/${item.endpoint}`}
                       aria-current={isActive ? 'page' : undefined}
                       style={{
                         textDecoration: 'none',

@@ -143,7 +143,7 @@ const AccountSetup: React.FC = () => {
           setSession(response.user);
           dispatch(setUser(response.user));
           if (response?.user?.setup_completed) {
-            navigate('/worklenz/home');
+            navigate('/alpha/home');
           }
         }
       } catch (error) {
@@ -195,7 +195,7 @@ const AccountSetup: React.FC = () => {
           return;
         }
 
-        navigate(`/worklenz/projects/${res.body.id}?tab=tasks-list&pinned_tab=tasks-list`);
+        navigate(`/alpha/projects/${res.body.id}?tab=tasks-list&pinned_tab=tasks-list`);
       } else {
         alertService.error(
           res.title || t('setupFailedTitle', 'Setup failed'),
@@ -261,7 +261,7 @@ const AccountSetup: React.FC = () => {
           return;
         }
 
-        navigate(`/worklenz/projects/${res.body.id}?tab=tasks-list&pinned_tab=tasks-list`);
+        navigate(`/alpha/projects/${res.body.id}?tab=tasks-list&pinned_tab=tasks-list`);
       } else {
         alertService.error(
           res.title || t('setupFailedTitle', 'Setup failed'),

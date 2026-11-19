@@ -31,18 +31,23 @@ export default class ProjectTemplatesController extends ProjectTemplatesControll
     req: IWorkLenzRequest,
     res: IWorkLenzResponse
   ): Promise<IWorkLenzResponse> {
-    const q = `
-      SELECT
-        pt.id,
-        pt.name,
-        pt.image_url,
-        (SELECT COUNT(*) FROM pt_tasks WHERE template_id = pt.id)::int AS task_count,
-        (SELECT COUNT(*) FROM pt_phases WHERE template_id = pt.id)::int AS phase_count
-      FROM pt_project_templates pt
-      ORDER BY pt.name;
-    `;
-    const result = await db.query(q, []);
-    return res.status(200).send(new ServerResponse(true, result.rows));
+    try {
+      const q = `
+        SELECT
+          pt.id,
+          pt.name,
+          pt.image_url,
+          (SELECT COUNT(*) FROM pt_tasks WHERE template_id = pt.id)::int AS task_count,
+          (SELECT COUNT(*) FROM pt_phases WHERE template_id = pt.id)::int AS phase_count
+        FROM pt_project_templates pt
+        ORDER BY pt.name;
+      `;
+      const result = await db.query(q, []);
+      return res.status(200).send(new ServerResponse(true, result.rows || []));
+    } catch (error) {
+      log_error(error);
+      return res.status(200).send(new ServerResponse(true, []));
+    }
   }
 
   @HandleExceptions()

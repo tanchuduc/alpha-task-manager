@@ -32,7 +32,7 @@ export const GADGET_CATALOGUE_V1 = [
 
 export type AnalyticsGadgetType = (typeof GADGET_CATALOGUE_V1)[number];
 
-/** Route keys under /worklenz/reporting/analytics. */
+/** Route keys under /alpha/reporting/analytics. */
 export const ANALYTICS_ROUTE_KEYS = [
   'dashboards',
   'velocity',

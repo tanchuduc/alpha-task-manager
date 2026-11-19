@@ -55,7 +55,7 @@
       },
       "invoices": {
         "title": "Fatture",
-        "description": "Genera, invia e monitora le fatture dei clienti senza uscire da Worklenz.",
+        "description": "Genera, invia e monitora le fatture dei clienti senza uscire da Alpha Work.",
         "features": [
           "Crea fatture in base a tempi e spese monitorati",
           "Tieni traccia delle fatture pagate, in sospeso e scadute",
@@ -149,7 +149,7 @@
       },
       "invoices": {
         "title": "Fatture",
-        "description": "Crea, invia e monitora le fatture dei clienti senza uscire da Worklenz.",
+        "description": "Crea, invia e monitora le fatture dei clienti senza uscire da Alpha Work.",
         "features": [
           "Crea fatture in base a tempi e spese monitorati",
           "Tieni traccia delle fatture pagate, in sospeso e scadute",

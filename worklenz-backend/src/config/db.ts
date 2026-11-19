@@ -30,7 +30,21 @@ pool.on("error", (err: Error) => {
 
 export default {
   pool,
-  query: (text: string, params?: unknown[]) =>
-    pool.query(text, params) as Promise<QueryResult<any>>,
+  query: async (text: string, params?: unknown[]): Promise<QueryResult<any>> => {
+    try {
+      return await pool.query(text, params);
+    } catch (err: any) {
+      if (err && typeof err.message === "string" && err.message.includes("does not exist")) {
+        const client = await pool.connect();
+        try {
+          await client.query(`SET search_path TO ${targetSchema}, public, extensions;`);
+          return await client.query(text, params);
+        } finally {
+          client.release();
+        }
+      }
+      throw err;
+    }
+  },
   connect: (): Promise<PoolClient> => pool.connect(),
 };

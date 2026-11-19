@@ -38,7 +38,7 @@ import {
 import '../invoices/invoices.css';
 import { RichTextField } from '../shared/rich-text/RichTextField';
 
-const QUOTES_PATH = '/worklenz/client-portal/quotes';
+const QUOTES_PATH = '/alpha/client-portal/quotes';
 
 interface LineItemRow {
   key: string;

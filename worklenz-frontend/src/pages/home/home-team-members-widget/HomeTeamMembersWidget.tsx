@@ -20,7 +20,7 @@ import {
 import { WIDGET_DATA_ATTRIBUTE } from '../home-widgets/widgetInteraction';
 
 const MEMBER_LIMIT = 6;
-const MY_TEAM_PATH = '/worklenz/home/my-team';
+const MY_TEAM_PATH = '/alpha/home/my-team';
 
 type MembersState =
   | { status: 'loading' }

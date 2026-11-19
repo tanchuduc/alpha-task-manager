@@ -77,7 +77,7 @@ export const IntegrationsDropdown: React.FC<IntegrationsDropdownProps> = ({
   };
 
   const handleManageAll = () => {
-    navigate('/worklenz/settings/integrations');
+    navigate('/alpha/settings/integrations');
     onClose();
   };
 

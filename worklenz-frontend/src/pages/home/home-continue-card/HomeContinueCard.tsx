@@ -266,7 +266,7 @@ const HomeContinueCard: React.FC = () => {
                   title={t('continueCard.noRecentProjects', { defaultValue: 'No recent projects' })}
                   subtitle={t('continueCard.noRecentProjectsSubtitle', { defaultValue: 'Start or continue working on a project to see it here.' })}
                   action={
-                    <Button size="small" onClick={() => navigate('/worklenz/projects')}>
+                    <Button size="small" onClick={() => navigate('/alpha/projects')}>
                       {t('continueCard.browseProjects', { defaultValue: 'Browse Projects' })}
                     </Button>
                   }
@@ -468,7 +468,7 @@ const HomeContinueCard: React.FC = () => {
                   title={t('continueCard.noTimeLogged', { defaultValue: 'No time logged' })}
                   subtitle={t('continueCard.noTimeLoggedSubtitle', { defaultValue: 'Track time on tasks to see it here.' })}
                   action={
-                    <Button size="small" onClick={() => navigate('/worklenz/time-entries')}>
+                    <Button size="small" onClick={() => navigate('/alpha/time-entries')}>
                       {t('continueCard.viewTimeEntries', { defaultValue: 'View Time Entries' })}
                     </Button>
                   }

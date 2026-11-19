@@ -138,5 +138,5 @@ export const buildProjectRoute = (
   projectType?: ProjectType
 ): string => {
   const tab = getProjectDefaultTab(defaultView, projectType);
-  return `/worklenz/projects/${projectId}?tab=${tab}&pinned_tab=${tab}`;
+  return `/alpha/projects/${projectId}?tab=${tab}&pinned_tab=${tab}`;
 };

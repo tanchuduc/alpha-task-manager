@@ -43,7 +43,7 @@ const CommentShortLinkRedirect = () => {
           comment: body.comment_id || commentId,
         });
 
-        navigate(`/worklenz/projects/${body.project_id}?${nextParams.toString()}`, {
+        navigate(`/alpha/projects/${body.project_id}?${nextParams.toString()}`, {
           replace: true,
         });
       } catch (error) {
@@ -101,7 +101,7 @@ const CommentShortLinkRedirect = () => {
           </Text>
         }
         extra={
-          <Button type="primary" onClick={() => navigate('/worklenz/home')}>
+          <Button type="primary" onClick={() => navigate('/alpha/home')}>
             {t('button', { defaultValue: 'Go to Home' })}
           </Button>
         }
@@ -125,7 +125,7 @@ const CommentShortLinkRedirect = () => {
         </Text>
       }
       extra={
-        <Button type="primary" onClick={() => navigate('/worklenz/home')}>
+        <Button type="primary" onClick={() => navigate('/alpha/home')}>
           {t('button', { defaultValue: 'Go to Home' })}
         </Button>
       }

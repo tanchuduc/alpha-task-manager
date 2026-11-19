@@ -144,7 +144,7 @@ const suspended = (node: React.ReactNode) => (
 
 const clientPortalRoutes: RouteObject[] = [
   {
-    path: 'worklenz/client-portal',
+    path: 'alpha/client-portal',
     element: <ClientPortalLayout />,
     children: [
       { index: true, element: <NavSurfaceIndexRedirect surfaceKey="client-portal" /> },

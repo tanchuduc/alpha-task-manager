@@ -62,7 +62,7 @@ const FALLBACK_ROW_HEIGHT = 45;
 const FALLBACK_HEADER_HEIGHT = 29;
 /** Room kept for the loading and empty states, which have no rows to size the area by. */
 const MIN_BODY_HEIGHT = 280;
-const MY_TASKS_PATH = '/worklenz/home/my-tasks';
+const MY_TASKS_PATH = '/alpha/home/my-tasks';
 
 interface TasksListProps {
   cardTitle?: string;
@@ -308,7 +308,7 @@ const TasksList: React.FC<TasksListProps> = React.memo(({ cardTitle }) => {
         render: (_, record) => (
           <Typography.Paragraph
             ellipsis={{ rows: 1, tooltip: false }}
-            onClick={() => record.project_id && navigate(`/worklenz/projects/${record.project_id}?tab=tasks-list&pinned_tab=tasks-list`)}
+            onClick={() => record.project_id && navigate(`/alpha/projects/${record.project_id}?tab=tasks-list&pinned_tab=tasks-list`)}
             style={{ margin: 0, paddingInlineEnd: 6, cursor: 'pointer' }}
           >
             <Badge color={record.project_color || 'blue'} style={{ marginInlineEnd: 4 }} />

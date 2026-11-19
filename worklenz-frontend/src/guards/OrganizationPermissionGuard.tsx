@@ -25,7 +25,7 @@ export const OrganizationPermissionGuard = memo(
     if (isLoading) return <SuspenseFallback />;
 
     if (!hasPermission || (blockFreePlan && isFreePlan)) {
-      return <Navigate to="/worklenz/unauthorized" replace />;
+      return <Navigate to="/alpha/unauthorized" replace />;
     }
 
     return <>{children}</>;

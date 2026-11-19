@@ -510,7 +510,7 @@ export const TitleColumn: React.FC<TitleColumnProps> = memo(
                       style={{
                         padding: 0,
                       }}
-                      onClick={() => navigate(`/worklenz/t/${copiedTaskId}`)}
+                      onClick={() => navigate(`/alpha/t/${copiedTaskId}`)}
                     >
                       {tDuplicate('copyToProject.openTask', { defaultValue: 'Open task' })}
                     </Button>

@@ -57,7 +57,7 @@ const changeRequest = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const renderModal = (url = '/worklenz/client-portal/invoices/create') =>
+const renderModal = (url = '/alpha/client-portal/invoices/create') =>
   render(
     <MemoryRouter initialEntries={[url]}>
       <CreateInvoiceModal />
@@ -93,7 +93,7 @@ describe('CreateInvoiceModal', () => {
   });
 
   it('prefills the project and a quantity-1, rate-0 first line from the change request in the URL', async () => {
-    renderModal('/worklenz/client-portal/invoices/create?changeRequestId=cr-1');
+    renderModal('/alpha/client-portal/invoices/create?changeRequestId=cr-1');
 
     await waitFor(() => expect(descriptionInputs()[0].value).toBe('Add a live chat widget'));
     // Project and first line both carry the title; the estimate is never copied into the rate.
@@ -114,7 +114,7 @@ describe('CreateInvoiceModal', () => {
 
   it('warns when the linked change request already has invoices', () => {
     mocks.changeRequests = [changeRequest({ existing_invoice_count: 2 })];
-    renderModal('/worklenz/client-portal/invoices/create?changeRequestId=cr-1');
+    renderModal('/alpha/client-portal/invoices/create?changeRequestId=cr-1');
 
     expect(screen.getByText(/CR-0048 already has 2 invoice\(s\)/)).toBeInTheDocument();
   });
@@ -129,7 +129,7 @@ describe('CreateInvoiceModal', () => {
   });
 
   it('blocks saving when no line item has a description and an amount', async () => {
-    renderModal('/worklenz/client-portal/invoices/create?clientId=client-1');
+    renderModal('/alpha/client-portal/invoices/create?clientId=client-1');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
 
@@ -140,7 +140,7 @@ describe('CreateInvoiceModal', () => {
   });
 
   it('creates a standalone draft for the URL client with server-bound totals', async () => {
-    renderModal('/worklenz/client-portal/invoices/create?clientId=client-1');
+    renderModal('/alpha/client-portal/invoices/create?clientId=client-1');
 
     fireEvent.change(descriptionInputs()[0], { target: { value: 'Retainer' } });
     fireEvent.change(screen.getByLabelText('Rate'), { target: { value: '1000' } });
@@ -163,7 +163,7 @@ describe('CreateInvoiceModal', () => {
   });
 
   it('creates the invoice from a change request without sending a client', async () => {
-    renderModal('/worklenz/client-portal/invoices/create?changeRequestId=cr-1');
+    renderModal('/alpha/client-portal/invoices/create?changeRequestId=cr-1');
 
     await waitFor(() => expect(descriptionInputs()[0].value).toBe('Add a live chat widget'));
     fireEvent.change(screen.getByLabelText('Rate'), { target: { value: '800' } });
@@ -180,7 +180,7 @@ describe('CreateInvoiceModal', () => {
   });
 
   it('updates the live summary as line items and discount change', () => {
-    renderModal('/worklenz/client-portal/invoices/create?clientId=client-1');
+    renderModal('/alpha/client-portal/invoices/create?clientId=client-1');
 
     fireEvent.change(descriptionInputs()[0], { target: { value: 'Retainer' } });
     fireEvent.change(screen.getByLabelText('Rate'), { target: { value: '1000' } });
@@ -193,7 +193,7 @@ describe('CreateInvoiceModal', () => {
   });
 
   it('previews the unsaved form', async () => {
-    renderModal('/worklenz/client-portal/invoices/create?clientId=client-1');
+    renderModal('/alpha/client-portal/invoices/create?clientId=client-1');
 
     fireEvent.change(descriptionInputs()[0], { target: { value: 'Retainer' } });
     fireEvent.change(screen.getByLabelText('Rate'), { target: { value: '500' } });

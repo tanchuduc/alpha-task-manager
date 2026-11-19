@@ -11,7 +11,7 @@ const AdminCenterGuard = ({ children }: { children: React.ReactNode }) => {
   const isOwnerOrAdmin = useAuthService().isOwnerOrAdmin();
 
   if (!isOwnerOrAdmin) {
-    return <Navigate to="/worklenz/unauthorized" replace />;
+    return <Navigate to="/alpha/unauthorized" replace />;
   }
 
   return <>{children}</>;
@@ -25,7 +25,7 @@ const OwnerOrAdminRouteGuard = ({ children }: { children: React.ReactNode }) => 
   const { canViewAuditLog } = useAuditLogPermissions();
 
   if (!canViewAuditLog) {
-    return <Navigate to="/worklenz/unauthorized" replace />;
+    return <Navigate to="/alpha/unauthorized" replace />;
   }
 
   return <>{children}</>;

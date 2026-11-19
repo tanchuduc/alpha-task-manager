@@ -13,7 +13,7 @@ import {
   SafetyCertificateOutlined,
 } from '@/shared/antd-imports';
 
-export const ANALYTICS_BASE_PATH = '/worklenz/reporting/analytics';
+export const ANALYTICS_BASE_PATH = '/alpha/reporting/analytics';
 
 export interface AnalyticsNavItem {
   key: string;

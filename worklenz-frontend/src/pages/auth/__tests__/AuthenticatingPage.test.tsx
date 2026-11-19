@@ -158,7 +158,7 @@ describe('AuthenticatingPage', () => {
 
     expect(setSession).toHaveBeenCalledWith(mockUser);
     expect(setUser).toHaveBeenCalledWith(mockUser);
-    expect(mockNavigate).toHaveBeenCalledWith('/worklenz/setup');
+    expect(mockNavigate).toHaveBeenCalledWith('/alpha/setup');
   });
 
   it('redirects to home after successful authentication', async () => {
@@ -182,7 +182,7 @@ describe('AuthenticatingPage', () => {
 
     expect(setSession).toHaveBeenCalledWith(mockUser);
     expect(setUser).toHaveBeenCalledWith(mockUser);
-    expect(mockNavigate).toHaveBeenCalledWith('/worklenz/home');
+    expect(mockNavigate).toHaveBeenCalledWith('/alpha/home');
   });
 
   it('redirects guest users to projects after successful authentication', async () => {
@@ -206,7 +206,7 @@ describe('AuthenticatingPage', () => {
 
     expect(setSession).toHaveBeenCalledWith(mockUser);
     expect(setUser).toHaveBeenCalledWith(mockUser);
-    expect(mockNavigate).toHaveBeenCalledWith('/worklenz/projects');
+    expect(mockNavigate).toHaveBeenCalledWith('/alpha/projects');
   });
 
   it('redirects to project when redirect key is present in localStorage', async () => {
@@ -240,8 +240,8 @@ describe('AuthenticatingPage', () => {
 
     expect(setSession).toHaveBeenCalledWith(mockUser);
     expect(setUser).toHaveBeenCalledWith(mockUser);
-    expect(window.location.href).toBe(`/worklenz/projects/${projectId}?tab=tasks-list`);
-    expect(mockNavigate).not.toHaveBeenCalledWith(`/worklenz/projects/${projectId}?tab=tasks-list`);
+    expect(window.location.href).toBe(`/alpha/projects/${projectId}?tab=tasks-list`);
+    expect(mockNavigate).not.toHaveBeenCalledWith(`/alpha/projects/${projectId}?tab=tasks-list`);
     expect(storage.has(WORKLENZ_REDIRECT_PROJ_KEY)).toBe(false);
   });
 

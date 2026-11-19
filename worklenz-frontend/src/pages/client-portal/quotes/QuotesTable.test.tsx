@@ -71,7 +71,7 @@ const LocationProbe = () => {
 
 const renderTable = () =>
   render(
-    <MemoryRouter initialEntries={['/worklenz/client-portal/quotes']}>
+    <MemoryRouter initialEntries={['/alpha/client-portal/quotes']}>
       <QuotesTable />
       <LocationProbe />
     </MemoryRouter>
@@ -140,7 +140,7 @@ describe('QuotesTable', () => {
     await waitFor(() =>
       expect(mocks.updateQuoteStatus).toHaveBeenCalledWith({ id: 'quo-1', status: 'accepted' })
     );
-    expect(screen.getByTestId('location')).toHaveTextContent('/worklenz/client-portal/quotes');
+    expect(screen.getByTestId('location')).toHaveTextContent('/alpha/client-portal/quotes');
   });
 
   it('opens a quote when its row is clicked', () => {
@@ -149,7 +149,7 @@ describe('QuotesTable', () => {
 
     fireEvent.click(screen.getByText('QUO-001'));
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/worklenz/client-portal/quotes/quo-1');
+    expect(screen.getByTestId('location')).toHaveTextContent('/alpha/client-portal/quotes/quo-1');
   });
 
   it('deletes a quote of any status after confirming', async () => {
@@ -220,7 +220,7 @@ describe('QuotesTable', () => {
 
     expect(screen.getByText('No Quotes Found')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Create Quote' }));
-    expect(screen.getByTestId('location')).toHaveTextContent('/worklenz/client-portal/quotes/create');
+    expect(screen.getByTestId('location')).toHaveTextContent('/alpha/client-portal/quotes/create');
   });
 
   it('shows an error state with a retry', () => {

@@ -41,7 +41,7 @@ export const useProjectDeletion = (
         dispatch(setProjectData({} as IProjectViewModel));
         dispatch(setProjectId(null));
         dispatch(closeProjectSettingsModal());
-        navigate('/worklenz/projects');
+        navigate('/alpha/projects');
         refetchProjects();
 
         notification.success({

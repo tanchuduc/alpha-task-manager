@@ -44,7 +44,7 @@ import './invoices.css';
 import { PortalLoader } from '@/components/client-portal/v2';
 import { RichTextField } from '../shared/rich-text/RichTextField';
 
-const INVOICES_PATH = '/worklenz/client-portal/invoices';
+const INVOICES_PATH = '/alpha/client-portal/invoices';
 
 interface LineItemRow {
   key: string;

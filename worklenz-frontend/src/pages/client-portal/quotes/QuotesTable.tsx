@@ -54,7 +54,7 @@ import { decodeHtmlEntities } from '@/utils/html-entities';
 const { Text } = Typography;
 
 const SEARCH_DEBOUNCE_MS = 300;
-const QUOTES_PATH = '/worklenz/client-portal/quotes';
+const QUOTES_PATH = '/alpha/client-portal/quotes';
 
 // Column `dataIndex` -> the backend's sortable column names.
 const SORT_FIELDS: Record<string, string> = {
@@ -330,7 +330,7 @@ export const QuotesTable = () => {
         record.clientId ? (
           // The row itself opens the quote, so the client link must not also trigger it.
           <Link
-            to={`/worklenz/client-portal/clients/${record.clientId}`}
+            to={`/alpha/client-portal/clients/${record.clientId}`}
             style={{ textTransform: 'capitalize' }}
             onClick={event => event.stopPropagation()}
           >

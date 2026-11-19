@@ -26,9 +26,9 @@ vi.mock('@/socket/socketContext', () => ({
 
 const renderProtectedRoute = () =>
   render(
-    <MemoryRouter initialEntries={['/worklenz']}>
+    <MemoryRouter initialEntries={['/alpha']}>
       <Routes>
-        <Route path="/worklenz" element={<AuthenticatedLayout />}>
+        <Route path='/alpha' element={<AuthenticatedLayout />}>
           <Route index element={<div>Protected content</div>} />
         </Route>
         <Route path="/auth/login" element={<div>Login page</div>} />

@@ -240,7 +240,7 @@
   "inviteLinkGeneratedCopyFailed": "已生成邀请链接，但无法自动复制。请手动复制。",
   "noManagedProjectsFound": "没有您担任项目经理的项目",
   "projectInvite_guestLimitExceeded": "超出了该计划的宾客限制。请升级以添加更多客人。",
-  "license-expired-subtitle": "您的 Worklenz 试用期已结束。请升级以继续享受所有功能。",
+  "license-expired-subtitle": "您的 Alpha Work 试用期已结束。请升级以继续享受所有功能。",
   "Failed to fetch job titles": "获取职位失败",
   "assign_team_lead": "分配团队负责人",
   "assign_department": "分配部门",

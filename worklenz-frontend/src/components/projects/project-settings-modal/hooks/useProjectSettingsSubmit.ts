@@ -184,7 +184,7 @@ export const useProjectSettingsSubmit = ({
           trackMixpanelEvent(evt_projects_create);
           dispatch(closeProjectSettingsModal());
           navigate(
-            `/worklenz/projects/${response.data.body.id}?tab=tasks-list&pinned_tab=tasks-list`
+            `/alpha/projects/${response.data.body.id}?tab=tasks-list&pinned_tab=tasks-list`
           );
           setTimeout(() => {
             window.location.reload();
@@ -196,7 +196,7 @@ export const useProjectSettingsSubmit = ({
         refetchProjects();
 
         if (navigateToProjectOnUpdate && projectId) {
-          navigate(`/worklenz/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list`);
+          navigate(`/alpha/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list`);
           setTimeout(() => {
             window.location.reload();
           }, 100);

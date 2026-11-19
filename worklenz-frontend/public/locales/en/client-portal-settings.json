@@ -110,9 +110,9 @@
   "brandColorLabel": "Brand Color",
   "recommendedColorsLabel": "Recommended",
   "portalThemeLabel": "Theme",
-  "poweredByLabel": "Show \"Powered by Worklenz\"",
-  "poweredByDescription": "Display a \"Powered by Worklenz\" note at the bottom right of the client portal.",
-  "poweredByPreview": "Powered by Worklenz",
+  "poweredByLabel": "Show \"Powered by Alpha Work\"",
+  "poweredByDescription": "Display a \"Powered by Alpha Work\" note at the bottom right of the client portal.",
+  "poweredByPreview": "Powered by Alpha Work",
   "lightPortalButton": "Light portal",
   "darkPortalButton": "Dark portal",
   "defaultPortalTitlePreview": "Client Portal",
@@ -122,7 +122,7 @@
   "previewViewTasksButton": "View my tasks",
 
   "brandingTitle": "Branding",
-  "brandingBusinessOnly": "Portal logo, colors and removing the Worklenz footer are available on the Business plan.",
+  "brandingBusinessOnly": "Portal logo, colors and removing the Alpha Work footer are available on the Business plan.",
 
   "invoiceTemplateTitle": "Invoice Template",
   "invoiceTemplateDescription": "Choose how invoices look when downloaded or previewed by your team and clients.",

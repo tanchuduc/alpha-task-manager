@@ -135,18 +135,18 @@ const GlobalSearchButton: React.FC = () => {
     closeAndReset();
     switch (result.type) {
       case 'Project':
-        navigate(`/worklenz/projects/${result.id}?tab=tasks-list&pinned_tab=tasks-list`);
+        navigate(`/alpha/projects/${result.id}?tab=tasks-list&pinned_tab=tasks-list`);
         break;
       case 'Client':
-        navigate('/worklenz/settings/clients');
+        navigate('/alpha/settings/clients');
         break;
       case 'Member':
-        navigate('/worklenz/settings/team-members');
+        navigate('/alpha/settings/team-members');
         break;
       case 'Task':
         if (result.projectId) {
           navigate(
-            `/worklenz/projects/${result.projectId}?tab=tasks-list&pinned_tab=tasks-list&task=${result.id}&task_project=${result.projectId}`
+            `/alpha/projects/${result.projectId}?tab=tasks-list&pinned_tab=tasks-list&task=${result.id}&task_project=${result.projectId}`
           );
         }
         break;

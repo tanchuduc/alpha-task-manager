@@ -68,7 +68,7 @@ export const FinanceInvoicesPage = () => {
             type="link"
             style={{ padding: 0, height: 'auto' }}
             aria-label={t('invoices.openInvoice', { defaultValue: 'Open invoice' })}
-            onClick={() => navigate(`/worklenz/client-portal/invoices/${record.id}`)}
+            onClick={() => navigate(`/alpha/client-portal/invoices/${record.id}`)}
           >
             {value}
           </Button>

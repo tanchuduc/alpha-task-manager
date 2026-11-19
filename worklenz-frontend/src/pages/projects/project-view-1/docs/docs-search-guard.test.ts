@@ -4,7 +4,7 @@ import { canWriteDocsSearch, useDocsSearchReplace } from './docs-search-guard';
 
 const life = {
   disposed: false,
-  pathname: '/worklenz/projects/docs',
+  pathname: '/alpha/projects/docs',
   requiresDocsTab: false,
 };
 
@@ -14,26 +14,26 @@ afterEach(() => {
 
 describe('canWriteDocsSearch', () => {
   it('allows a replace while the docs page is still current', () => {
-    window.history.pushState({}, '', '/worklenz/projects/docs?doc=page');
-    expect(canWriteDocsSearch({ ...life, pathname: '/worklenz/projects/docs' })).toBe(true);
+    window.history.pushState({}, '', '/alpha/projects/docs?doc=page');
+    expect(canWriteDocsSearch({ ...life, pathname: '/alpha/projects/docs' })).toBe(true);
   });
 
   it('ignores a replace after unmount', () => {
-    window.history.pushState({}, '', '/worklenz/projects/docs');
-    expect(canWriteDocsSearch({ ...life, pathname: '/worklenz/projects/docs', disposed: true })).toBe(false);
+    window.history.pushState({}, '', '/alpha/projects/docs');
+    expect(canWriteDocsSearch({ ...life, pathname: '/alpha/projects/docs', disposed: true })).toBe(false);
   });
 
   it('ignores a replace after the pathname leaves the page', () => {
-    window.history.pushState({}, '', '/worklenz/projects/all-projects');
-    expect(canWriteDocsSearch({ ...life, pathname: '/worklenz/projects/docs' })).toBe(false);
+    window.history.pushState({}, '', '/alpha/projects/all-projects');
+    expect(canWriteDocsSearch({ ...life, pathname: '/alpha/projects/docs' })).toBe(false);
   });
 
   it('ignores a replace after the project docs tab changes', () => {
-    window.history.pushState({}, '', '/worklenz/projects/project?tab=tasks-list');
+    window.history.pushState({}, '', '/alpha/projects/project?tab=tasks-list');
     expect(
       canWriteDocsSearch({
         disposed: false,
-        pathname: '/worklenz/projects/project',
+        pathname: '/alpha/projects/project',
         requiresDocsTab: true,
       })
     ).toBe(false);
@@ -42,7 +42,7 @@ describe('canWriteDocsSearch', () => {
 
 describe('useDocsSearchReplace', () => {
   it('keeps the replace callback stable when setSearchParams changes', () => {
-    window.history.pushState({}, '', '/worklenz/projects/docs');
+    window.history.pushState({}, '', '/alpha/projects/docs');
     const first = vi.fn();
     const second = vi.fn();
     const { result, rerender } = renderHook(

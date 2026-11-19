@@ -246,7 +246,7 @@ const TimerButton = () => {
       }
 
       navigate(
-        `/worklenz/projects/${log.project_id}?tab=tasks-list&pinned_tab=tasks-list&task=${log.task_id}&drawer_tab=timeLog`,
+        `/alpha/projects/${log.project_id}?tab=tasks-list&pinned_tab=tasks-list&task=${log.task_id}&drawer_tab=timeLog`,
         { replace: true }
       );
     },

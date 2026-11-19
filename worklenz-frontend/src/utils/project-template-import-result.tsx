@@ -202,7 +202,7 @@ export const presentCustomTemplateImportResult = ({
   if (!skipNavigation && projectId) {
     navigate(
       navigatePath ||
-        `/worklenz/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list`
+        `/alpha/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list`
     );
   }
 };

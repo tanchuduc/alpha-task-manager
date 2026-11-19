@@ -347,7 +347,7 @@ const ProjectViewHeader = memo(() => {
 
   const handleNavigateToProjects = useCallback(() => {
     releaseDocsEditors();
-    navigate('/worklenz/projects');
+    navigate('/alpha/projects');
   }, [navigate]);
 
   const handleSaveAsTemplate = useCallback(() => {

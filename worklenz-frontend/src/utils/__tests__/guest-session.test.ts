@@ -12,8 +12,8 @@ describe('guest-session utils', () => {
   });
 
   it('routes guests to projects and members to home', () => {
-    expect(getDefaultAuthenticatedPath({ is_guest: true })).toBe('/worklenz/projects');
-    expect(getDefaultAuthenticatedPath({ is_guest: false })).toBe('/worklenz/home');
-    expect(getDefaultAuthenticatedPath(null)).toBe('/worklenz/home');
+    expect(getDefaultAuthenticatedPath({ is_guest: true })).toBe('/alpha/projects');
+    expect(getDefaultAuthenticatedPath({ is_guest: false })).toBe('/alpha/home');
+    expect(getDefaultAuthenticatedPath(null)).toBe('/alpha/home');
   });
 });

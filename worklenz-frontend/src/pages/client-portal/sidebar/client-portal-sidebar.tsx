@@ -36,7 +36,7 @@ const ClientPortalSidebar = () => {
   const { resolved, pin, unpin, isPinned, reorder, toggleCollapsed } = useNavPreferences('client-portal');
 
   const activeKey = useMemo(() => {
-    const afterWorklenzString = location.pathname?.split('/worklenz/client-portal/')[1];
+    const afterWorklenzString = location.pathname?.split('/alpha/client-portal/')[1];
     return afterWorklenzString?.split('/')[0] || '';
   }, [location.pathname]);
 
@@ -58,7 +58,7 @@ const ClientPortalSidebar = () => {
         source: 'sidebar',
       };
       trackMixpanelEvent(MixpanelEvents.CLIENT_PORTAL_NAVIGATION, navigationProps);
-      navigate(`/worklenz/client-portal/${itemKey}`);
+      navigate(`/alpha/client-portal/${itemKey}`);
       setMobileMenuOpen(false);
     },
     [activeKey, trackMixpanelEvent, navigate]

@@ -70,7 +70,7 @@ export const LkrReceiptDocument = ({ data }: { data: ReceiptData }) => {
   rows.push({ key: "Status", value: "Paid", valueStyle: { color: "#389e0d" } });
 
   return (
-    <Document title={`Payment Receipt - ${data.receiptNumber}`} author="Worklenz">
+    <Document title={`Payment Receipt - ${data.receiptNumber}`} author="Alpha Books">
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
           <View style={styles.brand}>
@@ -119,10 +119,10 @@ export const LkrReceiptDocument = ({ data }: { data: ReceiptData }) => {
 
         <View style={styles.footer}>
           <Text>
-            <Text style={styles.footerStrong}>Worklenz</Text> — This is an automatically generated receipt.
+            <Text style={styles.footerStrong}>Alpha Work</Text> — This is an automatically generated receipt.
           </Text>
           <Text>
-            For support, contact <Text style={styles.footerStrong}>support@worklenz.com</Text>
+            For support, contact <Text style={styles.footerStrong}>support@alphabooks.vn</Text>
           </Text>
         </View>
       </Page>

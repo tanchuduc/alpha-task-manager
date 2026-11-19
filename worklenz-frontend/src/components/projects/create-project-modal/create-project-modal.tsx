@@ -427,7 +427,7 @@ export const CreateProjectModal = ({
       const setupQuery = showSetupBanner ? '&new_project=1' : '';
       const defaultTab = createdProjectType === 'software' ? 'backlog' : 'tasks-list';
       navigate(
-        `/worklenz/projects/${newProjectId}?tab=${defaultTab}&pinned_tab=${defaultTab}${setupQuery}`
+        `/alpha/projects/${newProjectId}?tab=${defaultTab}&pinned_tab=${defaultTab}${setupQuery}`
       );
       if (reloadOnNavigate) {
         setTimeout(() => {
@@ -665,7 +665,7 @@ export const CreateProjectModal = ({
       // routing there first guarantees `open_settings=1` has somewhere to
       // open into instead of silently no-oping and leaving Redux state
       // pointed at a modal nothing is rendering.
-      navigate(`/worklenz/projects/${projectId}?open_settings=1`);
+      navigate(`/alpha/projects/${projectId}?open_settings=1`);
     } catch (err) {
       logger.error('Error creating project for customization', err);
       setError(
@@ -716,7 +716,7 @@ export const CreateProjectModal = ({
 
         if (configureFinishMode === 'customize') {
           onClose();
-          navigate(`/worklenz/projects/${projectId}?open_settings=1`);
+          navigate(`/alpha/projects/${projectId}?open_settings=1`);
           return null;
         }
 
@@ -772,7 +772,7 @@ export const CreateProjectModal = ({
         return;
       }
       navigate(
-        `/worklenz/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list&new_project=1`
+        `/alpha/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list&new_project=1`
       );
       if (!selectedTemplateId) {
         setTimeout(() => {

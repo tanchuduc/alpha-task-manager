@@ -184,7 +184,7 @@ const ProgressTrackingPage = () => {
 
   const handleOpenInsights = useCallback((projectId: string) => {
     navigate(
-      `/worklenz/projects/${projectId}?tab=project-insights-member-overview&pinned_tab=project-insights-member-overview`
+      `/alpha/projects/${projectId}?tab=project-insights-member-overview&pinned_tab=project-insights-member-overview`
     );
   }, [navigate]);
 

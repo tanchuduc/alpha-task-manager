@@ -34,7 +34,7 @@ import '../invoices/invoices.css';
 import { PortalLoader } from '@/components/client-portal/v2';
 import { RichTextView } from '../shared/rich-text/RichTextView';
 
-const QUOTES_PATH = '/worklenz/client-portal/quotes';
+const QUOTES_PATH = '/alpha/client-portal/quotes';
 
 /** One quote's full record, opened as a modal over the list at quotes/:quoteId. */
 const QuoteDetailModal = () => {

@@ -60,7 +60,7 @@ const changeRequest = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const renderModal = (url = '/worklenz/client-portal/quotes/create') =>
+const renderModal = (url = '/alpha/client-portal/quotes/create') =>
   render(
     <MemoryRouter initialEntries={[url]}>
       <CreateQuoteModal />
@@ -94,7 +94,7 @@ describe('CreateQuoteModal', () => {
   });
 
   it('prefills the project and a quantity-1, rate-0 first line from the change request in the URL', async () => {
-    renderModal('/worklenz/client-portal/quotes/create?changeRequestId=cr-1');
+    renderModal('/alpha/client-portal/quotes/create?changeRequestId=cr-1');
 
     await waitFor(() => expect(descriptionInputs()[0].value).toBe('Add a live chat widget'));
     // Project and first line both carry the title; the estimate is never copied into the rate.
@@ -123,7 +123,7 @@ describe('CreateQuoteModal', () => {
   });
 
   it('blocks saving when no line item has a description and an amount', async () => {
-    renderModal('/worklenz/client-portal/quotes/create?clientId=client-1');
+    renderModal('/alpha/client-portal/quotes/create?clientId=client-1');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
 
@@ -134,7 +134,7 @@ describe('CreateQuoteModal', () => {
   });
 
   it('creates a standalone draft for the URL client', async () => {
-    renderModal('/worklenz/client-portal/quotes/create?clientId=client-1');
+    renderModal('/alpha/client-portal/quotes/create?clientId=client-1');
 
     fireEvent.change(descriptionInputs()[0], { target: { value: 'Retainer' } });
     fireEvent.change(screen.getByLabelText('Rate'), { target: { value: '1000' } });
@@ -157,7 +157,7 @@ describe('CreateQuoteModal', () => {
   });
 
   it('creates the quote from a change request without sending a client', async () => {
-    renderModal('/worklenz/client-portal/quotes/create?changeRequestId=cr-1');
+    renderModal('/alpha/client-portal/quotes/create?changeRequestId=cr-1');
 
     await waitFor(() => expect(descriptionInputs()[0].value).toBe('Add a live chat widget'));
     fireEvent.change(screen.getByLabelText('Rate'), { target: { value: '800' } });
@@ -174,7 +174,7 @@ describe('CreateQuoteModal', () => {
   });
 
   it('creates the quote as sent for Create & Download', async () => {
-    renderModal('/worklenz/client-portal/quotes/create?clientId=client-1');
+    renderModal('/alpha/client-portal/quotes/create?clientId=client-1');
     fireEvent.change(descriptionInputs()[0], { target: { value: 'Retainer' } });
     fireEvent.change(screen.getByLabelText('Rate'), { target: { value: '100' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create & Download' }));
@@ -192,7 +192,7 @@ describe('CreateQuoteModal', () => {
   });
 
   it('updates the live summary as line items and discount change', () => {
-    renderModal('/worklenz/client-portal/quotes/create?clientId=client-1');
+    renderModal('/alpha/client-portal/quotes/create?clientId=client-1');
 
     fireEvent.change(descriptionInputs()[0], { target: { value: 'Retainer' } });
     fireEvent.change(screen.getByLabelText('Rate'), { target: { value: '1000' } });
@@ -205,7 +205,7 @@ describe('CreateQuoteModal', () => {
   });
 
   it('previews the unsaved form without offering a saved quote', async () => {
-    renderModal('/worklenz/client-portal/quotes/create?clientId=client-1');
+    renderModal('/alpha/client-portal/quotes/create?clientId=client-1');
 
     fireEvent.change(descriptionInputs()[0], { target: { value: 'Retainer' } });
     fireEvent.change(screen.getByLabelText('Rate'), { target: { value: '500' } });

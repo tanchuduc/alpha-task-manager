@@ -122,7 +122,7 @@ export const PLANNER_NAV_SURFACE: NavSurface = {
 
 // ─── Reporting (classic / Owner-Admin) ──────────────────────────────────────
 // Reporting & Analytics uses a separate prototype-style sidebar under
-// /worklenz/reporting/analytics — do not add those items here.
+// /alpha/reporting/analytics — do not add those items here.
 export const REPORTING_NAV_SURFACE: NavSurface = {
   key: 'reporting',
   defaultItemKey: 'overview',
@@ -369,7 +369,7 @@ export const PROJECTS_NAV_SURFACE: NavSurface = {
   ],
 };
 
-// Route segments nested under /worklenz/projects/ that the rail itself
+// Route segments nested under /alpha/projects/ that the rail itself
 // covers — derived from the surface definition above so MainLayout/AppShellLayout's
 // width/background matching for these pages can't silently drift out of sync with
 // the rail's actual routes the way a hardcoded path list already has once.

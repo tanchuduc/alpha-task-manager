@@ -42,7 +42,7 @@ const ClientPortalQuotes = () => {
           type="primary"
           size="small"
           icon={<PlusOutlined />}
-          onClick={() => navigate('/worklenz/client-portal/quotes/create')}
+          onClick={() => navigate('/alpha/client-portal/quotes/create')}
         >
           {t('createQuoteButton', { defaultValue: 'Create Quote' })}
         </Button>

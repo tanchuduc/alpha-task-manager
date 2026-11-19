@@ -22,56 +22,56 @@ export const isRouteGatedForFreePlan = (_route: NavRoutesType, _isFreePlan: bool
 export const navRoutes: NavRoutesType[] = [
   {
     name: 'home',
-    path: '/worklenz/home',
+    path: '/alpha/home',
     adminOnly: false,
     freePlanFeature: true,
     guestExcluded: true, // Hide Home for guest-only users
   },
   {
     name: 'projects',
-    path: '/worklenz/projects',
+    path: '/alpha/projects',
     adminOnly: false,
     freePlanFeature: true,
   },
   {
     name: 'planner',
-    path: '/worklenz/planner',
+    path: '/alpha/planner',
     adminOnly: true,
     freePlanFeature: false,
   },
   // Client portal is disabled for Alpha Work internal edition
   // {
   //   name: 'client-portal',
-  //   path: '/worklenz/client-portal',
+  //   path: '/alpha/client-portal',
   //   adminOnly: true,
   //   freePlanFeature: false,
   //   selfHostedExcluded: true,
   // },
   {
     name: 'finance',
-    path: '/worklenz/finance',
+    path: '/alpha/finance',
     adminOnly: true,
     freePlanFeature: false,
   },
   {
     name: 'reporting',
     // Reporting & Analytics — unlocked by "View reports" in the default permission scheme.
-    // Classic reports remain at /worklenz/reporting/overview etc. under the same guard.
-    path: '/worklenz/reporting/analytics',
+    // Classic reports remain at /alpha/reporting/overview etc. under the same guard.
+    path: '/alpha/reporting/analytics',
     adminOnly: false,
     requiredPermission: ORGANIZATION_PERMISSIONS.VIEW_REPORTS,
     freePlanFeature: false,
   },
   {
     name: 'my-team-reports',
-    path: '/worklenz/team-lead-reports',
+    path: '/alpha/team-lead-reports',
     adminOnly: false,
     freePlanFeature: true,
     teamLeadOnly: true,
   },
   ...getAddonSlotItems('navigationItems').map(item => ({
     name: item.key,
-    path: item.path || `/worklenz/${item.key}`,
+    path: item.path || `/alpha/${item.key}`,
     adminOnly: item.adminOnly ?? true,
     freePlanFeature: item.freePlanFeature ?? false,
     guestExcluded: item.guestExcluded ?? true,

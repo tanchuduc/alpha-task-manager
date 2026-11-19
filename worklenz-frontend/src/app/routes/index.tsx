@@ -54,7 +54,7 @@ export const AdminGuard = memo(({ children }: GuardProps) => {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/worklenz/unauthorized" />;
+    return <Navigate to="/alpha/unauthorized" />;
   }
 
   return <>{children}</>;
@@ -64,12 +64,12 @@ AdminGuard.displayName = 'AdminGuard';
 
 export const LicenseExpiryGuard = memo(({ children }: GuardProps) => {
   const { location } = useAuthStatus();
-  const isLicenseExpiredPage = location.pathname.includes('/worklenz/license-expired');
+  const isLicenseExpiredPage = location.pathname.includes('/alpha/license-expired');
 
   // In Alpha Work internal edition, license never expires.
   // Redirect away if someone lands on the legacy license-expired page.
   if (isLicenseExpiredPage) {
-    return <Navigate to="/worklenz/home" replace />;
+    return <Navigate to="/alpha/home" replace />;
   }
 
   return <>{children}</>;
@@ -85,7 +85,7 @@ export const SetupGuard = memo(({ children }: GuardProps) => {
   }
 
   if (!isSetupComplete) {
-    return <Navigate to="/worklenz/setup" />;
+    return <Navigate to="/alpha/setup" />;
   }
 
   return <>{children}</>;
@@ -102,7 +102,7 @@ export const AuthAndSetupGuard = memo(({ children }: GuardProps) => {
   }
 
   if (!isSetupComplete) {
-    return <Navigate to="/worklenz/setup" />;
+    return <Navigate to="/alpha/setup" />;
   }
 
   return <>{children}</>;
@@ -177,7 +177,7 @@ const StaticLicenseExpired = memo(() => {
             fontSize: '16px',
             cursor: 'pointer',
           }}
-          onClick={() => (window.location.href = '/worklenz/admin-center/billing')}
+          onClick={() => (window.location.href = '/alpha/admin-center/billing')}
         >
           Upgrade now
         </button>

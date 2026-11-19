@@ -50,7 +50,7 @@ export const BillingTab = ({ organizationId, organizationName, portalAccess, onO
         <Button
           type="primary"
           icon={<FileTextOutlined />}
-          onClick={() => navigate(`/worklenz/client-portal/invoices/create?clientId=${organizationId}`)}
+          onClick={() => navigate(`/alpha/client-portal/invoices/create?clientId=${organizationId}`)}
         >
           {t('workspace.billing.createInvoice', { defaultValue: 'Create invoice' })}
         </Button>

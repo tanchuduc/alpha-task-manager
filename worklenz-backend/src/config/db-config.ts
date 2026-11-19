@@ -8,10 +8,13 @@ const sslConfig = isSslEnabled
     }
   : undefined;
 
+const targetSchema = process.env.DB_SCHEMA || "alpha_work";
+
 const baseConfig: any = {
   max: +(process.env.DB_MAX_CLIENTS as string) || 20,
   connectionTimeoutMillis: +(process.env.DB_CONNECTION_TIMEOUT_MS || "10000"),
   idleTimeoutMillis: 30000,
+  options: `-c search_path=${targetSchema},public,extensions`,
 };
 
 if (process.env.DATABASE_URL || process.env.DB_URL) {

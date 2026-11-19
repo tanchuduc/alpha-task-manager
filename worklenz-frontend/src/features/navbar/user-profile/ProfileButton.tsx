@@ -159,7 +159,7 @@ const ProfileButton = ({ isOwnerOrAdmin }: ProfileButtonProps) => {
         >
           {isOwnerOrAdmin && (
             <Link
-              to="/worklenz/admin-center/overview"
+              to="/alpha/admin-center/overview"
               style={itemStyle}
               onMouseEnter={handleItemMouseEnter}
               onMouseLeave={handleItemMouseLeave}
@@ -171,7 +171,7 @@ const ProfileButton = ({ isOwnerOrAdmin }: ProfileButtonProps) => {
             </Link>
           )}
           <Link
-            to="/worklenz/settings/profile"
+            to="/alpha/settings/profile"
             style={itemStyle}
             onMouseEnter={handleItemMouseEnter}
             onMouseLeave={handleItemMouseLeave}

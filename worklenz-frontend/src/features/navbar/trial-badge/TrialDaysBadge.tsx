@@ -72,7 +72,7 @@ export const TrialDaysBadge = () => {
   if (!trialInfo) return null;
 
   const handleClick = () => {
-    navigate('/worklenz/admin-center/billing');
+    navigate('/alpha/admin-center/billing');
   };
 
   return (

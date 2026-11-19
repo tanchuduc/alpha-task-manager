@@ -7,31 +7,31 @@ import {
 describe('getPostTeamSwitchLocation', () => {
   it('redirects project detail pages to the projects list', () => {
     expect(
-      getPostTeamSwitchLocation('/worklenz/projects/a1b2c3d4-e5f6-7890-abcd-ef1234567890')
-    ).toBe('/worklenz/projects');
+      getPostTeamSwitchLocation('/alpha/projects/a1b2c3d4-e5f6-7890-abcd-ef1234567890')
+    ).toBe('/alpha/projects');
   });
 
   it('keeps shared projects rail pages in place', () => {
-    expect(getPostTeamSwitchLocation('/worklenz/projects/all-projects')).toBe(
-      '/worklenz/projects/all-projects'
+    expect(getPostTeamSwitchLocation('/alpha/projects/all-projects')).toBe(
+      '/alpha/projects/all-projects'
     );
-    expect(getPostTeamSwitchLocation('/worklenz/projects/time-entries')).toBe(
-      '/worklenz/projects/time-entries'
+    expect(getPostTeamSwitchLocation('/alpha/projects/time-entries')).toBe(
+      '/alpha/projects/time-entries'
     );
-    expect(getPostTeamSwitchLocation('/worklenz/projects')).toBe('/worklenz/projects');
+    expect(getPostTeamSwitchLocation('/alpha/projects')).toBe('/alpha/projects');
   });
 
   it('redirects task short links to the projects list', () => {
-    expect(getPostTeamSwitchLocation('/worklenz/t/task-123')).toBe('/worklenz/projects');
+    expect(getPostTeamSwitchLocation('/alpha/t/task-123')).toBe('/alpha/projects');
   });
 
   it('keeps home, planner, and finance pages in place', () => {
-    expect(getPostTeamSwitchLocation('/worklenz/home')).toBe('/worklenz/home');
-    expect(getPostTeamSwitchLocation('/worklenz/planner/schedule')).toBe(
-      '/worklenz/planner/schedule'
+    expect(getPostTeamSwitchLocation('/alpha/home')).toBe('/alpha/home');
+    expect(getPostTeamSwitchLocation('/alpha/planner/schedule')).toBe(
+      '/alpha/planner/schedule'
     );
-    expect(getPostTeamSwitchLocation('/worklenz/finance/overview')).toBe(
-      '/worklenz/finance/overview'
+    expect(getPostTeamSwitchLocation('/alpha/finance/overview')).toBe(
+      '/alpha/finance/overview'
     );
   });
 });

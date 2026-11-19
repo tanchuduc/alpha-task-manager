@@ -299,7 +299,7 @@ const LabelsSelector: React.FC<LabelsSelectorProps> = ({ task, isDarkMode = fals
             {isOwnerOrAdmin && (
               <div className={`p-2 border-t ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                 <Link
-                  to="/worklenz/settings/labels"
+                  to="/alpha/settings/labels"
                   onClick={() => {
                     setIsOpen(false);
                     buttonRef.current?.focus();

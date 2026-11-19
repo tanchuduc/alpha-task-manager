@@ -206,7 +206,7 @@ const PracticesSettings = () => {
             <Tooltip title={t('pinTooltip', { defaultValue: 'Pin to navbar' })} trigger={'hover'}>
               <PinRouteToNavbarButton
                 name="practices"
-                path="/worklenz/settings/practices"
+                path="/alpha/settings/practices"
                 adminOnly
               />
             </Tooltip>

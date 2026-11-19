@@ -858,7 +858,7 @@ const TemplatesPage: React.FC = () => {
         setBuiltInUseTemplate(null);
         message.success(t('importSuccess'));
         navigate(
-          `/worklenz/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list&new_project=1`
+          `/alpha/projects/${projectId}?tab=tasks-list&pinned_tab=tasks-list&new_project=1`
         );
       } else {
         setBuiltInNameError((res as { message?: string }).message ?? t('importError'));

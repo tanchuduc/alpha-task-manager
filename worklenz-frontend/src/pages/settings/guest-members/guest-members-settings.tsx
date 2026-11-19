@@ -375,7 +375,7 @@ const GuestMembersSettings = () => {
     <Flex vertical gap={16}>
       <PinRouteToNavbarButton
         name="guest-members"
-        path="/worklenz/settings/guest-members"
+        path="/alpha/settings/guest-members"
         adminOnly={true}
       />
 

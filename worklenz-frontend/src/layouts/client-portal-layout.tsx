@@ -23,7 +23,7 @@ import { useClientPortalFeaturePreviews } from '@/components/upgrade/clientPorta
 import GlobalUpgradeModal from '@/components/upgrade/GlobalUpgradeModal';
 import { useClientPortalRealtimeSync } from '@/hooks/useClientPortalRealtimeSync';
 
-const CLIENT_PORTAL_BASE_PATH = '/worklenz/client-portal';
+const CLIENT_PORTAL_BASE_PATH = '/alpha/client-portal';
 
 const ClientPortalLayout = () => {
   const { resolved } = useNavPreferences('client-portal');

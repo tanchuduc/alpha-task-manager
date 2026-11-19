@@ -48,7 +48,7 @@ const signInAs = (role: keyof typeof SESSIONS) => {
 
 const renderSidebar = () =>
   render(
-    <MemoryRouter initialEntries={['/worklenz/admin-center/overview']}>
+    <MemoryRouter initialEntries={['/alpha/admin-center/overview']}>
       <AdminCenterSidebar />
     </MemoryRouter>
   );
@@ -56,10 +56,10 @@ const renderSidebar = () =>
 const renderSecurityRoute = () => {
   const router = createMemoryRouter(
     [
-      { path: '/worklenz', children: adminCenterRoutes },
-      { path: '/worklenz/unauthorized', element: <div>unauthorized-page</div> },
+      { path: '/alpha', children: adminCenterRoutes },
+      { path: '/alpha/unauthorized', element: <div>unauthorized-page</div> },
     ],
-    { initialEntries: ['/worklenz/admin-center/security'] }
+    { initialEntries: ['/alpha/admin-center/security'] }
   );
   render(<RouterProvider router={router} />);
 };

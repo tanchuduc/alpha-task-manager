@@ -32,7 +32,7 @@ export const ProjectNameCell: React.FC<{
     });
 
     navigate({
-      pathname: `/worklenz/projects/${record.id}`,
+      pathname: `/alpha/projects/${record.id}`,
       search: searchParams.toString(),
     });
   };

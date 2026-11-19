@@ -18,12 +18,12 @@
     "title": "Istruzioni per l'installazione",
     "step1": {
       "title": "1. Connetti il tuo spazio di lavoro",
-      "description": "Fai clic sul pulsante \"Connetti area di lavoro Slack\" di seguito per autorizzare Worklenz ad accedere al tuo spazio di lavoro Slack."
+      "description": "Fai clic sul pulsante \"Connetti area di lavoro Slack\" di seguito per autorizzare Alpha Work ad accedere al tuo spazio di lavoro Slack."
     },
     "step2": {
       "title": "2. Invita Bot sui canali",
       "description": "In ogni canale Slack in cui desideri ricevere notifiche, digita:",
-      "command": "/invita @Worklenz",
+      "command": "/invita @Alpha Work",
       "note": "Devi farlo solo una volta per canale."
     },
     "step3": {
@@ -34,8 +34,8 @@
   "instructions": {
     "inviteBot": {
       "title": "Non dimenticare di invitare il bot!",
-      "description": "Prima di poter ricevere notifiche in un canale Slack, devi invitare il bot Worklenz su quel canale.",
-      "step": "Nel tuo canale Slack, digita: <code>/invite @Worklenz</code>",
+      "description": "Prima di poter ricevere notifiche in un canale Slack, devi invitare il bot Alpha Work su quel canale.",
+      "step": "Nel tuo canale Slack, digita: <code>/invite @Alpha Work</code>",
       "note": "Questa operazione deve essere eseguita solo una volta per canale."
     },
     "getStarted": "Inizia aggiungendo una configurazione di canale per ricevere notifiche dai tuoi progetti."
@@ -52,7 +52,7 @@
   },
   "notConnected": {
     "title": "Connetti il tuo spazio di lavoro Slack",
-    "description": "Integra Slack con il tuo team Worklenz per ricevere notifiche in tempo reale, creare attività da Slack e mantenere il tuo team sincronizzato su entrambe le piattaforme."
+    "description": "Integra Slack con il tuo team Alpha Work per ricevere notifiche in tempo reale, creare attività da Slack e mantenere il tuo team sincronizzato su entrambe le piattaforme."
   },
   "upgradeRequired": "Passa al piano aziendale",
   "features": {
@@ -66,7 +66,7 @@
     },
     "collaboration": {
       "title": "Collaborazione di squadra",
-      "description": "Mantieni sincronizzato tutto il tuo team su Worklenz e Slack"
+      "description": "Mantieni sincronizzato tutto il tuo team su Alpha Work e Slack"
     }
   },
   "table": {

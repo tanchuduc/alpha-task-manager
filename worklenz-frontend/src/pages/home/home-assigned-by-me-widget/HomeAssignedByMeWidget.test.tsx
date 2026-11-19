@@ -187,6 +187,6 @@ describe('HomeAssignedByMeWidget', () => {
     query.total = 31;
     renderWidget('main');
     await user.click(screen.getByRole('button', { name: 'View all assigned tasks (31)' }));
-    expect(navigate).toHaveBeenCalledWith('/worklenz/home/my-tasks?filter=assigned-by-me');
+    expect(navigate).toHaveBeenCalledWith('/alpha/home/my-tasks?filter=assigned-by-me');
   });
 });

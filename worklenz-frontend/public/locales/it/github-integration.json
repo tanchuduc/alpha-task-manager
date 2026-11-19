@@ -15,7 +15,7 @@
   },
   "notConfigured": {
     "title": "Non configurato",
-    "description": "L'app GitHub non è stata configurata per questa installazione di Worklenz. Chiedi al tuo amministratore di configurarlo."
+    "description": "L'app GitHub non è stata configurata per questa installazione di Alpha Work. Chiedi al tuo amministratore di configurarlo."
   },
   "actions": {
     "retry": "Riprova",
@@ -37,7 +37,7 @@
   "errors": {
     "invalidState": "La richiesta di connessione è scaduta. Prova a connetterti di nuovo.",
     "forbidden": "Devi accedere a questa installazione GitHub e devi essere il proprietario o l'amministratore del team.",
-    "alreadyConnected": "Questo account GitHub è già connesso a un altro team Worklenz.",
+    "alreadyConnected": "Questo account GitHub è già connesso a un altro team Alpha Work.",
     "teamAlreadyConnected": "Questo team è già connesso a un altro account GitHub. Disconnettilo prima.",
     "connectFailed": "Impossibile connettere GitHub. Per favore riprova.",
     "loadFailed": "Impossibile caricare lo stato di GitHub.",

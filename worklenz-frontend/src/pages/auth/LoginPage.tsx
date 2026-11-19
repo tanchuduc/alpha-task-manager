@@ -122,7 +122,7 @@ const LoginPage: React.FC = () => {
                 // Step 3: Redirect based on whether there's a project ID
                 if (projectId) {
                   // Redirect to the specific project
-                  window.location.href = `/worklenz/projects/${projectId}`;
+                  window.location.href = `/alpha/projects/${projectId}`;
                 } else {
                   // Team-only invitation — guests land on Projects, others on Home
                   window.location.href = getDefaultAuthenticatedPath(updatedSession.user);

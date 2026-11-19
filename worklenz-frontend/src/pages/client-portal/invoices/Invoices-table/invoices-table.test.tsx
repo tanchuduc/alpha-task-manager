@@ -79,7 +79,7 @@ const LocationProbe = () => {
 
 const renderTable = (props: Parameters<typeof InvoicesTable>[0] = {}) =>
   render(
-    <MemoryRouter initialEntries={['/worklenz/client-portal/invoices']}>
+    <MemoryRouter initialEntries={['/alpha/client-portal/invoices']}>
       <InvoicesTable {...props} />
       <LocationProbe />
     </MemoryRouter>
@@ -219,7 +219,7 @@ describe('InvoicesTable', () => {
     fireEvent.click(document.querySelector('.ant-select-item-option[title="Pending"]')!);
 
     expect(mocks.updateInvoice).toHaveBeenCalledWith({ id: 'inv-1', data: { status: 'pending' } });
-    expect(screen.getByTestId('location')).toHaveTextContent('/worklenz/client-portal/invoices');
+    expect(screen.getByTestId('location')).toHaveTextContent('/alpha/client-portal/invoices');
     expect(screen.getByTestId('location').textContent).not.toContain('inv-1');
   });
 
@@ -253,7 +253,7 @@ describe('InvoicesTable', () => {
     fireEvent.click(screen.getByText('INV-001'));
 
     expect(screen.getByTestId('location')).toHaveTextContent(
-      '/worklenz/client-portal/invoices/inv-1'
+      '/alpha/client-portal/invoices/inv-1'
     );
   });
 
