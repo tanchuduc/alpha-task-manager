@@ -43,8 +43,6 @@ const LoginPage: React.FC = () => {
   const { isLoading } = useAppSelector(state => state.auth);
   const { trackMixpanelEvent } = useMixpanelTracking();
   const [form] = Form.useForm<LoginFormValues>();
-  const [step, setStep] = useState<'email' | 'password'>('email');
-  const [confirmedEmail, setConfirmedEmail] = useState('');
   const [urlParams, setUrlParams] = useState({
     teamId: '',
     userId: '',
@@ -57,7 +55,7 @@ const LoginPage: React.FC = () => {
   const emailValue = Form.useWatch('email', form);
   const passwordValue = Form.useWatch('password', form);
   const isEmailValid = validateEmail((emailValue ?? '').trim());
-  const isPasswordValid = !!passwordValue && passwordValue.length >= 8;
+  const isPasswordFilled = !!passwordValue && passwordValue.length > 0;
 
   // Use ref to prevent multiple executions of auth check
   const hasCheckedAuth = useRef(false);
@@ -183,12 +181,10 @@ const LoginPage: React.FC = () => {
         }
 
         // Normalize email to lowercase for case-insensitive comparison.
-        // The email field is unmounted once we're on the password step, so
-        // `values.email` is not registered with the form anymore - use the
-        // confirmed email captured when the user advanced past that step.
         const normalizedValues = {
           ...values,
-          email: confirmedEmail.toLowerCase().trim(),
+          email: values.email.toLowerCase().trim(),
+          password: values.password,
           // Include invitation parameters in login request
           team_id: urlParams.teamId || undefined,
           team_member_id: urlParams.userId || undefined,
@@ -210,7 +206,7 @@ const LoginPage: React.FC = () => {
         );
       }
     },
-    [dispatch, navigate, t, trackMixpanelEvent, urlParams, confirmedEmail]
+    [dispatch, navigate, t, trackMixpanelEvent, urlParams]
   );
 
   const handleGoogleLogin = useCallback(() => {
@@ -250,20 +246,6 @@ const LoginPage: React.FC = () => {
       logger.error('Apple login failed', error);
     }
   }, [trackMixpanelEvent, urlParams]);
-
-  const goNext = useCallback(async () => {
-    try {
-      await form.validateFields(['email']);
-      setConfirmedEmail(form.getFieldValue('email'));
-      setStep('password');
-    } catch {
-      // validation errors are rendered inline by the form
-    }
-  }, [form]);
-
-  const changeEmail = useCallback(() => {
-    setStep('email');
-  }, []);
 
   return (
     <>
@@ -319,109 +301,78 @@ const LoginPage: React.FC = () => {
         onFinish={onFinish}
         style={{ width: '100%' }}
       >
-        {step === 'email' ? (
-          <>
-            <Form.Item
-              name="email"
-              label={t('emailLabel', { defaultValue: 'Email' })}
-              rules={validationRules.email as Rule[]}
-            >
-              <Input
-                size="large"
-                placeholder={t('emailPlaceholder', { defaultValue: 'nhanvien@alphabooks.vn' })}
-                autoFocus
-                onPressEnter={e => {
-                  e.preventDefault();
-                  void goNext();
-                }}
-              />
-            </Form.Item>
-            <Button
-              block
-              type="primary"
-              size="large"
-              disabled={!isEmailValid}
-              onClick={goNext}
-              style={
-                isEmailValid
-                  ? { backgroundColor: AUTH_PRIMARY_BUTTON_COLOR, borderColor: AUTH_PRIMARY_BUTTON_COLOR }
-                  : undefined
-              }
-            >
-              {t('nextButton', { defaultValue: 'Tiếp tục' })}
-            </Button>
-          </>
-        ) : (
-          <>
-            <Flex justify="space-between" align="center" style={{ marginBottom: 14 }}>
-              <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
-                {confirmedEmail}
-              </Typography.Text>
-              <Typography.Link onClick={changeEmail} style={{ fontSize: 12.5, fontWeight: 600 }}>
-                {t('changeEmailLink', { defaultValue: 'Thay đổi' })}
-              </Typography.Link>
-            </Flex>
+        <Form.Item
+          name="email"
+          label={t('emailLabel', { defaultValue: 'Email' })}
+          rules={validationRules.email as Rule[]}
+          style={{ marginBottom: 16 }}
+        >
+          <Input
+            size="large"
+            placeholder={t('emailPlaceholder', { defaultValue: 'nhanvien@alphabooks.vn' })}
+            autoFocus
+          />
+        </Form.Item>
 
-            <Form.Item
-              name="password"
-              label={t('passwordLabel', { defaultValue: 'Mật khẩu' })}
-              rules={validationRules.password as Rule[]}
-            >
-              <Input.Password
-                size="large"
-                placeholder={t('passwordPlaceholder', { defaultValue: 'Nhập mật khẩu của bạn' })}
-                autoFocus
-              />
-            </Form.Item>
-
-            <div style={{ textAlign: 'right', marginTop: -10, marginBottom: 14 }}>
-              <Link to="/auth/forgot-password" className="blue-link" style={{ fontSize: 12 }}>
+        <Form.Item
+          name="password"
+          label={
+            <Flex justify="space-between" align="center" style={{ width: '100%' }}>
+              <span>{t('passwordLabel', { defaultValue: 'Mật khẩu' })}</span>
+              <Link to="/auth/forgot-password" className="blue-link" style={{ fontSize: 12, fontWeight: 500 }}>
                 {t('forgotPasswordButton', { defaultValue: 'Quên mật khẩu?' })}
               </Link>
-            </div>
+            </Flex>
+          }
+          rules={validationRules.password as Rule[]}
+          style={{ marginBottom: 24 }}
+        >
+          <Input.Password
+            size="large"
+            placeholder={t('passwordPlaceholder', { defaultValue: 'Nhập mật khẩu của bạn' })}
+          />
+        </Form.Item>
 
-            <Button
-              block
-              type="primary"
-              htmlType="submit"
-              size="large"
-              loading={isLoading}
-              disabled={!isPasswordValid}
-              style={
-                isPasswordValid
-                  ? { backgroundColor: AUTH_PRIMARY_BUTTON_COLOR, borderColor: AUTH_PRIMARY_BUTTON_COLOR }
-                  : undefined
-              }
-            >
-              {t('loginButton', { defaultValue: 'Đăng nhập' })}
-            </Button>
+        <Button
+          block
+          type="primary"
+          htmlType="submit"
+          size="large"
+          loading={isLoading}
+          disabled={!isEmailValid || !isPasswordFilled}
+          style={
+            isEmailValid && isPasswordFilled
+              ? { backgroundColor: AUTH_PRIMARY_BUTTON_COLOR, borderColor: AUTH_PRIMARY_BUTTON_COLOR }
+              : undefined
+          }
+        >
+          {t('loginButton', { defaultValue: 'Đăng nhập' })}
+        </Button>
 
-            <Typography.Paragraph
-              type="secondary"
-              style={{ fontSize: 11.5, textAlign: 'center', marginTop: 12, marginBottom: 0 }}
-            >
-              {t('bySigningInText', { defaultValue: 'Bằng cách đăng nhập, bạn đồng ý với' })}{' '}
-              <a
-                href="https://alphabooks.vn"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontWeight: 700, textDecoration: 'underline' }}
-              >
-                {t('termsOfServiceLink', { defaultValue: 'Điều khoản dịch vụ' })}
-              </a>{' '}
-              {t('andText', { defaultValue: 'và' })}{' '}
-              <a
-                href="https://alphabooks.vn"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontWeight: 700, textDecoration: 'underline' }}
-              >
-                {t('privacyPolicyLink', { defaultValue: 'Chính sách bảo mật' })}
-              </a>
-              .
-            </Typography.Paragraph>
-          </>
-        )}
+        <Typography.Paragraph
+          type="secondary"
+          style={{ fontSize: 11.5, textAlign: 'center', marginTop: 14, marginBottom: 0 }}
+        >
+          {t('bySigningInText', { defaultValue: 'Bằng cách đăng nhập, bạn đồng ý với' })}{' '}
+          <a
+            href="https://alphabooks.vn"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontWeight: 700, textDecoration: 'underline' }}
+          >
+            {t('termsOfServiceLink', { defaultValue: 'Điều khoản dịch vụ' })}
+          </a>{' '}
+          {t('andText', { defaultValue: 'và' })}{' '}
+          <a
+            href="https://alphabooks.vn"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontWeight: 700, textDecoration: 'underline' }}
+          >
+            {t('privacyPolicyLink', { defaultValue: 'Chính sách bảo mật' })}
+          </a>
+          .
+        </Typography.Paragraph>
       </Form>
 
       <Flex justify="center" style={{ marginTop: 26, textAlign: 'center' }}>
