@@ -1,10 +1,10 @@
 {
-  "overview": "Overview",
-  "profitability": "Profitability",
-  "budgets": "Budgets",
-  "invoices": "Invoices",
-  "expenses": "Expenses",
-  "billableTime": "Billable Time",
-  "utilization": "Utilization",
-  "forecasts": "Forecasts"
+  "overview": "Tổng quan",
+  "profitability": "Lợi nhuận",
+  "budgets": "Ngân sách",
+  "invoices": "Hóa đơn",
+  "expenses": "Chi phí",
+  "billableTime": "Giờ tính phí",
+  "utilization": "Hiệu suất",
+  "forecasts": "Dự báo"
 }

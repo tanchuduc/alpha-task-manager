@@ -1,10 +1,10 @@
 {
-  "getMobileApp": "Get Mobile App",
-  "helpSupport": "Help & Support",
-  "schedule": "Schedule",
-  "settingsTooltip": "Settings",
-  "timeline": "Timeline",
-  "trialDaysLeft": "{{count}} days left in your trial",
-  "upgradeToPro": "Upgrade to Pro",
-  "workload": "Workload"
+  "getMobileApp": "Tải app",
+  "helpSupport": "Hỗ trợ",
+  "schedule": "Lịch trình",
+  "settingsTooltip": "Cài đặt",
+  "timeline": "Tiến độ",
+  "trialDaysLeft": "Còn {{count}} ngày dùng thử",
+  "upgradeToPro": "Nâng cấp Pro",
+  "workload": "Tải việc"
 }

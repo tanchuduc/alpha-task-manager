@@ -1,10 +1,10 @@
 {
   "overview": "Tổng quan",
-  "myTasks": "Công việc của tôi",
+  "myTasks": "Việc của tôi",
   "calendar": "Lịch",
-  "inbox": "Hộp thư đến",
-  "logTime": "Ghi thời gian",
-  "todo": "Danh sách việc cần làm",
-  "myTeam": "Nhóm của tôi",
-  "addClient": "Thêm\nKhách hàng"
+  "inbox": "Hộp thư",
+  "logTime": "Ghi giờ",
+  "todo": "Cần làm",
+  "myTeam": "Nhóm",
+  "addClient": "Thêm khách"
 }

@@ -256,7 +256,7 @@ const SwitchTeamButton = () => {
           }}
         >
           <BankOutlined />
-          <Typography.Text strong style={{ color: colors.skyBlue, cursor: 'pointer' }}>
+          <Typography.Text strong ellipsis={{ tooltip: session?.team_name }} style={{ color: colors.skyBlue, cursor: 'pointer', maxWidth: 160 }}>
             {session?.team_name}
           </Typography.Text>
           <CaretDownFilled />

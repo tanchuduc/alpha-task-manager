@@ -1,10 +1,10 @@
 {
-  "overview": "Overview",
-  "users": "Users",
-  "teams": "Teams",
-  "billing": "Billing",
-  "projects": "Projects",
-  "settings": "Utilization Settings",
-  "adminCenter": "Admin Center",
-  "security": "Security"
+  "overview": "Tổng quan",
+  "users": "Thành viên",
+  "teams": "Nhóm",
+  "billing": "Gói cước",
+  "projects": "Dự án",
+  "settings": "Hiệu suất",
+  "adminCenter": "Trung tâm quản trị",
+  "security": "Bảo mật"
 }

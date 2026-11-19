@@ -581,7 +581,7 @@ const HomeMyTasksView: React.FC = () => {
           (the fixed 200px column would otherwise squeeze the table into a
           sliver, same class of issue fixed on the Log Time page). ── */}
       <div style={{
-        width: isDesktop ? 200 : '100%',
+        width: isDesktop ? 220 : '100%',
         flexShrink: 0,
         borderRight: isDesktop ? `1px solid ${token.colorBorderSecondary}` : 'none',
         borderBottom: isDesktop ? 'none' : `1px solid ${token.colorBorderSecondary}`,
@@ -621,8 +621,8 @@ const HomeMyTasksView: React.FC = () => {
                   gap: 9,
                   width: isDesktop ? '100%' : 'auto',
                   flexShrink: isDesktop ? undefined : 0,
-                  whiteSpace: isDesktop ? undefined : 'nowrap',
-                  padding: isDesktop ? '7px 14px' : '7px 12px',
+                  whiteSpace: 'nowrap',
+                  padding: isDesktop ? '8px 14px' : '7px 12px',
                   border: 'none',
                   cursor: 'pointer',
                   borderRadius: isDesktop ? 0 : 6,
@@ -644,7 +644,9 @@ const HomeMyTasksView: React.FC = () => {
                 >
                   <path d={item.svg} />
                 </svg>
-                {sideLabels[item.key]}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {sideLabels[item.key]}
+                </span>
               </button>
             );
           })}

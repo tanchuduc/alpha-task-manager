@@ -27,7 +27,7 @@ i18n
 
     backend: {
       // Bump when locale JSON changes so browsers do not keep a stale translation file.
-      loadPath: '/locales/{{lng}}/{{ns}}.json?v=20261119-alphawork-vi2',
+      loadPath: '/locales/{{lng}}/{{ns}}.json?v=20261119-alphawork-vi3',
     },
 
     react: {
