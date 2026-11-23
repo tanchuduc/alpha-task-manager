@@ -146,10 +146,10 @@
 ---
 
 ### SPRINT S8: CỘNG TÁC NÂNG CAO (ADVANCED COLLABORATION)
-*Mục tiêu: Mở rộng tính năng tiệm cận Lark Messenger và chuẩn bị cho tự động hóa AI.*
+*Mục tiêu: Mở rộng tính năng tiệm cận Lark Messenger và IDEAS WorkChat.*
 
 | Task ID | Nhiệm vụ | Mức ưu tiên | Phụ thuộc | File / Module ảnh hưởng | Tiêu chí nghiệm thu (Acceptance Criteria) | Phương pháp kiểm chứng | Rủi ro | Độ phức tạp | Rollback Strategy | Trạng thái |
 |---|---|:---:|---|---|---|---|:---:|:---:|---|:---:|
-| **S8-01** | Thread / Nhánh thảo luận chuyên sâu | P1 | S7-01 | `src/components/chat/ThreadDrawer.tsx` | Mở ngăn kéo thảo luận riêng cho từng tin nhắn mẹ mà không làm trôi dòng chat chính. | Test trả lời theo thread | Trung bình | L | Tắt tính năng thread | NOT STARTED |
-| **S8-02** | Web Push Notification trên Trình duyệt | P1 | S7-01 | `src/lib/notifications/web-push.ts` | Gửi popup thông báo khi người dùng đang ở cửa sổ khác, nhấp vào mở thẳng hội thoại. | Test khi tab bị ẩn | Thấp | M | Tắt quyền push | NOT STARTED |
-| **S8-03** | Phím tắt thao tác nhanh (Lệnh AI & ERP Tag) | P2 | S7-01 | Composer toolbar | Nút chọn nhanh Task để gắn vào tin nhắn, nút gọi AI Bot tóm tắt hội thoại. | Test click thao tác | Thấp | M | Ẩn nút trên toolbar | NOT STARTED |
+| **S8-01** | Thread / Nhánh thảo luận chuyên sâu | P1 | S7-01 | `src/components/chat/ThreadDrawer.tsx`, `ChatMessageArea.tsx` | Mở ngăn kéo thảo luận riêng cho từng tin nhắn mẹ, hiển thị số câu trả lời trong nhánh mà không trôi dòng chat chính. | Test trả lời theo thread | Trung bình | L | Tắt tính năng thread | **HOÀN THÀNH** |
+| **S8-02** | Web Browser Notification trên Trình duyệt | P1 | S7-01 | `src/lib/chat/useUnifiedChat.ts`, `ChatSidebar.tsx` | Nút chuông bật thông báo, popup thông báo tin mới khi tab bị ẩn hoặc đang ở hội thoại khác, click mở thẳng chat. | Test khi tab bị ẩn | Thấp | M | Tắt quyền push | **HOÀN THÀNH** |
+| **S8-03** | Lệnh AI tóm tắt cuộc trò chuyện | P2 | S7-01 | Composer toolbar | Nút gọi AI Bot tóm tắt hội thoại. | Test click thao tác | Thấp | M | Ẩn nút trên toolbar | **SKIPPED (PO chỉ đạo bỏ qua)** |

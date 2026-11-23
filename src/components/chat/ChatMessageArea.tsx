@@ -39,6 +39,7 @@ import {
   CheckCheck,
   ChevronUp,
   ChevronDown,
+  MessagesSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 import { MediaLightboxModal } from "@/components/chat/MediaLightboxModal";
@@ -65,6 +66,7 @@ interface ChatMessageAreaProps {
   onTogglePin: (msg: UnifiedMessageItem) => Promise<void>;
   onBroadcastTyping: () => void;
   onConvertToTask?: (msg: SourceChatMessage) => void;
+  onOpenThread?: (msg: UnifiedMessageItem) => void;
   onOpenContextPanel?: () => void;
   showContextPanelToggle?: boolean;
   onBackToList?: () => void;
@@ -95,6 +97,7 @@ export function ChatMessageArea({
   onTogglePin,
   onBroadcastTyping,
   onConvertToTask,
+  onOpenThread,
   onOpenContextPanel,
   showContextPanelToggle = true,
   onBackToList,
@@ -825,6 +828,24 @@ export function ChatMessageArea({
                           })}
                         </div>
                       )}
+
+                      {/* Thread Replies Counter Indicator */}
+                      {(() => {
+                        const repliesCount = messages.filter(
+                          (m) => m.replyToId === msg.id && !m.isDeleted
+                        ).length;
+                        if (repliesCount === 0) return null;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => onOpenThread?.(msg)}
+                            className="mt-1 flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-[11px] font-semibold text-brand hover:bg-brand/10 dark:hover:bg-brand/20 transition cursor-pointer"
+                          >
+                            <MessagesSquare className="h-3 w-3" />
+                            <span>{repliesCount} câu trả lời trong nhánh</span>
+                          </button>
+                        );
+                      })()}
                     </div>
 
                     {/* Quick Hover Action Bar */}
@@ -854,11 +875,23 @@ export function ChatMessageArea({
                         <button
                           type="button"
                           onClick={() => setReplyingTo(msg)}
-                          title="Trả lời"
+                          title="Trả lời trích dẫn"
                           className="p-1 hover:text-brand transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
                         >
                           <Reply className="h-3.5 w-3.5" />
                         </button>
+
+                        {/* Reply in Thread */}
+                        {onOpenThread && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenThread(msg)}
+                            title="Trả lời trong nhánh (Thread)"
+                            className="p-1 hover:text-brand transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                          >
+                            <MessagesSquare className="h-3.5 w-3.5" />
+                          </button>
+                        )}
 
                         {/* Convert to Task */}
                         {onConvertToTask && (

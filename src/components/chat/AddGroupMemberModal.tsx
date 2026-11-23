@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import type { Profile } from "@/types/database";
-import { cn, getInitials } from "@/lib/utils";
+import { cn, getInitials, removeVietnameseTones } from "@/lib/utils";
 import { X, Search, Check, UserPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,15 +34,20 @@ export function AddGroupMemberModal({
   );
 
   const filteredCandidates = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
+    const q = removeVietnameseTones(searchQuery);
     if (!q) return candidates;
-    return candidates.filter(
-      (p) =>
-        p.full_name?.toLowerCase().includes(q) ||
-        p.job_title?.toLowerCase().includes(q) ||
-        p.department?.name?.toLowerCase().includes(q) ||
-        p.email?.toLowerCase().includes(q)
-    );
+    return candidates.filter((p) => {
+      const name = removeVietnameseTones(p.full_name || "");
+      const title = removeVietnameseTones(p.job_title || "");
+      const dept = removeVietnameseTones(p.department?.name || "");
+      const email = (p.email || "").toLowerCase();
+      return (
+        name.includes(q) ||
+        title.includes(q) ||
+        dept.includes(q) ||
+        email.includes(q)
+      );
+    });
   }, [candidates, searchQuery]);
 
   const toggleSelect = (uid: string) => {

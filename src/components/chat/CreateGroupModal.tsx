@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import type { Profile } from "@/types/database";
-import { cn, getInitials } from "@/lib/utils";
+import { cn, getInitials, removeVietnameseTones } from "@/lib/utils";
 import {
   X,
   Users,
@@ -11,6 +11,7 @@ import {
   UserPlus,
   Loader2,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -45,17 +46,32 @@ export function CreateGroupModal({
     [allProfiles, currentUser.id]
   );
 
-  // Filter candidates by search term
+  // Check if search query matches the creator/current user
+  const matchesCurrentUser = useMemo(() => {
+    const q = removeVietnameseTones(searchMember);
+    if (!q) return true; // Show creator at top by default
+    const name = removeVietnameseTones(currentUser.full_name || "");
+    const email = (currentUser.email || "").toLowerCase();
+    const dept = removeVietnameseTones(currentUser.department?.name || "");
+    return name.includes(q) || email.includes(q) || dept.includes(q);
+  }, [currentUser, searchMember]);
+
+  // Filter candidates by search term (supporting Vietnamese diacritics & accent-insensitive)
   const filteredCandidates = useMemo(() => {
-    const q = searchMember.toLowerCase().trim();
+    const q = removeVietnameseTones(searchMember);
     if (!q) return candidateProfiles;
-    return candidateProfiles.filter(
-      (p) =>
-        p.full_name?.toLowerCase().includes(q) ||
-        p.job_title?.toLowerCase().includes(q) ||
-        p.department?.name?.toLowerCase().includes(q) ||
-        p.email?.toLowerCase().includes(q)
-    );
+    return candidateProfiles.filter((p) => {
+      const name = removeVietnameseTones(p.full_name || "");
+      const title = removeVietnameseTones(p.job_title || "");
+      const dept = removeVietnameseTones(p.department?.name || "");
+      const email = (p.email || "").toLowerCase();
+      return (
+        name.includes(q) ||
+        title.includes(q) ||
+        dept.includes(q) ||
+        email.includes(q)
+      );
+    });
   }, [candidateProfiles, searchMember]);
 
   const toggleUserSelect = (uid: string) => {
@@ -208,8 +224,46 @@ export function CreateGroupModal({
             </div>
 
             {/* Candidate List Scroll */}
-            <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/60 bg-white dark:bg-slate-900">
-              {filteredCandidates.length === 0 ? (
+            <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/60 bg-white dark:bg-slate-900">
+              {/* Creator Card: Always shown or shown when search matches */}
+              {matchesCurrentUser && (
+                <div className="flex items-center justify-between p-2.5 bg-emerald-50/70 dark:bg-emerald-950/25 border-b border-emerald-100 dark:border-emerald-900/40">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {currentUser.avatar_url ? (
+                      <img
+                        src={currentUser.avatar_url}
+                        alt={currentUser.full_name}
+                        className="h-8 w-8 rounded-full object-cover shrink-0 ring-1 ring-emerald-500/30"
+                      />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs shrink-0">
+                        {getInitials(currentUser.full_name)}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-semibold text-slate-900 dark:text-slate-100 truncate text-xs">
+                          {currentUser.full_name}
+                        </p>
+                        <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 rounded">
+                          Bạn (Trưởng nhóm)
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                        {currentUser.job_title || currentUser.department?.name || currentUser.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
+                    <Check className="h-3.5 w-3.5" />
+                    <span>Tự động thêm</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Other candidates */}
+              {filteredCandidates.length === 0 && !matchesCurrentUser ? (
                 <div className="p-4 text-center text-slate-400 text-xs">
                   Không tìm thấy nhân sự phù hợp
                 </div>

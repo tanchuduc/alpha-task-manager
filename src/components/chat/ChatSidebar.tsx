@@ -15,6 +15,7 @@ import {
   Plus,
   Pin,
   PinOff,
+  Bell,
   BellOff,
   Check,
   X,
@@ -34,6 +35,7 @@ interface ChatSidebarProps {
   onToggleMuteConversation: (id: string) => void;
   onCreateGroupClick?: () => void;
   onNewDirectChatClick?: () => void;
+  onRequestNotificationPermission?: () => void;
   className?: string;
 }
 
@@ -74,6 +76,7 @@ export function ChatSidebar({
   onToggleMuteConversation,
   onCreateGroupClick,
   onNewDirectChatClick,
+  onRequestNotificationPermission,
   className,
 }: ChatSidebarProps) {
   const [showPlusMenu, setShowPlusMenu] = useState(false);
@@ -106,16 +109,28 @@ export function ChatSidebar({
             </div>
           </div>
 
-          {/* Plus Action Button */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowPlusMenu((prev) => !prev)}
-              title="Tạo cuộc trò chuyện mới"
-              className="flex h-7 w-7 items-center justify-center rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-brand hover:text-brand shadow-xs transition"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
+          {/* Action Buttons: Bell & Plus */}
+          <div className="flex items-center gap-1.5">
+            {onRequestNotificationPermission && (
+              <button
+                type="button"
+                onClick={onRequestNotificationPermission}
+                title="Bật thông báo trên trình duyệt"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-brand hover:text-brand shadow-xs transition"
+              >
+                <Bell className="h-3.5 w-3.5" />
+              </button>
+            )}
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowPlusMenu((prev) => !prev)}
+                title="Tạo cuộc trò chuyện mới"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-brand hover:text-brand shadow-xs transition"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
 
             {showPlusMenu && (
               <>
@@ -149,6 +164,7 @@ export function ChatSidebar({
                 </div>
               </>
             )}
+            </div>
           </div>
         </div>
 

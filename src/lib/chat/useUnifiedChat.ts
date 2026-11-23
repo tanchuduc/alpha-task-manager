@@ -16,6 +16,7 @@ import {
   addGroupMembers,
   removeGroupMember,
 } from "@/lib/chat/group-actions";
+import { removeVietnameseTones } from "@/lib/utils";
 
 export interface UnifiedConversationItem {
   id: string; // e.g. "dm:userId" or "proj:projectId" or uuid
@@ -394,113 +395,132 @@ export function useUnifiedChat({
     return conversations.find((c) => c.id === activeConversationId) || null;
   }, [conversations, activeConversationId]);
 
+  const activeConversationRef = useRef<UnifiedConversationItem | null>(null);
+  activeConversationRef.current = activeConversation;
+
   // 2. Load Messages for Active Conversation
-  const loadMessages = useCallback(async () => {
-    if (!activeConversation) return;
-    setLoadingMessages(true);
+  const loadMessages = useCallback(
+    async (forcedConvId?: string) => {
+      const targetConvId = forcedConvId || activeConversationId;
+      if (!targetConvId) return;
 
-    try {
-      if (activeConversation.type === "direct" && activeConversation.partnerId) {
-        const partnerId = activeConversation.partnerId;
-        const { data, error } = await supabase
-          .from("direct_messages")
-          .select(
-            "*, sender:profiles!direct_messages_sender_id_fkey(*), receiver:profiles!direct_messages_receiver_id_fkey(*)"
-          )
-          .or(
-            `and(sender_id.eq.${currentUser.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${currentUser.id})`
-          )
-          .order("created_at", { ascending: false })
-          .limit(200);
+      const targetConv =
+        conversations.find((c) => c.id === targetConvId) ||
+        activeConversationRef.current;
+      if (!targetConv || targetConv.id !== targetConvId) return;
 
-        if (!error && data) {
-          const uniqueMap = new Map<string, DirectMessage>();
-          (data as DirectMessage[]).reverse().forEach((m) => uniqueMap.set(m.id, m));
-          setDirectMessages(Array.from(uniqueMap.values()));
-        }
+      setLoadingMessages(true);
 
-        // Mark read
-        await supabase
-          .from("direct_messages")
-          .update({ is_read: true })
-          .eq("sender_id", partnerId)
-          .eq("receiver_id", currentUser.id)
-          .eq("is_read", false);
-
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === activeConversation.id ? { ...c, unreadCount: 0 } : c
-          )
-        );
-      } else if (
-        activeConversation.type === "project" &&
-        activeConversation.projectId
-      ) {
-        const projId = activeConversation.projectId;
-        const { data, error } = await supabase
-          .from("project_messages")
-          .select("*, author:profiles!project_messages_author_id_fkey(*)")
-          .eq("project_id", projId)
-          .order("created_at", { ascending: false })
-          .limit(200);
-
-        if (!error && data) {
-          const uniqueMap = new Map<string, ProjectMessage>();
-          (data as ProjectMessage[]).reverse().forEach((m) => uniqueMap.set(m.id, m));
-          setProjectMessages(Array.from(uniqueMap.values()));
-        }
-
-        // Mark read in project_chat_read_states
-        await supabase.from("project_chat_read_states").upsert(
-          {
-            project_id: projId,
-            user_id: currentUser.id,
-            last_read_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id,project_id" }
-        );
-
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === activeConversation.id ? { ...c, unreadCount: 0 } : c
-          )
-        );
-      } else if (activeConversation.type === "group") {
-        let loadedMsgs: any[] = [];
-        try {
+      try {
+        if (targetConv.type === "direct" && targetConv.partnerId) {
+          const partnerId = targetConv.partnerId;
           const { data, error } = await supabase
-            .from("messages")
-            .select("*, sender:profiles!messages_sender_id_fkey(*)")
-            .eq("conversation_id", activeConversation.id)
-            .order("created_at", { ascending: true })
+            .from("direct_messages")
+            .select(
+              "*, sender:profiles!direct_messages_sender_id_fkey(*), receiver:profiles!direct_messages_receiver_id_fkey(*)"
+            )
+            .or(
+              `and(sender_id.eq.${currentUser.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${currentUser.id})`
+            )
+            .order("created_at", { ascending: false })
             .limit(200);
 
-          if (!error && data && data.length > 0) {
-            loadedMsgs = data;
+          if (!error && data) {
+            const uniqueMap = new Map<string, DirectMessage>();
+            (data as DirectMessage[]).reverse().forEach((m) => uniqueMap.set(m.id, m));
+            setDirectMessages(Array.from(uniqueMap.values()));
           }
-        } catch {}
 
-        if (loadedMsgs.length === 0) {
-          try {
-            const saved = JSON.parse(
-              localStorage.getItem(`alpha_group_msgs_${activeConversation.id}`) || "[]"
+          // Mark read
+          await supabase
+            .from("direct_messages")
+            .update({ is_read: true })
+            .eq("sender_id", partnerId)
+            .eq("receiver_id", currentUser.id)
+            .eq("is_read", false);
+
+          setConversations((prev) => {
+            const item = prev.find((c) => c.id === targetConvId);
+            if (!item || item.unreadCount === 0) return prev;
+            return prev.map((c) =>
+              c.id === targetConvId ? { ...c, unreadCount: 0 } : c
             );
-            loadedMsgs = saved;
-          } catch {}
-        }
+          });
+        } else if (
+          targetConv.type === "project" &&
+          targetConv.projectId
+        ) {
+          const projId = targetConv.projectId;
+          const { data, error } = await supabase
+            .from("project_messages")
+            .select("*, author:profiles!project_messages_author_id_fkey(*)")
+            .eq("project_id", projId)
+            .order("created_at", { ascending: false })
+            .limit(200);
 
-        setCustomGroupMessages(loadedMsgs);
+          if (!error && data) {
+            const uniqueMap = new Map<string, ProjectMessage>();
+            (data as ProjectMessage[]).reverse().forEach((m) => uniqueMap.set(m.id, m));
+            setProjectMessages(Array.from(uniqueMap.values()));
+          }
+
+          // Mark read in project_chat_read_states
+          await supabase.from("project_chat_read_states").upsert(
+            {
+              project_id: projId,
+              user_id: currentUser.id,
+              last_read_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id,project_id" }
+          );
+
+          setConversations((prev) => {
+            const item = prev.find((c) => c.id === targetConvId);
+            if (!item || item.unreadCount === 0) return prev;
+            return prev.map((c) =>
+              c.id === targetConvId ? { ...c, unreadCount: 0 } : c
+            );
+          });
+        } else if (targetConv.type === "group") {
+          let loadedMsgs: any[] = [];
+          try {
+            const { data, error } = await supabase
+              .from("messages")
+              .select("*, sender:profiles!messages_sender_id_fkey(*)")
+              .eq("conversation_id", targetConv.id)
+              .order("created_at", { ascending: true })
+              .limit(200);
+
+            if (!error && data && data.length > 0) {
+              loadedMsgs = data;
+            }
+          } catch {}
+
+          if (loadedMsgs.length === 0) {
+            try {
+              const saved = JSON.parse(
+                localStorage.getItem(`alpha_group_msgs_${targetConv.id}`) || "[]"
+              );
+              loadedMsgs = saved;
+            } catch {}
+          }
+
+          setCustomGroupMessages(loadedMsgs);
+        }
+      } catch (err) {
+        console.error("Lỗi nạp tin nhắn:", err);
+      } finally {
+        setLoadingMessages(false);
       }
-    } catch (err) {
-      console.error("Lỗi nạp tin nhắn:", err);
-    } finally {
-      setLoadingMessages(false);
-    }
-  }, [activeConversation, currentUser.id, supabase]);
+    },
+    [activeConversationId, conversations, currentUser.id, supabase]
+  );
 
   useEffect(() => {
-    loadMessages();
-  }, [loadMessages]);
+    if (activeConversationId) {
+      loadMessages(activeConversationId);
+    }
+  }, [activeConversationId]);
 
   // 3. Transform to unified messages array
   const unifiedMessages: UnifiedMessageItem[] = useMemo(() => {
@@ -730,6 +750,30 @@ export function useUnifiedChat({
             )
           );
 
+          // Browser Notification
+          if (newDM.sender_id !== currentUser.id) {
+            const senderProfile = allProfiles.find(
+              (p) => p.id === newDM.sender_id
+            );
+            const senderName = senderProfile?.full_name || "Đồng nghiệp";
+            if (
+              typeof window !== "undefined" &&
+              "Notification" in window &&
+              Notification.permission === "granted" &&
+              (document.hidden || activeConversationId !== convId)
+            ) {
+              const notif = new Notification(senderName, {
+                body: newDM.content || "[Tệp đính kèm]",
+                icon: senderProfile?.avatar_url || undefined,
+                tag: `dm-${newDM.id}`,
+              });
+              notif.onclick = () => {
+                window.focus();
+                setActiveConversationId(convId);
+              };
+            }
+          }
+
           if (activeConversationId === convId) {
             const senderProfile = allProfiles.find(
               (p) => p.id === newDM.sender_id
@@ -805,6 +849,28 @@ export function useUnifiedChat({
                 : c
             )
           );
+
+          // Browser Notification for Project Message
+          if (newPM.author_id !== currentUser.id) {
+            const author = allProfiles.find((p) => p.id === newPM.author_id);
+            const authorName = author?.full_name || "Thành viên dự án";
+            if (
+              typeof window !== "undefined" &&
+              "Notification" in window &&
+              Notification.permission === "granted" &&
+              (document.hidden || activeConversationId !== convId)
+            ) {
+              const notif = new Notification(`Dự án • ${authorName}`, {
+                body: newPM.content || "[Tệp đính kèm]",
+                icon: author?.avatar_url || undefined,
+                tag: `pm-${newPM.id}`,
+              });
+              notif.onclick = () => {
+                window.focus();
+                setActiveConversationId(convId);
+              };
+            }
+          }
 
           if (activeConversationId === convId) {
             const author = allProfiles.find((p) => p.id === newPM.author_id);
@@ -1417,13 +1483,13 @@ export function useUnifiedChat({
       list = list.filter((c) => c.type === "project");
     }
 
-    // Filter by search query
+    // Filter by search query (Vietnamese tone-insensitive)
     if (q) {
-      list = list.filter(
-        (c) =>
-          c.title.toLowerCase().includes(q) ||
-          c.description?.toLowerCase().includes(q)
-      );
+      list = list.filter((c) => {
+        const title = removeVietnameseTones(c.title || "");
+        const desc = removeVietnameseTones(c.description || "");
+        return title.includes(q) || desc.includes(q);
+      });
     }
 
     // Sort: Pinned first -> Unread -> Most recent updatedAt
@@ -1451,6 +1517,20 @@ export function useUnifiedChat({
 
   const selectByProjectId = useCallback((projectId: string) => {
     setActiveConversationId(`proj:${projectId}`);
+  }, []);
+
+  const requestBrowserNotificationPermission = useCallback(async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      toast.error("Trình duyệt không hỗ trợ thông báo.");
+      return "unsupported";
+    }
+    const perm = await Notification.requestPermission();
+    if (perm === "granted") {
+      toast.success("Đã bật thông báo trên trình duyệt!");
+    } else {
+      toast.info("Chưa cấp quyền thông báo trình duyệt.");
+    }
+    return perm;
   }, []);
 
   return {
@@ -1488,6 +1568,7 @@ export function useUnifiedChat({
     createGroup,
     addMembersToGroup,
     leaveGroup,
+    requestBrowserNotificationPermission,
     broadcastTyping,
     refreshConversations,
     loadMessages,

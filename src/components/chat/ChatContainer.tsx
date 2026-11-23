@@ -3,11 +3,12 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Profile, Department, Project } from "@/types/database";
-import { useUnifiedChat } from "@/lib/chat/useUnifiedChat";
+import { useUnifiedChat, type UnifiedMessageItem } from "@/lib/chat/useUnifiedChat";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
 import { ChatContextPanel } from "@/components/chat/ChatContextPanel";
 import { CreateGroupModal } from "@/components/chat/CreateGroupModal";
+import { ThreadDrawer } from "@/components/chat/ThreadDrawer";
 import {
   ConvertMessageToTaskModal,
   type SourceChatMessage,
@@ -60,6 +61,7 @@ export function ChatContainer({
     createGroup,
     addMembersToGroup,
     leaveGroup,
+    requestBrowserNotificationPermission,
   } = useUnifiedChat({
     currentUser,
     allProfiles,
@@ -68,9 +70,10 @@ export function ChatContainer({
     initialProjectId: projectParam,
   });
 
-  // UI state: Context panel visibility & Convert-to-task modal & Create Group Modal
+  // UI state: Context panel visibility & Convert-to-task modal & Create Group Modal & Active Thread
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [activeThreadMessage, setActiveThreadMessage] = useState<UnifiedMessageItem | null>(null);
   const [mobileShowSidebar, setMobileShowSidebar] = useState(true);
   const [convertModalMessage, setConvertModalMessage] =
     useState<SourceChatMessage | null>(null);
@@ -79,6 +82,7 @@ export function ChatContainer({
   const handleSelectConversation = useCallback(
     (convId: string) => {
       selectConversation(convId);
+      setActiveThreadMessage(null);
       setMobileShowSidebar(false);
 
       if (convId.startsWith("dm:")) {
@@ -138,6 +142,7 @@ export function ChatContainer({
         onTogglePinConversation={togglePinConversation}
         onToggleMuteConversation={toggleMuteConversation}
         onCreateGroupClick={() => setShowCreateGroupModal(true)}
+        onRequestNotificationPermission={requestBrowserNotificationPermission}
         className={cn(!mobileShowSidebar && "hidden md:flex")}
       />
 
@@ -159,7 +164,14 @@ export function ChatContainer({
         onTogglePin={togglePin}
         onBroadcastTyping={broadcastTyping}
         onConvertToTask={setConvertModalMessage}
-        onOpenContextPanel={() => setShowContextPanel((p) => !p)}
+        onOpenThread={(msg) => {
+          setActiveThreadMessage(msg);
+          setShowContextPanel(false);
+        }}
+        onOpenContextPanel={() => {
+          setShowContextPanel((p) => !p);
+          setActiveThreadMessage(null);
+        }}
         showContextPanelToggle={true}
         onBackToList={handleBackToMobileList}
         className={cn(mobileShowSidebar && "hidden md:flex")}
@@ -210,6 +222,45 @@ export function ChatContainer({
                 onToggleMuteConversation={toggleMuteConversation}
                 onAddMembers={addMembersToGroup}
                 onLeaveGroup={leaveGroup}
+                className="w-full h-full border-l-0"
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ====================================================================
+       * NHÁNH THẢO LUẬN (THREAD DRAWER)
+       * ==================================================================== */}
+      {activeThreadMessage && (
+        <>
+          {/* Desktop: side column */}
+          <ThreadDrawer
+            parentMessage={activeThreadMessage}
+            messages={messages}
+            currentUser={currentUser}
+            allProfiles={allProfiles}
+            onClose={() => setActiveThreadMessage(null)}
+            onSendMessage={sendMessage}
+            onToggleReaction={toggleReaction}
+            className="hidden lg:flex"
+          />
+
+          {/* Mobile & Tablet (< 1024px): Overlay Drawer */}
+          <div className="fixed inset-0 z-40 lg:hidden flex justify-end">
+            <div
+              className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+              onClick={() => setActiveThreadMessage(null)}
+            />
+            <div className="relative z-10 w-full sm:w-96 max-w-full h-full bg-white dark:bg-slate-900 shadow-2xl animate-in slide-in-from-right duration-200">
+              <ThreadDrawer
+                parentMessage={activeThreadMessage}
+                messages={messages}
+                currentUser={currentUser}
+                allProfiles={allProfiles}
+                onClose={() => setActiveThreadMessage(null)}
+                onSendMessage={sendMessage}
+                onToggleReaction={toggleReaction}
                 className="w-full h-full border-l-0"
               />
             </div>

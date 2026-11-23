@@ -24,13 +24,12 @@ export default async function ChatPage() {
   ] = await Promise.all([
     supabase
       .from("profiles")
-      .select("*, department:departments(*)")
+      .select("*")
       .eq("id", user.id)
       .single(),
     supabase
       .from("profiles")
-      .select("*, department:departments(*)")
-      .eq("is_active", true)
+      .select("*")
       .order("full_name", { ascending: true }),
     supabase
       .from("departments")
@@ -39,35 +38,49 @@ export default async function ChatPage() {
     supabase
       .from("projects")
       .select("*")
-      .eq("status", "active")
       .order("updated_at", { ascending: false }),
   ]);
 
-  const currentUser: Profile = (currentProfileRes.data as Profile | null) ?? {
-    id: user.id,
-    email: user.email ?? "",
-    full_name:
-      (user.user_metadata?.full_name as string | undefined) ??
-      user.email?.split("@")[0] ??
-      "Nhân viên Alpha",
-    avatar_url: (user.user_metadata?.avatar_url as string | null) ?? null,
-    role: "member",
-    job_title: null,
-    department_id: null,
-    manager_id: null,
-    telegram_chat_id: null,
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    department: null,
-    manager: null,
-  };
-
-  const allProfiles: Profile[] = (allProfilesRes.data as Profile[] | null) ?? [];
   const allDepartments: Department[] =
     (allDepartmentsRes.data as Department[] | null) ?? [];
   const allProjects: Project[] =
     (allProjectsRes.data as Project[] | null) ?? [];
+
+  const deptMap = new Map(allDepartments.map((d) => [d.id, d]));
+
+  const rawProfiles = (allProfilesRes.data as Profile[] | null) ?? [];
+  const allProfiles: Profile[] = rawProfiles.map((p) => ({
+    ...p,
+    department: p.department_id ? deptMap.get(p.department_id) || null : null,
+  }));
+
+  const rawCurrent = currentProfileRes.data as Profile | null;
+  const currentUser: Profile = rawCurrent
+    ? {
+        ...rawCurrent,
+        department: rawCurrent.department_id
+          ? deptMap.get(rawCurrent.department_id) || null
+          : null,
+      }
+    : {
+        id: user.id,
+        email: user.email ?? "",
+        full_name:
+          (user.user_metadata?.full_name as string | undefined) ??
+          user.email?.split("@")[0] ??
+          "Nhân viên Alpha",
+        avatar_url: (user.user_metadata?.avatar_url as string | null) ?? null,
+        role: "member",
+        job_title: null,
+        department_id: null,
+        manager_id: null,
+        telegram_chat_id: null,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        department: null,
+        manager: null,
+      };
 
   return (
     <div className="h-[calc(100vh-6rem)]">
