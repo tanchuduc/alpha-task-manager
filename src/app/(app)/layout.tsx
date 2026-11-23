@@ -41,11 +41,13 @@ export default async function AuthenticatedLayout({
     role: "member",
     job_title: null,
     department_id: null,
+    manager_id: null,
     telegram_chat_id: null,
     is_active: true,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     department: null,
+    manager: null,
   };
 
   return (

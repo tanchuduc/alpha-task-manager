@@ -21,16 +21,20 @@ export default async function SettingsPage() {
   ] = await Promise.all([
     supabase
       .from("profiles")
-      .select("*, department:departments(*)")
+      .select(
+        "*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title)"
+      )
       .eq("id", user.id)
       .single(),
     supabase
       .from("departments")
-      .select("*")
+      .select("*, parent:departments!parent_id(id, name, code)")
       .order("name", { ascending: true }),
     supabase
       .from("profiles")
-      .select("*, department:departments(*)")
+      .select(
+        "*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title)"
+      )
       .order("created_at", { ascending: false }),
     supabase
       .from("projects")
@@ -49,11 +53,13 @@ export default async function SettingsPage() {
     role: "member",
     job_title: null,
     department_id: null,
+    manager_id: null,
     telegram_chat_id: null,
     is_active: true,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     department: null,
+    manager: null,
   };
 
   return (

@@ -16,7 +16,10 @@ export interface Department {
   name: string;
   code: string | null;
   description: string | null;
+  parent_id?: string | null;
   created_at: string;
+  parent?: Pick<Department, "id" | "name" | "code"> | null;
+  children?: Department[];
 }
 
 export interface Profile {
@@ -27,11 +30,13 @@ export interface Profile {
   role: UserRole;
   job_title: string | null;
   department_id: string | null;
+  manager_id?: string | null;
   telegram_chat_id: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
   department?: Department | null;
+  manager?: Pick<Profile, "id" | "full_name" | "email" | "avatar_url" | "job_title"> | null;
 }
 
 export interface Project {

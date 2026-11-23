@@ -27,8 +27,11 @@ CREATE TABLE IF NOT EXISTS alpha_lite.departments (
   name TEXT NOT NULL UNIQUE,
   code TEXT,
   description TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  parent_id UUID REFERENCES alpha_lite.departments(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT check_departments_not_self_parent CHECK (id != parent_id)
 );
+CREATE INDEX IF NOT EXISTS idx_alpha_lite_departments_parent_id ON alpha_lite.departments(parent_id);
 
 -- 2. HỒ SƠ NHÂN SỰ (1-1 với auth.users)
 CREATE TABLE IF NOT EXISTS alpha_lite.profiles (
@@ -39,11 +42,14 @@ CREATE TABLE IF NOT EXISTS alpha_lite.profiles (
   role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'manager', 'member')),
   job_title TEXT,
   department_id UUID REFERENCES alpha_lite.departments(id) ON DELETE SET NULL,
+  manager_id UUID REFERENCES alpha_lite.profiles(id) ON DELETE SET NULL,
   telegram_chat_id TEXT,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT check_profiles_not_self_manager CHECK (id != manager_id)
 );
+CREATE INDEX IF NOT EXISTS idx_alpha_lite_profiles_manager_id ON alpha_lite.profiles(manager_id);
 
 -- 3. DỰ ÁN
 CREATE TABLE IF NOT EXISTS alpha_lite.projects (

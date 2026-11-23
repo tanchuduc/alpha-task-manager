@@ -51,6 +51,7 @@ export async function POST(request: Request) {
       full_name?: string;
       role?: UserRole;
       department_id?: string | null;
+      manager_id?: string | null;
       job_title?: string | null;
     };
 
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
     const role: UserRole =
       body.role && VALID_ROLES.includes(body.role) ? body.role : "member";
     const departmentId = body.department_id || null;
+    const managerId = body.manager_id || null;
     const jobTitle = body.job_title?.trim() || null;
 
     if (!email || !password || !fullName) {
@@ -110,12 +112,13 @@ export async function POST(request: Request) {
           full_name: fullName,
           role,
           department_id: departmentId,
+          manager_id: managerId,
           job_title: jobTitle,
           is_active: true,
         },
         { onConflict: "id" }
       )
-      .select("*, department:departments(*)")
+      .select("*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title)")
       .single();
 
     if (profileErr) {
@@ -142,6 +145,7 @@ export async function PATCH(request: Request) {
       user_id?: string;
       role?: UserRole;
       department_id?: string | null;
+      manager_id?: string | null;
       job_title?: string | null;
       is_active?: boolean;
     };
@@ -176,6 +180,15 @@ export async function PATCH(request: Request) {
     if (body.department_id !== undefined) {
       updates.department_id = body.department_id || null;
     }
+    if (body.manager_id !== undefined) {
+      if (body.manager_id && body.manager_id === body.user_id) {
+        return NextResponse.json(
+          { error: "Không thể chọn chính mình làm quản lý trực tiếp." },
+          { status: 400 }
+        );
+      }
+      updates.manager_id = body.manager_id || null;
+    }
     if (body.job_title !== undefined) {
       updates.job_title = body.job_title?.trim() || null;
     }
@@ -188,7 +201,7 @@ export async function PATCH(request: Request) {
       .from("profiles")
       .update(updates)
       .eq("id", body.user_id)
-      .select("*, department:departments(*)")
+      .select("*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title)")
       .single();
 
     if (updateErr) {
