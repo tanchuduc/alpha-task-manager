@@ -33,6 +33,7 @@ import {
   ChevronRight,
   Clock,
   Sparkles,
+  RotateCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -46,6 +47,7 @@ import {
 import { logTaskActivity } from "@/lib/activity-logger";
 import TaskActivityTimeline from "@/components/tasks/TaskActivityTimeline";
 import TaskDependenciesSection from "@/components/tasks/TaskDependenciesSection";
+import TaskRecurringConfig from "@/components/tasks/TaskRecurringConfig";
 import {
   MentionTextarea,
   renderContentWithMentions,
@@ -62,6 +64,7 @@ import type {
   TaskComment,
   TaskCustomFieldValue,
   TaskPriority,
+  TaskRecurringRule,
   TaskStatus,
 } from "@/types/database";
 
@@ -191,6 +194,9 @@ export default function TaskDrawer({
   const [blockerTasks, setBlockerTasks] = useState<Task[]>([]);
   const [showBlockerConfirmModal, setShowBlockerConfirmModal] = useState(false);
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
+
+  // Recurring Task Rule state
+  const [recurringRule, setRecurringRule] = useState<TaskRecurringRule | null>(null);
 
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
@@ -362,6 +368,7 @@ export default function TaskDrawer({
           { data: customFieldsData },
           { data: customValuesData },
           { data: phasesData },
+          { data: recurringData },
         ] = await Promise.all([
           supabase.from("tasks").select("*").eq("id", taskId).single(),
           supabase
@@ -399,6 +406,11 @@ export default function TaskDrawer({
             .select("*")
             .eq("project_id", projectId)
             .order("position", { ascending: true }),
+          supabase
+            .from("task_recurring_rules")
+            .select("*")
+            .eq("task_id", taskId)
+            .maybeSingle(),
         ]);
 
         if (taskErr || !taskData) {
@@ -425,6 +437,7 @@ export default function TaskDrawer({
           valMap[row.field_id] = row.value;
         }
         setCustomValues(valMap);
+        setRecurringRule((recurringData as TaskRecurringRule) || null);
       } catch {
         toast.error("Lỗi khi tải chi tiết công việc");
       } finally {
@@ -1247,6 +1260,12 @@ export default function TaskDrawer({
                 Quá hạn
               </span>
             )}
+            {task?.is_recurring && (
+              <span className="rounded-[4px] bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-950/70 dark:text-purple-300 flex items-center gap-1">
+                <RotateCw className="h-3 w-3" />
+                Lặp lại định kỳ
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -1659,6 +1678,23 @@ export default function TaskDrawer({
                 onBlockersChange={(has, blockers) => {
                   setHasUnresolvedBlockers(has);
                   setBlockerTasks(blockers);
+                }}
+              />
+            </div>
+
+            {/* Cấu hình lặp lại định kỳ (Recurring Tasks Engine) */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+              <TaskRecurringConfig
+                taskId={task.id}
+                projectId={projectId}
+                canEdit={canEdit}
+                initialRule={recurringRule}
+                onRuleUpdated={(newRule) => {
+                  setRecurringRule(newRule);
+                  setTask((prev) =>
+                    prev ? { ...prev, is_recurring: !!newRule && newRule.is_active } : null
+                  );
+                  onUpdated();
                 }}
               />
             </div>

@@ -160,6 +160,28 @@ export interface TaskDependency {
   depends_on_task?: Pick<Task, "id" | "title" | "status_id" | "status">;
 }
 
+export type RecurringFrequency = "daily" | "weekly" | "monthly" | "custom";
+export type RecurringEndType = "never" | "on_date" | "after_count";
+
+export interface TaskRecurringRule {
+  id: string;
+  task_id: string;
+  project_id: string;
+  frequency: RecurringFrequency;
+  interval_value: number;
+  days_of_week: number[];
+  day_of_month: number | null;
+  end_type: RecurringEndType;
+  end_date: string | null;
+  max_occurrences: number | null;
+  occurrence_count: number;
+  next_run_date: string;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Task {
   id: string;
   project_id: string;
@@ -176,6 +198,9 @@ export interface Task {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  is_recurring?: boolean;
+  recurring_rule_id?: string | null;
+  recurring_source_task_id?: string | null;
   // Joined optional fields
   status?: TaskStatus | null;
   phase?: ProjectPhase | null;

@@ -97,6 +97,8 @@ interface ProjectDetailClientProps {
 
 type ViewMode = "list" | "kanban" | "calendar" | "updates" | "phases" | "files" | "chat";
 
+export type ListGroupBy = "status" | "phase" | "assignee" | "priority" | "none";
+
 const WEEKDAYS_VI = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
 function formatYmd(date: Date): string {
@@ -367,8 +369,8 @@ function TaskCustomCells({
               e.stopPropagation();
               onOpenDrawer(task.id);
             }}
-            className="hidden lg:flex min-w-[120px] max-w-[170px] shrink-0 items-center text-xs text-slate-700 dark:text-slate-300 px-2 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/70 rounded py-0.5 transition"
-            title={`${field.name}: ${val || "Chưa có"}`}
+            className="flex min-w-[120px] max-w-[170px] shrink-0 items-center text-xs text-slate-700 dark:text-slate-300 px-2 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/70 rounded py-0.5 transition"
+            title={`${field.name}: ${val || "Chưa có"} (Click để chỉnh sửa)`}
           >
             {isPeople ? (
               peopleProfile ? (
@@ -431,13 +433,13 @@ function TaskListTableHeader({
   };
 }) {
   return (
-    <div className="hidden sm:flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:bg-slate-800/30">
-      <div className="flex-1 min-w-[200px]">Công việc</div>
+    <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:bg-slate-800/30 min-w-max sm:min-w-0">
+      <div className="flex-1 min-w-[240px]">Công việc</div>
       <div className="flex items-center gap-3">
         {visibleCustomFields.map((f) => (
           <div
             key={f.id}
-            className="hidden lg:block min-w-[120px] max-w-[170px] px-2 truncate"
+            className="flex min-w-[120px] max-w-[170px] shrink-0 px-2 truncate"
           >
             {f.name}
           </div>
@@ -507,16 +509,112 @@ export default function ProjectDetailClient({
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [phaseFilter, setPhaseFilter] = useState<string>("all");
   const [overdueOnly, setOverdueOnly] = useState<boolean>(false);
-  const [collapsedStatusIds, setCollapsedStatusIds] = useState<
+  // List View Grouping: By Status, Phase, Assignee, Priority, or None
+  const [listGroupBy, setListGroupBy] = useState<ListGroupBy>(() => {
+    const g = searchParams.get("group") as ListGroupBy | null;
+    if (g && ["status", "phase", "assignee", "priority", "none"].includes(g)) {
+      return g;
+    }
+    return "status";
+  });
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<
     Record<string, boolean>
   >({});
+  const [groupQuickAdd, setGroupQuickAdd] = useState<Record<string, string>>({});
 
-  // List View Grouping: By Status vs By Phase
-  const [listGroupBy, setListGroupBy] = useState<"status" | "phase">("status");
-  const [collapsedPhaseIds, setCollapsedPhaseIds] = useState<
-    Record<string, boolean>
-  >({});
-  const [phaseQuickAdd, setPhaseQuickAdd] = useState<Record<string, string>>({});
+  // Filter persistence: Load from URL params & localStorage
+  useEffect(() => {
+    try {
+      const urlGroup = searchParams.get("group") as ListGroupBy | null;
+      if (
+        urlGroup &&
+        ["status", "phase", "assignee", "priority", "none"].includes(urlGroup)
+      ) {
+        setListGroupBy(urlGroup);
+      } else {
+        const savedGroup = localStorage.getItem(
+          `alpha_proj_grp_${project.id}`
+        ) as ListGroupBy | null;
+        if (
+          savedGroup &&
+          ["status", "phase", "assignee", "priority", "none"].includes(savedGroup)
+        ) {
+          setListGroupBy(savedGroup);
+        }
+      }
+
+      const urlPriority = searchParams.get("priority") as TaskPriority | "all" | null;
+      if (urlPriority && ["all", "urgent", "high", "medium", "low"].includes(urlPriority)) {
+        setPriorityFilter(urlPriority);
+      }
+      const urlAssignee = searchParams.get("assignee");
+      if (urlAssignee) setAssigneeFilter(urlAssignee);
+      const urlPhase = searchParams.get("phase");
+      if (urlPhase) setPhaseFilter(urlPhase);
+      const urlOverdue = searchParams.get("overdue");
+      if (urlOverdue === "true" || urlOverdue === "1") setOverdueOnly(true);
+
+      const savedCols = localStorage.getItem(`alpha_proj_cols_${project.id}`);
+      if (savedCols) {
+        const parsed = JSON.parse(savedCols);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setVisibleColumnIds(new Set(parsed));
+        }
+      }
+
+      const savedStdCols = localStorage.getItem(`alpha_proj_std_cols_${project.id}`);
+      if (savedStdCols) {
+        setVisibleStdColumns(JSON.parse(savedStdCols));
+      }
+    } catch {}
+  }, [project.id, searchParams]);
+
+  const updateListGroupBy = useCallback(
+    (newGroup: ListGroupBy) => {
+      setListGroupBy(newGroup);
+      try {
+        localStorage.setItem(`alpha_proj_grp_${project.id}`, newGroup);
+        const url = new URL(window.location.href);
+        url.searchParams.set("group", newGroup);
+        window.history.replaceState({}, "", url.toString());
+      } catch {}
+    },
+    [project.id]
+  );
+
+  const toggleColumnVisibility = useCallback(
+    (fieldId: string) => {
+      setVisibleColumnIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(fieldId)) next.delete(fieldId);
+        else next.add(fieldId);
+        try {
+          localStorage.setItem(
+            `alpha_proj_cols_${project.id}`,
+            JSON.stringify(Array.from(next))
+          );
+        } catch {}
+        return next;
+      });
+    },
+    [project.id]
+  );
+
+  const toggleStdColumn = useCallback(
+    (colKey: "priority" | "due_date" | "assignees") => {
+      setVisibleStdColumns((prev) => {
+        const next = { ...prev, [colKey]: !prev[colKey] };
+        try {
+          localStorage.setItem(
+            `alpha_proj_std_cols_${project.id}`,
+            JSON.stringify(next)
+          );
+        } catch {}
+        return next;
+      });
+    },
+    [project.id]
+  );
 
   // Custom Fields & Dynamic Columns State
   const [customFields, setCustomFields] = useState<ProjectCustomField[]>([]);
@@ -532,9 +630,6 @@ export default function ProjectDetailClient({
     due_date: true,
     assignees: true,
   });
-
-  // Quick-add per status in List view
-  const [listQuickAdd, setListQuickAdd] = useState<Record<string, string>>({});
 
   // Task drawer state synced with ?task=<id>
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() =>
@@ -995,6 +1090,123 @@ export default function ProjectDetailClient({
         subtasks_done: 0,
       },
     ]);
+  }
+
+  async function handleQuickAddTaskWithAssignee(
+    assigneeId: string,
+    title: string
+  ) {
+    if (!canCreateTasks) {
+      toast.error("Bạn không có quyền tạo công việc trong dự án này.");
+      return;
+    }
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    const targetStatusId = todoStatus?.id || statuses[0]?.id || null;
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert({
+        project_id: project.id,
+        status_id: targetStatusId,
+        title: trimmed,
+        priority: "medium",
+        position: tasks.length,
+        created_by: currentUser.id,
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      toast.error("Không thể thêm công việc");
+      return;
+    }
+
+    const createdTask = data as Task;
+    await supabase.from("task_assignees").insert({
+      task_id: createdTask.id,
+      user_id: assigneeId,
+      assigned_by: currentUser.id,
+    });
+
+    logTaskActivity(supabase, {
+      taskId: createdTask.id,
+      actorId: currentUser.id,
+      action: "created",
+      details: { new_value: trimmed, assignee_id: assigneeId },
+    });
+
+    const targetProfile = profilesMap.get(assigneeId);
+    setTasks((prev) => [
+      ...prev,
+      {
+        ...createdTask,
+        assignees: targetProfile ? [targetProfile] : [],
+        subtasks_count: 0,
+        subtasks_done: 0,
+      },
+    ]);
+    toast.success("Đã thêm công việc mới");
+  }
+
+  async function handleQuickAddTaskWithPriority(
+    priority: TaskPriority,
+    title: string
+  ) {
+    if (!canCreateTasks) {
+      toast.error("Bạn không có quyền tạo công việc trong dự án này.");
+      return;
+    }
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    const targetStatusId = todoStatus?.id || statuses[0]?.id || null;
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert({
+        project_id: project.id,
+        status_id: targetStatusId,
+        title: trimmed,
+        priority,
+        position: tasks.length,
+        created_by: currentUser.id,
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      toast.error("Không thể thêm công việc");
+      return;
+    }
+
+    const createdTask = data as Task;
+    let initialAssignees: Profile[] = [];
+    if (project.assign_tasks_to_creator) {
+      await supabase.from("task_assignees").insert({
+        task_id: createdTask.id,
+        user_id: currentUser.id,
+        assigned_by: currentUser.id,
+      });
+      initialAssignees = [currentUser];
+    }
+
+    logTaskActivity(supabase, {
+      taskId: createdTask.id,
+      actorId: currentUser.id,
+      action: "created",
+      details: { new_value: trimmed, priority },
+    });
+
+    setTasks((prev) => [
+      ...prev,
+      {
+        ...createdTask,
+        assignees: initialAssignees,
+        subtasks_count: 0,
+        subtasks_done: 0,
+      },
+    ]);
+    toast.success("Đã thêm công việc mới");
   }
 
   async function handleCreateTaskFromModal(e: React.FormEvent) {
@@ -1508,6 +1720,375 @@ export default function ProjectDetailClient({
     return projProfiles.length > 0 ? projProfiles : allProfiles;
   }, [members, profilesMap, allProfiles]);
 
+  interface ListGroupSection {
+    id: string;
+    name: string;
+    color?: string;
+    badge?: React.ReactNode;
+    tasks: Task[];
+    onQuickAdd?: (title: string) => Promise<void>;
+    quickAddPlaceholder?: string;
+  }
+
+  const listGroupSections = useMemo<ListGroupSection[]>(() => {
+    if (listGroupBy === "none") {
+      return [
+        {
+          id: "all",
+          name: `Toàn bộ công việc (${filteredTasks.length})`,
+          color: "#F47830",
+          tasks: filteredTasks,
+          onQuickAdd: async (title: string) => {
+            const firstStatus = statuses[0];
+            if (firstStatus) await handleQuickAddTask(firstStatus.id, title);
+          },
+          quickAddPlaceholder: "Thêm công việc mới...",
+        },
+      ];
+    }
+
+    if (listGroupBy === "phase") {
+      const sections: ListGroupSection[] = phases.map((ph, idx) => ({
+        id: ph.id,
+        name: `${idx + 1}. ${ph.name}`,
+        color: ph.color || "#F26522",
+        badge:
+          ph.assignee_id && profilesMap.get(ph.assignee_id) ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/20 bg-brand-soft/60 px-2 py-0.5 text-[11px] font-medium text-brand dark:border-brand/30 dark:bg-brand/15">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand text-[8px] font-bold text-white">
+                {getInitials(profilesMap.get(ph.assignee_id)!.full_name)}
+              </span>
+              <span>
+                Phụ trách: {profilesMap.get(ph.assignee_id)!.full_name}
+              </span>
+            </span>
+          ) : null,
+        tasks: filteredTasks.filter((t) => t.phase_id === ph.id),
+        onQuickAdd: async (title: string) => {
+          await handleQuickAddTaskToPhase(ph.id, title);
+        },
+        quickAddPlaceholder: `Thêm công việc vào giai đoạn "${ph.name}"...`,
+      }));
+
+      const unassigned = filteredTasks.filter((t) => !t.phase_id);
+      if (unassigned.length > 0 || phases.length === 0) {
+        sections.push({
+          id: "unassigned-phase",
+          name: "Chưa phân giai đoạn",
+          color: "#94A3B8",
+          tasks: unassigned,
+          onQuickAdd: async (title: string) => {
+            await handleQuickAddTaskToPhase(null, title);
+          },
+          quickAddPlaceholder: "Thêm công việc chưa phân giai đoạn...",
+        });
+      }
+      return sections;
+    }
+
+    if (listGroupBy === "assignee") {
+      const sections: ListGroupSection[] = [];
+      const assignedUserIds = new Set<string>();
+
+      for (const t of filteredTasks) {
+        for (const a of t.assignees ?? []) {
+          assignedUserIds.add(a.id);
+        }
+      }
+
+      const userList = assignableProfiles.filter((p) =>
+        assignedUserIds.has(p.id)
+      );
+      for (const user of userList) {
+        sections.push({
+          id: `user-${user.id}`,
+          name: user.full_name,
+          color: "#3B82F6",
+          badge: user.department ? (
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              {typeof user.department === "string"
+                ? user.department
+                : (user.department as { name?: string }).name || "Phòng ban"}
+            </span>
+          ) : null,
+          tasks: filteredTasks.filter((t) =>
+            t.assignees?.some((a) => a.id === user.id)
+          ),
+          onQuickAdd: async (title: string) => {
+            await handleQuickAddTaskWithAssignee(user.id, title);
+          },
+          quickAddPlaceholder: `Giao công việc mới cho "${user.full_name}"...`,
+        });
+      }
+
+      const unassigned = filteredTasks.filter(
+        (t) => !t.assignees || t.assignees.length === 0
+      );
+      if (unassigned.length > 0 || sections.length === 0) {
+        sections.push({
+          id: "unassigned-user",
+          name: "Chưa phân công",
+          color: "#94A3B8",
+          tasks: unassigned,
+          onQuickAdd: async (title: string) => {
+            const firstStatus = statuses[0];
+            if (firstStatus) await handleQuickAddTask(firstStatus.id, title);
+          },
+          quickAddPlaceholder: "Thêm công việc chưa giao ai...",
+        });
+      }
+      return sections;
+    }
+
+    if (listGroupBy === "priority") {
+      const order: TaskPriority[] = ["urgent", "high", "medium", "low"];
+      return order.map((pKey) => {
+        const pCfg = PRIORITY_CONFIG[pKey] ?? PRIORITY_CONFIG.medium;
+        return {
+          id: `prio-${pKey}`,
+          name: `Mức ưu tiên: ${pCfg.label}`,
+          color:
+            pKey === "urgent"
+              ? "#EF4444"
+              : pKey === "high"
+              ? "#F59E0B"
+              : pKey === "medium"
+              ? "#3B82F6"
+              : "#64748B",
+          tasks: filteredTasks.filter((t) => t.priority === pKey),
+          onQuickAdd: async (title: string) => {
+            await handleQuickAddTaskWithPriority(pKey, title);
+          },
+          quickAddPlaceholder: `Thêm công việc mức ưu tiên "${pCfg.label}"...`,
+        };
+      });
+    }
+
+    // Default: listGroupBy === "status"
+    return statuses.map((st) => ({
+      id: st.id,
+      name: st.name,
+      color: st.color || "#94A3B8",
+      tasks: filteredTasks.filter((t) => t.status_id === st.id),
+      onQuickAdd: async (title: string) => {
+        await handleQuickAddTask(st.id, title);
+      },
+      quickAddPlaceholder: `Thêm công việc vào "${st.name}"...`,
+    }));
+  }, [
+    listGroupBy,
+    filteredTasks,
+    phases,
+    statuses,
+    profilesMap,
+    assignableProfiles,
+  ]);
+
+  const renderTaskRow = useCallback(
+    (task: Task) => {
+      const isDone =
+        Boolean(task.completed_at) ||
+        (doneStatus && task.status_id === doneStatus.id);
+      const pCfg =
+        PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG.medium;
+      const overdue = isOverdue(task.due_date, task.completed_at);
+      const st = statuses.find((s) => s.id === task.status_id);
+      const ph = phases.find((p) => p.id === task.phase_id);
+
+      return (
+        <div
+          key={task.id}
+          className={cn(
+            "group flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40 min-w-max sm:min-w-0",
+            selectedTaskIds.has(task.id) &&
+              "bg-brand-soft/40 dark:bg-brand/10"
+          )}
+        >
+          <div className="flex min-w-[240px] flex-1 items-center gap-2.5">
+            <input
+              type="checkbox"
+              checked={selectedTaskIds.has(task.id)}
+              onChange={() => {
+                setSelectedTaskIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(task.id)) next.delete(task.id);
+                  else next.add(task.id);
+                  return next;
+                });
+              }}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Chọn ${task.title}`}
+              className="h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
+            />
+
+            <button
+              type="button"
+              onClick={() => handleToggleTaskDone(task)}
+              title={
+                isDone
+                  ? "Đánh dấu chưa xong"
+                  : "Đánh dấu hoàn thành"
+              }
+              className="shrink-0 text-slate-400 hover:text-emerald-500 cursor-pointer"
+            >
+              {isDone ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              ) : (
+                <Circle className="h-4 w-4" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openTaskDrawer(task.id)}
+              className={cn(
+                "truncate text-left text-sm font-medium transition hover:text-brand cursor-pointer max-w-[340px]",
+                isDone
+                  ? "text-slate-400 line-through"
+                  : "text-slate-800 dark:text-slate-100"
+              )}
+            >
+              {task.title}
+            </button>
+
+            {/* Recurring task badge */}
+            {task.is_recurring && (
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60"
+                title="Công việc lặp lại định kỳ"
+              >
+                <RotateCcw className="h-2.5 w-2.5" />
+                Định kỳ
+              </span>
+            )}
+
+            {/* Status badge (shown if not grouped by status) */}
+            {st && listGroupBy !== "status" && (
+              <span
+                className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                style={{
+                  backgroundColor: `${st.color || "#94A3B8"}20`,
+                  color: st.color || "#64748B",
+                }}
+              >
+                {st.name}
+              </span>
+            )}
+
+            {/* Phase badge (shown if not grouped by phase) */}
+            {ph && listGroupBy !== "phase" && (
+              <span
+                className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium border"
+                style={{
+                  borderColor: `${ph.color || "#F26522"}40`,
+                  backgroundColor: `${ph.color || "#F26522"}10`,
+                  color: ph.color || "#F26522",
+                }}
+              >
+                {ph.name}
+              </span>
+            )}
+
+            {(task.subtasks_count ?? 0) > 0 && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                <CheckSquare className="h-3 w-3" />
+                {task.subtasks_done ?? 0}/{task.subtasks_count}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <TaskCustomCells
+              task={task}
+              customFields={visibleCustomFields}
+              customValuesMap={customValuesMap}
+              profilesMap={profilesMap}
+              onOpenDrawer={openTaskDrawer}
+            />
+
+            {visibleStdColumns.priority && (
+              <select
+                value={task.priority}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) =>
+                  handleInlinePriorityChange(
+                    task,
+                    e.target.value as TaskPriority
+                  )
+                }
+                className={cn(
+                  "rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium focus:outline-none cursor-pointer",
+                  pCfg.bg,
+                  pCfg.color
+                )}
+              >
+                <option value="low">Thấp</option>
+                <option value="medium">Trung bình</option>
+                <option value="high">Cao</option>
+                <option value="urgent">Khẩn cấp</option>
+              </select>
+            )}
+
+            {visibleStdColumns.due_date && (
+              <input
+                type="date"
+                value={task.due_date ? task.due_date.slice(0, 10) : ""}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) =>
+                  handleInlineDueDateChange(
+                    task,
+                    e.target.value || null
+                  )
+                }
+                className={cn(
+                  "w-28 rounded-[4px] border border-transparent hover:border-[#d9d9d9] dark:hover:border-[#3a3a3a] bg-transparent px-1 py-0.5 text-right font-mono text-[11.5px] focus:border-brand focus:outline-none cursor-pointer",
+                  overdue
+                    ? "font-semibold text-red-600 dark:text-red-400"
+                    : "text-slate-500 dark:text-slate-400"
+                )}
+              />
+            )}
+
+            {visibleStdColumns.assignees && (
+              <div className="flex w-16 justify-end -space-x-1.5">
+                {task.assignees && task.assignees.length > 0 ? (
+                  task.assignees.slice(0, 3).map((a) => (
+                    <span
+                      key={a.id}
+                      title={a.full_name}
+                      className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
+                    >
+                      {getInitials(a.full_name)}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[11px] text-slate-300 dark:text-slate-600">
+                    —
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    },
+    [
+      doneStatus,
+      statuses,
+      phases,
+      listGroupBy,
+      selectedTaskIds,
+      handleToggleTaskDone,
+      openTaskDrawer,
+      visibleCustomFields,
+      customValuesMap,
+      profilesMap,
+      visibleStdColumns,
+      handleInlinePriorityChange,
+      handleInlineDueDateChange,
+    ]
+  );
+
   return (
     <div className="flex flex-col space-y-3">
       {/* ====================================================================
@@ -1694,16 +2275,16 @@ export default function ProjectDetailClient({
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818] px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
             {viewMode === "list" && (
-              <div className="inline-flex items-center gap-1 text-xs text-slate-500">
-                <span>Nhóm:</span>
+              <div className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                <span className="font-medium text-slate-600 dark:text-slate-400">Nhóm:</span>
                 <div className="inline-flex rounded-[6px] border border-[#d9d9d9] bg-white p-0.5 dark:border-[#3a3a3a] dark:bg-[#1f1f1f]">
                   <button
                     type="button"
-                    onClick={() => setListGroupBy("status")}
+                    onClick={() => updateListGroupBy("status")}
                     className={cn(
                       "rounded-[4px] px-2 py-0.5 text-xs font-medium transition cursor-pointer",
                       listGroupBy === "status"
-                        ? "bg-brand text-white font-semibold"
+                        ? "bg-brand text-white font-semibold shadow-xs"
                         : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
                     )}
                   >
@@ -1711,15 +2292,51 @@ export default function ProjectDetailClient({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setListGroupBy("phase")}
+                    onClick={() => updateListGroupBy("phase")}
                     className={cn(
                       "rounded-[4px] px-2 py-0.5 text-xs font-medium transition cursor-pointer",
                       listGroupBy === "phase"
-                        ? "bg-brand text-white font-semibold"
+                        ? "bg-brand text-white font-semibold shadow-xs"
                         : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
                     )}
                   >
                     Giai đoạn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateListGroupBy("assignee")}
+                    className={cn(
+                      "rounded-[4px] px-2 py-0.5 text-xs font-medium transition cursor-pointer",
+                      listGroupBy === "assignee"
+                        ? "bg-brand text-white font-semibold shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
+                    )}
+                  >
+                    Người làm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateListGroupBy("priority")}
+                    className={cn(
+                      "rounded-[4px] px-2 py-0.5 text-xs font-medium transition cursor-pointer",
+                      listGroupBy === "priority"
+                        ? "bg-brand text-white font-semibold shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
+                    )}
+                  >
+                    Ưu tiên
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateListGroupBy("none")}
+                    className={cn(
+                      "rounded-[4px] px-2 py-0.5 text-xs font-medium transition cursor-pointer",
+                      listGroupBy === "none"
+                        ? "bg-brand text-white font-semibold shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
+                    )}
+                  >
+                    Không nhóm
                   </button>
                 </div>
               </div>
@@ -1894,13 +2511,8 @@ export default function ProjectDetailClient({
                           <input
                             type="checkbox"
                             checked={visibleStdColumns.priority}
-                            onChange={(e) =>
-                              setVisibleStdColumns((prev) => ({
-                                ...prev,
-                                priority: e.target.checked,
-                              }))
-                            }
-                            className="rounded border-slate-300 text-brand focus:ring-brand accent-brand"
+                            onChange={() => toggleStdColumn("priority")}
+                            className="rounded border-slate-300 text-brand focus:ring-brand accent-brand cursor-pointer"
                           />
                           <span>Mức ưu tiên</span>
                         </label>
@@ -1908,13 +2520,8 @@ export default function ProjectDetailClient({
                           <input
                             type="checkbox"
                             checked={visibleStdColumns.due_date}
-                            onChange={(e) =>
-                              setVisibleStdColumns((prev) => ({
-                                ...prev,
-                                due_date: e.target.checked,
-                              }))
-                            }
-                            className="rounded border-slate-300 text-brand focus:ring-brand accent-brand"
+                            onChange={() => toggleStdColumn("due_date")}
+                            className="rounded border-slate-300 text-brand focus:ring-brand accent-brand cursor-pointer"
                           />
                           <span>Hạn chót (Deadline)</span>
                         </label>
@@ -1922,13 +2529,8 @@ export default function ProjectDetailClient({
                           <input
                             type="checkbox"
                             checked={visibleStdColumns.assignees}
-                            onChange={(e) =>
-                              setVisibleStdColumns((prev) => ({
-                                ...prev,
-                                assignees: e.target.checked,
-                              }))
-                            }
-                            className="rounded border-slate-300 text-brand focus:ring-brand accent-brand"
+                            onChange={() => toggleStdColumn("assignees")}
+                            className="rounded border-slate-300 text-brand focus:ring-brand accent-brand cursor-pointer"
                           />
                           <span>Người thực hiện</span>
                         </label>
@@ -1955,13 +2557,8 @@ export default function ProjectDetailClient({
                                     <input
                                       type="checkbox"
                                       checked={isChecked}
-                                      onChange={(e) => {
-                                        const next = new Set(visibleColumnIds);
-                                        if (e.target.checked) next.add(f.id);
-                                        else next.delete(f.id);
-                                        setVisibleColumnIds(next);
-                                      }}
-                                      className="rounded border-slate-300 text-brand focus:ring-brand accent-brand"
+                                      onChange={() => toggleColumnVisibility(f.id)}
+                                      className="rounded border-slate-300 text-brand focus:ring-brand accent-brand cursor-pointer"
                                     />
                                     <span className="truncate">{f.name}</span>
                                   </span>
@@ -1984,648 +2581,46 @@ export default function ProjectDetailClient({
       )}
 
       {/* ================================================================
-       * VIEW 1: LIST VIEW
+       * VIEW 1: LIST VIEW (Multi-dimensional Group By & Custom Columns)
        * ============================================================== */}
       {viewMode === "list" && (
         <div className="space-y-4">
-          {listGroupBy === "phase" ? (
-            <div className="space-y-4">
-              {phases.map((phase, idx) => {
-                const groupTasks = filteredTasks.filter(
-                  (t) => t.phase_id === phase.id
-                );
-                const collapsed = !!collapsedPhaseIds[phase.id];
-                const quickVal = phaseQuickAdd[phase.id] ?? "";
-                const isAllGroupSelected =
-                  groupTasks.length > 0 &&
-                  groupTasks.every((t) => selectedTaskIds.has(t.id));
-                const isSomeGroupSelected =
-                  groupTasks.some((t) => selectedTaskIds.has(t.id));
-                const doneCount = groupTasks.filter(
-                  (t) =>
-                    Boolean(t.completed_at) ||
-                    (doneStatus && t.status_id === doneStatus.id)
-                ).length;
-                const progress =
-                  groupTasks.length > 0
-                    ? Math.round((doneCount / groupTasks.length) * 100)
-                    : 0;
-
-                return (
-                  <div
-                    key={phase.id}
-                    className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900"
-                  >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setCollapsedPhaseIds((prev) => ({
-                          ...prev,
-                          [phase.id]: !prev[phase.id],
-                        }))
-                      }
-                      className="flex w-full items-center justify-between bg-slate-50/80 px-4 py-2.5 text-left dark:bg-slate-800/50 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        {groupTasks.length > 0 && (
-                          <input
-                            type="checkbox"
-                            checked={isAllGroupSelected}
-                            ref={(el) => {
-                              if (el) {
-                                el.indeterminate =
-                                  isSomeGroupSelected && !isAllGroupSelected;
-                              }
-                            }}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              setSelectedTaskIds((prev) => {
-                                const next = new Set(prev);
-                                for (const t of groupTasks) {
-                                  if (isAllGroupSelected) next.delete(t.id);
-                                  else next.add(t.id);
-                                }
-                                return next;
-                              });
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            title="Chọn tất cả công việc trong giai đoạn này"
-                            className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer mr-0.5"
-                          />
-                        )}
-                        {collapsed ? (
-                          <ChevronDown className="h-4 w-4 text-slate-400" />
-                        ) : (
-                          <ChevronUp className="h-4 w-4 text-slate-400" />
-                        )}
-                        <span
-                          className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-2xs"
-                          style={{ backgroundColor: phase.color || "#F26522" }}
-                        >
-                          {idx + 1}
-                        </span>
-                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                          {phase.name}
-                        </span>
-                        <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                          {doneCount}/{groupTasks.length} việc ({progress}%)
-                        </span>
-                        {phase.assignee_id && profilesMap.get(phase.assignee_id) && (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/20 bg-brand-soft/60 px-2 py-0.5 text-[11px] font-medium text-brand dark:border-brand/30 dark:bg-brand/15">
-                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand text-[8px] font-bold text-white">
-                              {getInitials(profilesMap.get(phase.assignee_id)!.full_name)}
-                            </span>
-                            <span>
-                              Phụ trách: {profilesMap.get(phase.assignee_id)!.full_name}
-                            </span>
-                          </span>
-                        )}
-                      </div>
-                    </button>
-
-                    {!collapsed && (
-                      <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {groupTasks.length > 0 && (
-                          <TaskListTableHeader
-                            visibleCustomFields={visibleCustomFields}
-                            visibleStdColumns={visibleStdColumns}
-                          />
-                        )}
-                        {groupTasks.map((task) => {
-                          const isDone =
-                            Boolean(task.completed_at) ||
-                            (doneStatus && task.status_id === doneStatus.id);
-                          const pCfg =
-                            PRIORITY_CONFIG[task.priority] ??
-                            PRIORITY_CONFIG.medium;
-                          const overdue = isOverdue(
-                            task.due_date,
-                            task.completed_at
-                          );
-                          const st = statuses.find(
-                            (s) => s.id === task.status_id
-                          );
-
-                          return (
-                            <div
-                              key={task.id}
-                              className={cn(
-                                "group flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
-                                selectedTaskIds.has(task.id) &&
-                                  "bg-brand-soft/40 dark:bg-brand/10"
-                              )}
-                            >
-                              <div className="flex min-w-0 flex-1 items-center gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedTaskIds.has(task.id)}
-                                  onChange={() => {
-                                    setSelectedTaskIds((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(task.id))
-                                        next.delete(task.id);
-                                      else next.add(task.id);
-                                      return next;
-                                    });
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  aria-label={`Chọn ${task.title}`}
-                                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
-                                />
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleTaskDone(task)}
-                                  title={
-                                    isDone
-                                      ? "Đánh dấu chưa xong"
-                                      : "Đánh dấu hoàn thành"
-                                  }
-                                  className="shrink-0 text-slate-400 hover:text-emerald-500 cursor-pointer"
-                                >
-                                  {isDone ? (
-                                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                                  ) : (
-                                    <Circle className="h-4 w-4" />
-                                  )}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => openTaskDrawer(task.id)}
-                                  className={cn(
-                                    "truncate text-left text-sm font-medium transition hover:text-brand cursor-pointer",
-                                    isDone
-                                      ? "text-slate-400 line-through"
-                                      : "text-slate-800 dark:text-slate-100"
-                                  )}
-                                >
-                                  {task.title}
-                                </button>
-
-                                {st && (
-                                  <span
-                                    className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
-                                    style={{
-                                      backgroundColor: `${st.color || "#94A3B8"}20`,
-                                      color: st.color || "#64748B",
-                                    }}
-                                  >
-                                    {st.name}
-                                  </span>
-                                )}
-
-                                {(task.subtasks_count ?? 0) > 0 && (
-                                  <span className="inline-flex shrink-0 items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                    <CheckSquare className="h-3 w-3" />
-                                    {task.subtasks_done ?? 0}/
-                                    {task.subtasks_count}
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-3">
-                                <TaskCustomCells
-                                  task={task}
-                                  customFields={visibleCustomFields}
-                                  customValuesMap={customValuesMap}
-                                  profilesMap={profilesMap}
-                                  onOpenDrawer={openTaskDrawer}
-                                />
-
-                                {visibleStdColumns.priority && (
-                                  <select
-                                    value={task.priority}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) =>
-                                      handleInlinePriorityChange(
-                                        task,
-                                        e.target.value as TaskPriority
-                                      )
-                                    }
-                                    className={cn(
-                                      "rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium focus:outline-none cursor-pointer",
-                                      pCfg.bg,
-                                      pCfg.color
-                                    )}
-                                  >
-                                    <option value="low">Thấp</option>
-                                    <option value="medium">Trung bình</option>
-                                    <option value="high">Cao</option>
-                                    <option value="urgent">Khẩn cấp</option>
-                                  </select>
-                                )}
-
-                                {visibleStdColumns.due_date && (
-                                  <input
-                                    type="date"
-                                    value={
-                                      task.due_date
-                                        ? task.due_date.slice(0, 10)
-                                        : ""
-                                    }
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) =>
-                                      handleInlineDueDateChange(
-                                        task,
-                                        e.target.value || null
-                                      )
-                                    }
-                                    className={cn(
-                                      "w-28 rounded-[4px] border border-transparent hover:border-[#d9d9d9] dark:hover:border-[#3a3a3a] bg-transparent px-1 py-0.5 text-right font-mono text-[11.5px] focus:border-brand focus:outline-none cursor-pointer",
-                                      overdue
-                                        ? "font-semibold text-red-600 dark:text-red-400"
-                                        : "text-slate-500 dark:text-slate-400"
-                                    )}
-                                  />
-                                )}
-
-                                {visibleStdColumns.assignees && (
-                                  <div className="flex w-16 justify-end -space-x-1.5">
-                                    {task.assignees &&
-                                    task.assignees.length > 0 ? (
-                                      task.assignees.slice(0, 3).map((a) => (
-                                        <span
-                                          key={a.id}
-                                          title={a.full_name}
-                                          className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
-                                        >
-                                          {getInitials(a.full_name)}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-[11px] text-slate-300 dark:text-slate-600">
-                                        —
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {/* Inline Quick-add per phase */}
-                        {canCreateTasks && (
-                          <form
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              if (!quickVal.trim()) return;
-                              await handleQuickAddTaskToPhase(
-                                phase.id,
-                                quickVal
-                              );
-                              setPhaseQuickAdd((prev) => ({
-                                ...prev,
-                                [phase.id]: "",
-                              }));
-                            }}
-                            className="flex items-center gap-2 px-4 py-2"
-                          >
-                            <Plus className="h-4 w-4 text-slate-400" />
-                            <input
-                              type="text"
-                              value={quickVal}
-                              onChange={(e) =>
-                                setPhaseQuickAdd((prev) => ({
-                                  ...prev,
-                                  [phase.id]: e.target.value,
-                                }))
-                              }
-                              placeholder={`Thêm công việc vào giai đoạn "${phase.name}"...`}
-                              className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
-                            />
-                            {quickVal.trim() && (
-                              <button
-                                type="submit"
-                                className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
-                              >
-                                Thêm
-                              </button>
-                            )}
-                          </form>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Group: Chưa phân giai đoạn */}
-              {(() => {
-                const unassigned = filteredTasks.filter((t) => !t.phase_id);
-                if (unassigned.length === 0) return null;
-                const collapsed = !!collapsedPhaseIds["unassigned"];
-                const quickVal = phaseQuickAdd["unassigned"] ?? "";
-                const isAllSelected =
-                  unassigned.length > 0 &&
-                  unassigned.every((t) => selectedTaskIds.has(t.id));
-                const isSomeSelected = unassigned.some((t) =>
-                  selectedTaskIds.has(t.id)
-                );
-
-                return (
-                  <div className="overflow-hidden rounded-xl border border-dashed border-slate-300 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setCollapsedPhaseIds((prev) => ({
-                          ...prev,
-                          unassigned: !prev["unassigned"],
-                        }))
-                      }
-                      className="flex w-full items-center justify-between bg-slate-100/80 px-4 py-2.5 text-left dark:bg-slate-800/60 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <input
-                          type="checkbox"
-                          checked={isAllSelected}
-                          ref={(el) => {
-                            if (el) {
-                              el.indeterminate =
-                                isSomeSelected && !isAllSelected;
-                            }
-                          }}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            setSelectedTaskIds((prev) => {
-                              const next = new Set(prev);
-                              for (const t of unassigned) {
-                                if (isAllSelected) next.delete(t.id);
-                                else next.add(t.id);
-                              }
-                              return next;
-                            });
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          title="Chọn tất cả việc chưa phân giai đoạn"
-                          className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer mr-0.5"
-                        />
-                        {collapsed ? (
-                          <ChevronDown className="h-4 w-4 text-slate-400" />
-                        ) : (
-                          <ChevronUp className="h-4 w-4 text-slate-400" />
-                        )}
-                        <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
-                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          Chưa phân giai đoạn
-                        </span>
-                        <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                          {unassigned.length}
-                        </span>
-                      </div>
-                    </button>
-
-                    {!collapsed && (
-                      <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {unassigned.length > 0 && (
-                          <TaskListTableHeader
-                            visibleCustomFields={visibleCustomFields}
-                            visibleStdColumns={visibleStdColumns}
-                          />
-                        )}
-                        {unassigned.map((task) => {
-                          const isDone =
-                            Boolean(task.completed_at) ||
-                            (doneStatus && task.status_id === doneStatus.id);
-                          const pCfg =
-                            PRIORITY_CONFIG[task.priority] ??
-                            PRIORITY_CONFIG.medium;
-                          const overdue = isOverdue(
-                            task.due_date,
-                            task.completed_at
-                          );
-                          const st = statuses.find(
-                            (s) => s.id === task.status_id
-                          );
-
-                          return (
-                            <div
-                              key={task.id}
-                              className={cn(
-                                "group flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
-                                selectedTaskIds.has(task.id) &&
-                                  "bg-brand-soft/40 dark:bg-brand/10"
-                              )}
-                            >
-                              <div className="flex min-w-0 flex-1 items-center gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedTaskIds.has(task.id)}
-                                  onChange={() => {
-                                    setSelectedTaskIds((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(task.id))
-                                        next.delete(task.id);
-                                      else next.add(task.id);
-                                      return next;
-                                    });
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  aria-label={`Chọn ${task.title}`}
-                                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
-                                />
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleTaskDone(task)}
-                                  className="shrink-0 text-slate-400 hover:text-emerald-500 cursor-pointer"
-                                >
-                                  {isDone ? (
-                                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                                  ) : (
-                                    <Circle className="h-4 w-4" />
-                                  )}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => openTaskDrawer(task.id)}
-                                  className={cn(
-                                    "truncate text-left text-sm font-medium transition hover:text-brand cursor-pointer",
-                                    isDone
-                                      ? "text-slate-400 line-through"
-                                      : "text-slate-800 dark:text-slate-100"
-                                  )}
-                                >
-                                  {task.title}
-                                </button>
-
-                                {st && (
-                                  <span
-                                    className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
-                                    style={{
-                                      backgroundColor: `${st.color || "#94A3B8"}20`,
-                                      color: st.color || "#64748B",
-                                    }}
-                                  >
-                                    {st.name}
-                                  </span>
-                                )}
-
-                                {(task.subtasks_count ?? 0) > 0 && (
-                                  <span className="inline-flex shrink-0 items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                    <CheckSquare className="h-3 w-3" />
-                                    {task.subtasks_done ?? 0}/
-                                    {task.subtasks_count}
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-3">
-                                <TaskCustomCells
-                                  task={task}
-                                  customFields={visibleCustomFields}
-                                  customValuesMap={customValuesMap}
-                                  profilesMap={profilesMap}
-                                  onOpenDrawer={openTaskDrawer}
-                                />
-
-                                {visibleStdColumns.priority && (
-                                  <select
-                                    value={task.priority}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) =>
-                                      handleInlinePriorityChange(
-                                        task,
-                                        e.target.value as TaskPriority
-                                      )
-                                    }
-                                    className={cn(
-                                      "rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium focus:outline-none cursor-pointer",
-                                      pCfg.bg,
-                                      pCfg.color
-                                    )}
-                                  >
-                                    <option value="low">Thấp</option>
-                                    <option value="medium">Trung bình</option>
-                                    <option value="high">Cao</option>
-                                    <option value="urgent">Khẩn cấp</option>
-                                  </select>
-                                )}
-
-                                {visibleStdColumns.due_date && (
-                                  <input
-                                    type="date"
-                                    value={
-                                      task.due_date
-                                        ? task.due_date.slice(0, 10)
-                                        : ""
-                                    }
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) =>
-                                      handleInlineDueDateChange(
-                                        task,
-                                        e.target.value || null
-                                      )
-                                    }
-                                    className={cn(
-                                      "w-28 rounded-[4px] border border-transparent hover:border-[#d9d9d9] dark:hover:border-[#3a3a3a] bg-transparent px-1 py-0.5 text-right font-mono text-[11.5px] focus:border-brand focus:outline-none cursor-pointer",
-                                      overdue
-                                        ? "font-semibold text-red-600 dark:text-red-400"
-                                        : "text-slate-500 dark:text-slate-400"
-                                    )}
-                                  />
-                                )}
-
-                                {visibleStdColumns.assignees && (
-                                  <div className="flex w-16 justify-end -space-x-1.5">
-                                    {task.assignees &&
-                                    task.assignees.length > 0 ? (
-                                      task.assignees.slice(0, 3).map((a) => (
-                                        <span
-                                          key={a.id}
-                                          title={a.full_name}
-                                          className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
-                                        >
-                                          {getInitials(a.full_name)}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-[11px] text-slate-300 dark:text-slate-600">
-                                        —
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {/* Inline Quick-add for unassigned */}
-                        {canCreateTasks && (
-                          <form
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              if (!quickVal.trim()) return;
-                              await handleQuickAddTaskToPhase(null, quickVal);
-                              setPhaseQuickAdd((prev) => ({
-                                ...prev,
-                                unassigned: "",
-                              }));
-                            }}
-                            className="flex items-center gap-2 px-4 py-2"
-                          >
-                            <Plus className="h-4 w-4 text-slate-400" />
-                            <input
-                              type="text"
-                              value={quickVal}
-                              onChange={(e) =>
-                                setPhaseQuickAdd((prev) => ({
-                                  ...prev,
-                                  unassigned: e.target.value,
-                                }))
-                              }
-                              placeholder="Thêm công việc chưa phân giai đoạn..."
-                              className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
-                            />
-                            {quickVal.trim() && (
-                              <button
-                                type="submit"
-                                className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
-                              >
-                                Thêm
-                              </button>
-                            )}
-                          </form>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          ) : (
-            statuses.map((st) => {
-            const groupTasks = filteredTasks.filter(
-              (t) => t.status_id === st.id
-            );
-            const collapsed = !!collapsedStatusIds[st.id];
-            const quickVal = listQuickAdd[st.id] ?? "";
+          {listGroupSections.map((section) => {
+            const collapsed = !!collapsedGroupIds[section.id];
+            const quickVal = groupQuickAdd[section.id] ?? "";
             const isAllGroupSelected =
-              groupTasks.length > 0 &&
-              groupTasks.every((t) => selectedTaskIds.has(t.id));
+              section.tasks.length > 0 &&
+              section.tasks.every((t) => selectedTaskIds.has(t.id));
             const isSomeGroupSelected =
-              groupTasks.some((t) => selectedTaskIds.has(t.id));
+              section.tasks.some((t) => selectedTaskIds.has(t.id));
+            const doneCount = section.tasks.filter(
+              (t) =>
+                Boolean(t.completed_at) ||
+                (doneStatus && t.status_id === doneStatus.id)
+            ).length;
+            const progress =
+              section.tasks.length > 0
+                ? Math.round((doneCount / section.tasks.length) * 100)
+                : 0;
 
             return (
               <div
-                key={st.id}
+                key={section.id}
                 className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900"
               >
+                {/* Group Header */}
                 <button
                   type="button"
                   onClick={() =>
-                    setCollapsedStatusIds((prev) => ({
+                    setCollapsedGroupIds((prev) => ({
                       ...prev,
-                      [st.id]: !prev[st.id],
+                      [section.id]: !prev[section.id],
                     }))
                   }
                   className="flex w-full items-center justify-between bg-slate-50/80 px-4 py-2.5 text-left dark:bg-slate-800/50 cursor-pointer"
                 >
                   <div className="flex items-center gap-2.5">
-                    {groupTasks.length > 0 && (
+                    {section.tasks.length > 0 && (
                       <input
                         type="checkbox"
                         checked={isAllGroupSelected}
@@ -2639,7 +2634,7 @@ export default function ProjectDetailClient({
                           e.stopPropagation();
                           setSelectedTaskIds((prev) => {
                             const next = new Set(prev);
-                            for (const t of groupTasks) {
+                            for (const t of section.tasks) {
                               if (isAllGroupSelected) next.delete(t.id);
                               else next.add(t.id);
                             }
@@ -2656,222 +2651,85 @@ export default function ProjectDetailClient({
                     ) : (
                       <ChevronUp className="h-4 w-4 text-slate-400" />
                     )}
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: st.color || "#94A3B8" }}
-                    />
+                    {section.color && (
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: section.color }}
+                      />
+                    )}
                     <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                      {st.name}
+                      {section.name}
                     </span>
                     <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                      {groupTasks.length}
+                      {doneCount}/{section.tasks.length} việc ({progress}%)
                     </span>
+                    {section.badge}
                   </div>
                 </button>
 
                 {!collapsed && (
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {groupTasks.length > 0 && (
-                      <TaskListTableHeader
-                        visibleCustomFields={visibleCustomFields}
-                        visibleStdColumns={visibleStdColumns}
-                      />
-                    )}
-                    {groupTasks.map((task) => {
-                      const isDone =
-                        Boolean(task.completed_at) || st.category === "done";
-                      const pCfg =
-                        PRIORITY_CONFIG[task.priority] ??
-                        PRIORITY_CONFIG.medium;
-                      const overdue = isOverdue(
-                        task.due_date,
-                        task.completed_at
-                      );
-
-                      return (
-                        <div
-                          key={task.id}
-                          className={cn(
-                            "group flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
-                            selectedTaskIds.has(task.id) &&
-                              "bg-brand-soft/40 dark:bg-brand/10"
-                          )}
-                        >
-                          <div className="flex min-w-0 flex-1 items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedTaskIds.has(task.id)}
-                              onChange={() => {
-                                setSelectedTaskIds((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(task.id)) next.delete(task.id);
-                                  else next.add(task.id);
-                                  return next;
-                                });
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              aria-label={`Chọn ${task.title}`}
-                              className="h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
-                            />
-
-                            <button
-                              type="button"
-                              onClick={() => handleToggleTaskDone(task)}
-                              title={
-                                isDone
-                                  ? "Đánh dấu chưa xong"
-                                  : "Đánh dấu hoàn thành"
-                              }
-                              className="shrink-0 text-slate-400 hover:text-emerald-500 cursor-pointer"
-                            >
-                              {isDone ? (
-                                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                              ) : (
-                                <Circle className="h-4 w-4" />
-                              )}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => openTaskDrawer(task.id)}
-                              className={cn(
-                                "truncate text-left text-sm font-medium transition hover:text-brand cursor-pointer",
-                                isDone
-                                  ? "text-slate-400 line-through"
-                                  : "text-slate-800 dark:text-slate-100"
-                              )}
-                            >
-                              {task.title}
-                            </button>
-
-                            {(task.subtasks_count ?? 0) > 0 && (
-                              <span className="inline-flex shrink-0 items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                <CheckSquare className="h-3 w-3" />
-                                {task.subtasks_done ?? 0}/{task.subtasks_count}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <TaskCustomCells
-                              task={task}
-                              customFields={visibleCustomFields}
-                              customValuesMap={customValuesMap}
-                              profilesMap={profilesMap}
-                              onOpenDrawer={openTaskDrawer}
-                            />
-
-                            {visibleStdColumns.priority && (
-                              <select
-                                value={task.priority}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) =>
-                                  handleInlinePriorityChange(
-                                    task,
-                                    e.target.value as TaskPriority
-                                  )
-                                }
-                                className={cn(
-                                  "rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium focus:outline-none cursor-pointer",
-                                  pCfg.bg,
-                                  pCfg.color
-                                )}
-                              >
-                                <option value="low">Thấp</option>
-                                <option value="medium">Trung bình</option>
-                                <option value="high">Cao</option>
-                                <option value="urgent">Khẩn cấp</option>
-                              </select>
-                            )}
-
-                            {visibleStdColumns.due_date && (
-                              <input
-                                type="date"
-                                value={
-                                  task.due_date
-                                    ? task.due_date.slice(0, 10)
-                                    : ""
-                                }
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) =>
-                                  handleInlineDueDateChange(
-                                    task,
-                                    e.target.value || null
-                                  )
-                                }
-                                className={cn(
-                                  "w-28 rounded-[4px] border border-transparent hover:border-[#d9d9d9] dark:hover:border-[#3a3a3a] bg-transparent px-1 py-0.5 text-right font-mono text-[11.5px] focus:border-brand focus:outline-none cursor-pointer",
-                                  overdue
-                                    ? "font-semibold text-red-600 dark:text-red-400"
-                                    : "text-slate-500 dark:text-slate-400"
-                                )}
-                              />
-                            )}
-
-                            {visibleStdColumns.assignees && (
-                              <div className="flex w-16 justify-end -space-x-1.5">
-                                {task.assignees && task.assignees.length > 0 ? (
-                                  task.assignees.slice(0, 3).map((a) => (
-                                    <span
-                                      key={a.id}
-                                      title={a.full_name}
-                                      className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
-                                    >
-                                      {getInitials(a.full_name)}
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-[11px] text-slate-300 dark:text-slate-600">
-                                    —
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {/* Inline Quick-add */}
-                    {canCreateTasks && (
-                      <form
-                        onSubmit={async (e) => {
-                          e.preventDefault();
-                          if (!quickVal.trim()) return;
-                          await handleQuickAddTask(st.id, quickVal);
-                          setListQuickAdd((prev) => ({ ...prev, [st.id]: "" }));
-                        }}
-                        className="flex items-center gap-2 px-4 py-2"
-                      >
-                        <Plus className="h-4 w-4 text-slate-400" />
-                        <input
-                          type="text"
-                          value={quickVal}
-                          onChange={(e) =>
-                            setListQuickAdd((prev) => ({
-                              ...prev,
-                              [st.id]: e.target.value,
-                            }))
-                          }
-                          placeholder={`Thêm công việc vào "${st.name}"...`}
-                          className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
+                  <div className="overflow-x-auto min-w-full">
+                    <div className="min-w-full divide-y divide-slate-100 dark:divide-slate-800">
+                      {section.tasks.length > 0 && (
+                        <TaskListTableHeader
+                          visibleCustomFields={visibleCustomFields}
+                          visibleStdColumns={visibleStdColumns}
                         />
-                        {quickVal.trim() && (
-                          <button
-                            type="submit"
-                            className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
-                          >
-                            Thêm
-                          </button>
-                        )}
-                      </form>
-                    )}
+                      )}
+                      {section.tasks.map((task) => renderTaskRow(task))}
+
+                      {section.tasks.length === 0 && (
+                        <div className="p-4 text-center text-xs text-slate-400 italic">
+                          Chưa có công việc nào trong nhóm này.
+                        </div>
+                      )}
+
+                      {/* Inline Quick-add */}
+                      {canCreateTasks && section.onQuickAdd && (
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!quickVal.trim() || !section.onQuickAdd) return;
+                            await section.onQuickAdd(quickVal);
+                            setGroupQuickAdd((prev) => ({
+                              ...prev,
+                              [section.id]: "",
+                            }));
+                          }}
+                          className="flex items-center gap-2 px-4 py-2"
+                        >
+                          <Plus className="h-4 w-4 text-slate-400" />
+                          <input
+                            type="text"
+                            value={quickVal}
+                            onChange={(e) =>
+                              setGroupQuickAdd((prev) => ({
+                                ...prev,
+                                [section.id]: e.target.value,
+                              }))
+                            }
+                            placeholder={
+                              section.quickAddPlaceholder ||
+                              "Thêm công việc mới vào nhóm này..."
+                            }
+                            className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
+                          />
+                          {quickVal.trim() && (
+                            <button
+                              type="submit"
+                              className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
+                            >
+                              Thêm
+                            </button>
+                          )}
+                        </form>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
             );
-          })
-          )}
+          })}
         </div>
       )}
 
