@@ -60,7 +60,7 @@ const LoginPage: React.FC = () => {
   // Use ref to prevent multiple executions of auth check
   const hasCheckedAuth = useRef(false);
 
-  useDocumentTitle('Login');
+  useDocumentTitle(t('title', { defaultValue: 'Đăng nhập' }));
 
   // Extract invitation parameters and verify auth status
   useEffect(() => {
@@ -314,16 +314,16 @@ const LoginPage: React.FC = () => {
           />
         </Form.Item>
 
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <label style={{ fontSize: 14, fontWeight: 500, color: 'inherit' }}>
+            {t('passwordLabel', { defaultValue: 'Mật khẩu' })}
+          </label>
+          <Link to="/auth/forgot-password" className="blue-link" style={{ fontSize: 12, fontWeight: 500 }}>
+            {t('forgotPasswordButton', { defaultValue: 'Quên mật khẩu?' })}
+          </Link>
+        </div>
         <Form.Item
           name="password"
-          label={
-            <Flex justify="space-between" align="center" style={{ width: '100%' }}>
-              <span>{t('passwordLabel', { defaultValue: 'Mật khẩu' })}</span>
-              <Link to="/auth/forgot-password" className="blue-link" style={{ fontSize: 12, fontWeight: 500 }}>
-                {t('forgotPasswordButton', { defaultValue: 'Quên mật khẩu?' })}
-              </Link>
-            </Flex>
-          }
           rules={validationRules.password as Rule[]}
           style={{ marginBottom: 24 }}
         >
