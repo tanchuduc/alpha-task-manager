@@ -153,19 +153,31 @@ export default defineConfig(({ command, mode }) => {
       // **Proxy API requests to backend server**
       proxy: {
         '/api': {
-          target: process.env.VITE_API_URL || 'http://localhost:3000',
+          target: env.VITE_BACKEND_TARGET || process.env.VITE_BACKEND_TARGET || 'https://alphawork-api-two.vercel.app',
           changeOrigin: true,
           secure: false,
+          cookieDomainRewrite: 'localhost',
         },
-
+        '/secure': {
+          target: env.VITE_BACKEND_TARGET || process.env.VITE_BACKEND_TARGET || 'https://alphawork-api-two.vercel.app',
+          changeOrigin: true,
+          secure: false,
+          cookieDomainRewrite: 'localhost',
+        },
+        '/csrf-token': {
+          target: env.VITE_BACKEND_TARGET || process.env.VITE_BACKEND_TARGET || 'https://alphawork-api-two.vercel.app',
+          changeOrigin: true,
+          secure: false,
+          cookieDomainRewrite: 'localhost',
+        },
         '/storage': {
-          target: process.env.VITE_API_URL || 'http://localhost:3000',
+          target: env.VITE_BACKEND_TARGET || process.env.VITE_BACKEND_TARGET || 'https://alphawork-api-two.vercel.app',
           changeOrigin: true,
           secure: false,
         },
         // Proxy comment/task short links to backend for Slack/Discord unfurls (crawler UA only)
         '/worklenz/c': {
-          target: process.env.VITE_API_URL || 'http://localhost:3000',
+          target: env.VITE_BACKEND_TARGET || process.env.VITE_BACKEND_TARGET || 'https://alphawork-api-two.vercel.app',
           changeOrigin: true,
           secure: false,
           bypass(req) {
@@ -181,7 +193,7 @@ export default defineConfig(({ command, mode }) => {
           },
         },
         '/worklenz/t': {
-          target: process.env.VITE_API_URL || 'http://localhost:3000',
+          target: env.VITE_BACKEND_TARGET || process.env.VITE_BACKEND_TARGET || 'https://alphawork-api-two.vercel.app',
           changeOrigin: true,
           secure: false,
           bypass(req) {
@@ -197,7 +209,7 @@ export default defineConfig(({ command, mode }) => {
           },
         },
         '/socket.io': {
-          target: process.env.VITE_SOCKET_URL || 'ws://localhost:3000',
+          target: env.VITE_SOCKET_URL || process.env.VITE_SOCKET_URL || 'wss://alphawork-api-two.vercel.app',
           changeOrigin: true,
           ws: true,
         },
