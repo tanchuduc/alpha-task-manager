@@ -45,7 +45,6 @@ interface AppShellProps {
 const TOP_NAV_ITEMS = [
   { href: "/home", key: "home", label: "Trang chủ", icon: Home },
   { href: "/projects", key: "projects", label: "Dự án", icon: FolderKanban },
-  { href: "/chat", key: "chat", label: "Trò chuyện", icon: MessageSquare },
   { href: "/reports", key: "reports", label: "Báo cáo", icon: BarChart3 },
 ];
 
@@ -261,10 +260,10 @@ export function AppShell({
     activeKey: string;
     onSelect: (key: string) => void;
   } | null>(() => {
-    // 1. HOME SURFACE (/home or /inbox)
-    if (pathname === "/home" || pathname === "/inbox") {
+    // 1. HOME SURFACE (/home or /chat or /inbox)
+    if (pathname === "/home" || pathname === "/chat" || pathname.startsWith("/chat") || pathname === "/inbox") {
       const currentView =
-        pathname === "/inbox"
+        pathname === "/chat" || pathname.startsWith("/chat") || pathname === "/inbox"
           ? "inbox"
           : searchParams.get("view") || pinnedViews["home"] || "overview";
 
@@ -280,13 +279,13 @@ export function AppShell({
             key: "inbox",
             label: "Hộp thư",
             icon: Inbox,
-            badge: unreadCount,
+            badge: unreadChatCount,
           },
           { key: "todo", label: "Todo", icon: ListTodo },
         ],
         onSelect: (key: string) => {
           if (key === "inbox") {
-            router.push("/inbox");
+            router.push("/chat");
           } else {
             router.push(`/home?view=${key}`);
           }
@@ -340,20 +339,22 @@ export function AppShell({
     }
 
     return null;
-  }, [pathname, searchParams, pinnedViews, unreadCount, router]);
+  }, [pathname, searchParams, pinnedViews, unreadCount, unreadChatCount, router]);
 
   const hasLeftRail = Boolean(surfaceConfig);
 
   const isTopItemActive = useCallback(
     (itemKey: string) => {
       if (itemKey === "home") {
-        return pathname === "/home" || pathname === "/inbox";
+        return (
+          pathname === "/home" ||
+          pathname === "/chat" ||
+          pathname.startsWith("/chat") ||
+          pathname === "/inbox"
+        );
       }
       if (itemKey === "projects") {
         return pathname === "/projects" || pathname.startsWith("/projects/");
-      }
-      if (itemKey === "chat") {
-        return pathname === "/chat" || pathname.startsWith("/chat/");
       }
       if (itemKey === "reports") {
         return pathname === "/reports" || pathname.startsWith("/reports/");

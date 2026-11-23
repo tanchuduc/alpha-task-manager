@@ -105,3 +105,22 @@ export function getDepartmentDisplayName(
   const parent = allDepts.find((p) => p.id === dept.parent_id);
   return parent ? `${parent.name} › ${dept.name}` : dept.name;
 }
+
+export function getTaskKey(
+  task: {
+    id: string;
+    position?: number | null;
+    project?: { code?: string | null } | null;
+  },
+  projectCodeFallback?: string | null
+): string {
+  const code = task.project?.code || projectCodeFallback || "TASK";
+  if (typeof task.position === "number" && task.position >= 0) {
+    return `${code}-${task.position + 1}`;
+  }
+  const rawId = task.id.replace(/-/g, "");
+  const num = (parseInt(rawId.slice(0, 4), 16) % 100) + 1;
+  return `${code}-${num}`;
+}
+
+

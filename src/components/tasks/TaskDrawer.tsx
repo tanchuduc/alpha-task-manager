@@ -29,10 +29,15 @@ import {
   AlertTriangle,
   Search,
   Lock,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { cn, PRIORITY_CONFIG, getInitials, isOverdue } from "@/lib/utils";
+import { cn, PRIORITY_CONFIG, getInitials, isOverdue, getTaskKey } from "@/lib/utils";
+
 import {
   canUserEditTask,
   isProjectPrivilegedUser,
@@ -74,7 +79,11 @@ export interface TaskDrawerProps {
   onUpdated: () => void;
   onDeleted: (taskId: string) => void;
   onOpenTask?: (taskId: string) => void;
+  taskList?: Array<{ id: string; projectId?: string }>;
+  currentIndex?: number;
+  onNavigateTask?: (nextTaskId: string) => void;
 }
+
 
 const ATTACHMENT_TYPE_META: Record<
   AttachmentType,
@@ -155,7 +164,11 @@ export default function TaskDrawer({
   onUpdated,
   onDeleted,
   onOpenTask,
+  taskList = [],
+  currentIndex,
+  onNavigateTask,
 }: TaskDrawerProps) {
+
   const supabase = useMemo(() => createClient(), []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1219,14 +1232,16 @@ export default function TaskDrawer({
     <div className="fixed inset-y-0 right-0 top-[52px] z-40 flex justify-end pointer-events-none">
       <div className="pointer-events-auto flex h-[calc(100vh-52px)] w-full max-w-[680px] flex-col border-l border-[#e8e8e8] bg-white shadow-2xl dark:border-[#303030] dark:bg-[#1f1f1f]">
         {/* Top bar (Worklenz TaskDrawerHeader) */}
-        <div className="flex items-center justify-between border-b border-[#e8e8e8] px-5 py-2.5 dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818]">
+        <div className="flex items-center justify-between border-b border-[#e8e8e8] px-4 sm:px-5 py-2 dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818]">
           <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
             {project && (
               <span className="rounded-[4px] bg-slate-200/80 dark:bg-[#2a2a2a] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300">
                 {project.code}
               </span>
             )}
-            <span>Chi tiết công việc</span>
+            <span className="font-mono text-xs font-semibold text-slate-800 dark:text-slate-200">
+              {task ? getTaskKey(task, project?.code) : "Chi tiết"}
+            </span>
             {task && isOverdue(task.due_date, task.completed_at) && (
               <span className="rounded-[4px] bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/70 dark:text-red-300">
                 Quá hạn
@@ -1234,7 +1249,58 @@ export default function TaskDrawer({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            {/* Quick Task Stepper Navigation (< > index/total) */}
+            {taskList.length > 1 && typeof currentIndex === "number" && currentIndex >= 0 && (
+              <div className="flex items-center gap-0.5 rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#242424] px-1 py-0.5 text-xs text-slate-600 dark:text-slate-300">
+                <button
+                  type="button"
+                  disabled={currentIndex <= 0}
+                  onClick={() => {
+                    if (currentIndex > 0 && onNavigateTask) {
+                      onNavigateTask(taskList[currentIndex - 1].id);
+                    }
+                  }}
+                  title="Công việc trước"
+                  className="rounded p-0.5 hover:bg-slate-100 dark:hover:bg-[#333333] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="px-1 font-mono text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  {currentIndex + 1}/{taskList.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentIndex >= taskList.length - 1}
+                  onClick={() => {
+                    if (currentIndex < taskList.length - 1 && onNavigateTask) {
+                      onNavigateTask(taskList[currentIndex + 1].id);
+                    }
+                  }}
+                  title="Công việc tiếp theo"
+                  className="rounded p-0.5 hover:bg-slate-100 dark:hover:bg-[#333333] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Quick Status Dropdown in Drawer Header */}
+            {task && statuses.length > 0 && (
+              <select
+                disabled={!canChangeStatus}
+                value={task.status_id ?? ""}
+                onChange={(e) => onAttemptStatusChange(e.target.value)}
+                className="rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#242424] px-2 py-1 text-xs font-medium text-slate-800 dark:text-slate-100 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {statuses.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
             {task && !canEdit && (
               <span className="inline-flex items-center gap-1 rounded-[4px] bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800">
                 <Lock className="h-3 w-3" />
@@ -1248,13 +1314,12 @@ export default function TaskDrawer({
                 className="inline-flex items-center gap-1 rounded-[6px] px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-400 cursor-pointer"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Xóa
               </button>
             )}
             {task && canDelete && confirmDelete && (
               <div className="flex items-center gap-1.5 rounded-[6px] bg-red-50 px-2 py-0.5 dark:bg-red-950/50">
                 <span className="text-xs font-medium text-red-700 dark:text-red-300">
-                  Xác nhận?
+                  Xóa?
                 </span>
                 <button
                   type="button"
@@ -1284,6 +1349,7 @@ export default function TaskDrawer({
             </button>
           </div>
         </div>
+
 
         {/* Body */}
         {loading || !task ? (

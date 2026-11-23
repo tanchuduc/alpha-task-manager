@@ -624,6 +624,7 @@ export function ProjectUpdatesTab({
                               }
                               placeholder="Viết câu trả lời... (@ để nhắc tên)"
                               rows={1}
+                              dropdownPlacement="top"
                               onKeyDown={(e) => {
                                 if (e.key === "Enter" && !e.shiftKey) {
                                   e.preventDefault();

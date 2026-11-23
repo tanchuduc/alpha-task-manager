@@ -10,14 +10,18 @@ import {
   getInitials,
   isOverdue,
   PRIORITY_CONFIG,
+  getTaskKey,
 } from "@/lib/utils";
+
 import TaskDrawer from "@/components/tasks/TaskDrawer";
 import {
   getTodoCategoryConfig,
   PersonalTodoManager,
+  TODO_CATEGORIES,
 } from "@/components/home/PersonalTodoManager";
 import type {
   PersonalTodo,
+  PersonalTodoCategory,
   Profile,
   Task,
   TaskPriority,
@@ -43,7 +47,11 @@ import {
   Trash2,
   UserCheck,
   X,
+  ListFilter,
+  UserX,
+  CalendarOff,
 } from "lucide-react";
+
 import { toast } from "sonner";
 
 interface HomeDashboardProps {
@@ -63,8 +71,17 @@ export type HomeViewMode =
   | "calendar"
   | "todo";
 
+type SubFacetView =
+  | "all"
+  | "assigned_to_me"
+  | "assigned_by_me"
+  | "overdue"
+  | "unassigned"
+  | "no_due_date";
+
 type TaskFilter = "all" | "open" | "overdue" | "today" | "completed";
 type GroupByMode = "none" | "project" | "status" | "priority";
+
 
 const WEEKDAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
@@ -149,14 +166,17 @@ export function HomeDashboard({
     setTasks(initialTasks);
   }, [initialTasks]);
 
-  const [taskFilter, setTaskFilter] = useState<TaskFilter>("open");
+  // Sub-sidebar facet for My Tasks (Worklenz SubSidebar VIEWS)
+  const [subFacet, setSubFacet] = useState<SubFacetView>("all");
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [groupBy, setGroupBy] = useState<GroupByMode>("project");
+  const [groupBy, setGroupBy] = useState<GroupByMode>("none");
   const [collapsedGroups, setCollapsedGroups] = useState<
     Record<string, boolean>
   >({});
+
 
   // In-place TaskDrawer state (so clicking any task opens the Drawer immediately on Home without navigating away!)
   const [activeDrawerTask, setActiveDrawerTask] = useState<{
@@ -175,13 +195,45 @@ export function HomeDashboard({
 
   // Personal todos state
   const [todos, setTodos] = useState<PersonalTodo[]>(initialTodos);
-  const [newTodoTitle, setNewTodoTitle] = useState("");
-  const [addingTodo, setAddingTodo] = useState(false);
 
-  // Split tasks into "Assigned to me" vs "Delegated by me"
-  const { assignedToMeTasks, assignedByMeTasks } = useMemo(() => {
+  // Real-time synchronization when tasks or todos are created from Global QuickActionButton
+  useEffect(() => {
+    function handleTodoEvent(e: Event) {
+      const detail = (e as CustomEvent).detail as PersonalTodo;
+      if (detail && detail.id) {
+        setTodos((prev) => {
+          if (prev.some((t) => t.id === detail.id)) return prev;
+          return [detail, ...prev];
+        });
+      }
+    }
+
+    function handleTaskEvent(e: Event) {
+      const detail = (e as CustomEvent).detail as Task;
+      if (detail && detail.id) {
+        setTasks((prev) => {
+          if (prev.some((t) => t.id === detail.id)) return prev;
+          return [detail, ...prev];
+        });
+      }
+    }
+
+    window.addEventListener("alpha:todo_created", handleTodoEvent);
+    window.addEventListener("alpha:task_created", handleTaskEvent);
+
+    return () => {
+      window.removeEventListener("alpha:todo_created", handleTodoEvent);
+      window.removeEventListener("alpha:task_created", handleTaskEvent);
+    };
+  }, []);
+
+  // Split tasks into "Assigned to me" vs "Delegated by me" vs All relevant
+  const { assignedToMeTasks, assignedByMeTasks, overdueTasksCount, unassignedTasksCount, noDueDateTasksCount } = useMemo(() => {
     const toMe: Task[] = [];
     const byMe: Task[] = [];
+    let overdueCount = 0;
+    let unassignedCount = 0;
+    let noDueDateCount = 0;
     const delegatedSet = new Set(explicitlyDelegatedTaskIds);
 
     for (const t of tasks) {
@@ -194,15 +246,54 @@ export function HomeDashboard({
 
       if (isAssignedToMe) toMe.push(t);
       if (isDelegatedByMe || isCreatedByMeForOthers) byMe.push(t);
+
+      const isDone = t.status?.category === "done" || Boolean(t.completed_at);
+      if (!isDone && isOverdue(t.due_date, t.completed_at)) {
+        overdueCount += 1;
+      }
+      if (assignees.length === 0) {
+        unassignedCount += 1;
+      }
+      if (!t.due_date) {
+        noDueDateCount += 1;
+      }
     }
 
-    return { assignedToMeTasks: toMe, assignedByMeTasks: byMe };
+    return {
+      assignedToMeTasks: toMe,
+      assignedByMeTasks: byMe,
+      overdueTasksCount: overdueCount,
+      unassignedTasksCount: unassignedCount,
+      noDueDateTasksCount: noDueDateCount,
+    };
   }, [tasks, profile.id, explicitlyDelegatedTaskIds]);
 
   const activeScopeTasks = useMemo(() => {
     if (activeView === "delegated") return assignedByMeTasks;
+    if (activeView === "my-tasks") {
+      switch (subFacet) {
+        case "assigned_to_me":
+          return assignedToMeTasks;
+        case "assigned_by_me":
+          return assignedByMeTasks;
+        case "overdue":
+          return tasks.filter(
+            (t) =>
+              !(t.status?.category === "done" || Boolean(t.completed_at)) &&
+              isOverdue(t.due_date, t.completed_at)
+          );
+        case "unassigned":
+          return tasks.filter((t) => (t.assignees ?? []).length === 0);
+        case "no_due_date":
+          return tasks.filter((t) => !t.due_date);
+        case "all":
+        default:
+          return tasks;
+      }
+    }
     return assignedToMeTasks;
-  }, [activeView, assignedToMeTasks, assignedByMeTasks]);
+  }, [activeView, subFacet, tasks, assignedToMeTasks, assignedByMeTasks]);
+
 
   // KPI calculations
   const stats = useMemo(() => {
@@ -493,74 +584,6 @@ export function HomeDashboard({
     setCalMonth(today.getMonth());
   }
 
-  async function handleAddTodo(e: React.FormEvent) {
-    e.preventDefault();
-    const title = newTodoTitle.trim();
-    if (!title || addingTodo) return;
-
-    setAddingTodo(true);
-    try {
-      const { data, error } = await supabase
-        .from("personal_todos")
-        .insert({
-          user_id: profile.id,
-          title,
-          is_done: false,
-          position: todos.length,
-        })
-        .select("*")
-        .single();
-
-      if (error) throw error;
-      setTodos((prev) => [data as PersonalTodo, ...prev]);
-      setNewTodoTitle("");
-    } catch {
-      toast.error("Không thể thêm việc cần làm.");
-    } finally {
-      setAddingTodo(false);
-    }
-  }
-
-  async function handleToggleTodo(todo: PersonalTodo) {
-    const nextDone = !todo.is_done;
-    setTodos((prev) =>
-      prev.map((item) =>
-        item.id === todo.id ? { ...item, is_done: nextDone } : item
-      )
-    );
-
-    try {
-      const { error } = await supabase
-        .from("personal_todos")
-        .update({ is_done: nextDone })
-        .eq("id", todo.id);
-      if (error) throw error;
-    } catch {
-      setTodos((prev) =>
-        prev.map((item) =>
-          item.id === todo.id ? { ...item, is_done: todo.is_done } : item
-        )
-      );
-      toast.error("Không thể cập nhật trạng thái.");
-    }
-  }
-
-  async function handleDeleteTodo(todoId: string) {
-    const backup = todos;
-    setTodos((prev) => prev.filter((item) => item.id !== todoId));
-
-    try {
-      const { error } = await supabase
-        .from("personal_todos")
-        .delete()
-        .eq("id", todoId);
-      if (error) throw error;
-    } catch {
-      setTodos(backup);
-      toast.error("Không thể xóa mục này.");
-    }
-  }
-
   const completedTodosCount = todos.filter((t) => t.is_done).length;
 
   // Statuses for the currently opened task in TaskDrawer
@@ -682,14 +705,15 @@ export function HomeDashboard({
 
         {/* Table Column Headers */}
         <div className="hidden md:grid md:grid-cols-12 items-center border-b border-[#e8e8e8] dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          <div className="col-span-5">Công việc</div>
+          <div className="col-span-1">ID</div>
+          <div className="col-span-4">Công việc</div>
           <div className="col-span-2">Dự án</div>
+          <div className="col-span-1 text-center">Người nhận</div>
           <div className="col-span-2">Trạng thái</div>
           <div className="col-span-1 text-center">Ưu tiên</div>
-          <div className="col-span-2 text-right">
-            {showDelegatedAssignees ? "Người nhận & Hạn" : "Hạn hoàn thành"}
-          </div>
+          <div className="col-span-1 text-right">Hạn xong</div>
         </div>
+
 
         {/* Table Rows Grouped */}
         {filteredTasks.length === 0 ? (
@@ -769,8 +793,15 @@ export function HomeDashboard({
                                 : "hover:bg-[#f8f9fa] dark:hover:bg-[#242424]"
                             )}
                           >
+                            {/* Col 0: Task ID Badge */}
+                            <div className="md:col-span-1 flex items-center min-w-0">
+                              <span className="font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate rounded bg-slate-100 dark:bg-[#282828] px-1.5 py-0.5">
+                                {getTaskKey(task, task.project?.code)}
+                              </span>
+                            </div>
+
                             {/* Col 1: Checkbox + Title */}
-                            <div className="md:col-span-5 flex items-center gap-2.5 min-w-0">
+                            <div className="md:col-span-4 flex items-center gap-2 min-w-0">
                               <button
                                 type="button"
                                 onClick={(e) => handleInlineToggleDone(task, e)}
@@ -823,7 +854,26 @@ export function HomeDashboard({
                               )}
                             </div>
 
-                            {/* Col 3: Status badge */}
+                            {/* Col 3: Assignees Avatar */}
+                            <div className="md:col-span-1 flex items-center md:justify-center">
+                              {(task.assignees ?? []).length > 0 ? (
+                                <div className="flex -space-x-1">
+                                  {task.assignees!.slice(0, 2).map((u) => (
+                                    <span
+                                      key={u.id}
+                                      title={u.full_name}
+                                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-brand-soft text-[9px] font-bold text-brand ring-1 ring-white dark:ring-[#1f1f1f]"
+                                    >
+                                      {getInitials(u.full_name)}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-slate-400">—</span>
+                              )}
+                            </div>
+
+                            {/* Col 4: Status badge */}
                             <div className="md:col-span-2 flex items-center">
                               {task.status && (
                                 <span className="inline-flex items-center gap-1.5 rounded-[4px] border border-[#e0e0e0] dark:border-[#383838] px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
@@ -840,7 +890,7 @@ export function HomeDashboard({
                               )}
                             </div>
 
-                            {/* Col 4: Inline Priority Selector */}
+                            {/* Col 5: Inline Priority Selector */}
                             <div
                               className="md:col-span-1 flex items-center md:justify-center"
                               onClick={(e) => e.stopPropagation()}
@@ -866,22 +916,8 @@ export function HomeDashboard({
                               </select>
                             </div>
 
-                            {/* Col 5: Assignees (if delegated) + Due Date */}
-                            <div className="md:col-span-2 flex items-center justify-end gap-2">
-                              {showDelegatedAssignees &&
-                                (task.assignees ?? []).length > 0 && (
-                                  <div className="flex -space-x-1">
-                                    {task.assignees!.slice(0, 2).map((u) => (
-                                      <span
-                                        key={u.id}
-                                        title={u.full_name}
-                                        className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-brand-soft text-[9px] font-bold text-brand ring-1 ring-white dark:ring-[#1f1f1f]"
-                                      >
-                                        {getInitials(u.full_name)}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
+                            {/* Col 6: Due Date */}
+                            <div className="md:col-span-1 flex items-center justify-end">
                               <span
                                 className={cn(
                                   "inline-flex items-center gap-1 font-mono text-[11.5px]",
@@ -895,6 +931,7 @@ export function HomeDashboard({
                                   : "—"}
                               </span>
                             </div>
+
                           </div>
                         );
                       })}
@@ -1056,51 +1093,45 @@ export function HomeDashboard({
 
             {/* Right Column Widgets: Personal Todo + Delegated by Me summary */}
             <div className="space-y-4">
-              {/* Widget 1: Personal Todos */}
+              {/* Widget 1: Personal Todos (Read-Only Glanceable View) */}
               <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-[13.5px] font-bold text-slate-900 dark:text-slate-100">
-                      Todo cá nhân
-                    </h2>
-                    <p className="text-[11px] text-slate-400">
-                      Hoàn thành {completedTodosCount}/{todos.length}
-                    </p>
+                <div className="flex items-center justify-between pb-2 border-b border-[#f0f0f0] dark:border-[#2a2a2a]">
+                  <div className="flex items-center gap-2">
+                    <ListTodo className="h-4 w-4 text-brand" />
+                    <div>
+                      <h2 className="text-[13.5px] font-bold text-slate-900 dark:text-slate-100">
+                        Todo cá nhân
+                      </h2>
+                      <p className="text-[11px] text-slate-400">
+                        Hoàn thành {completedTodosCount} / {todos.length} mục
+                      </p>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => router.push("/home?view=todo")}
                     className="text-[11px] font-medium text-brand hover:underline cursor-pointer"
                   >
-                    Quản lý & Ghi chú →
+                    Xem tất cả →
                   </button>
                 </div>
 
-                <form onSubmit={handleAddTodo} className="flex gap-1.5">
-                  <input
-                    type="text"
-                    value={newTodoTitle}
-                    onChange={(e) => setNewTodoTitle(e.target.value)}
-                    placeholder="+ Thêm việc cá nhân nhanh..."
-                    disabled={addingTodo}
-                    className="flex-1 rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-[#fafafa] dark:bg-[#141414] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:border-brand focus:bg-white focus:outline-none"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!newTodoTitle.trim() || addingTodo}
-                    className="inline-flex items-center justify-center rounded-[6px] bg-brand hover:bg-brand-hover disabled:opacity-50 px-2.5 py-1.5 text-white transition cursor-pointer"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </form>
-
-                <div className="space-y-1 max-h-[260px] overflow-y-auto">
+                <div className="space-y-1 max-h-[300px] overflow-y-auto divide-y divide-[#f5f5f5] dark:divide-[#252525]">
                   {todos.length === 0 ? (
-                    <p className="py-4 text-center text-xs text-slate-400">
-                      Chưa có Todo cá nhân nào.
-                    </p>
+                    <div className="py-6 text-center">
+                      <p className="text-xs text-slate-400">
+                        Chưa có Todo cá nhân nào.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => router.push("/home?view=todo")}
+                        className="mt-1 text-xs font-medium text-brand hover:underline cursor-pointer"
+                      >
+                        + Mở trang Todo để tạo
+                      </button>
+                    </div>
                   ) : (
-                    todos.map((todo) => {
+                    todos.slice(0, 8).map((todo) => {
                       const catCfg = getTodoCategoryConfig(todo.category);
                       const isOverdueTodo =
                         !todo.is_done &&
@@ -1108,20 +1139,17 @@ export function HomeDashboard({
                       return (
                         <div
                           key={todo.id}
-                          className="group flex items-center justify-between gap-2 rounded-[6px] px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-[#262626] transition"
+                          onClick={() => router.push("/home?view=todo")}
+                          className="flex items-start justify-between gap-2.5 py-2 px-1 hover:bg-slate-50 dark:hover:bg-[#252525] rounded-[6px] transition cursor-pointer group"
+                          title="Bấm để mở trang Todo cá nhân"
                         >
                           <div className="flex items-start gap-2 min-w-0 flex-1">
-                            <input
-                              type="checkbox"
-                              checked={todo.is_done}
-                              onChange={() => handleToggleTodo(todo)}
-                              className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-brand accent-brand cursor-pointer shrink-0"
-                            />
-                            <div
-                              onClick={() => router.push("/home?view=todo")}
-                              className="min-w-0 flex-1 cursor-pointer"
-                              title="Nhấn để sửa chi tiết, ghi chú & gắn hạn"
-                            >
+                            {todo.is_done ? (
+                              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                            ) : (
+                              <Circle className="mt-0.5 h-3.5 w-3.5 text-slate-300 dark:text-slate-600 shrink-0 group-hover:text-brand transition" />
+                            )}
+                            <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
                                 <span
                                   className="h-1.5 w-1.5 rounded-full shrink-0"
@@ -1132,7 +1160,7 @@ export function HomeDashboard({
                                   className={cn(
                                     "truncate text-xs font-medium",
                                     todo.is_done
-                                      ? "line-through text-slate-400"
+                                      ? "line-through text-slate-400 dark:text-slate-500"
                                       : "text-slate-700 dark:text-slate-200 group-hover:text-brand"
                                   )}
                                 >
@@ -1140,13 +1168,15 @@ export function HomeDashboard({
                                 </span>
                               </div>
                               {(todo.due_date || todo.notes) && (
-                                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                                <div className="flex items-center gap-2 mt-0.5 text-[10.5px] text-slate-400">
                                   {todo.due_date && (
                                     <span
                                       className={cn(
                                         "font-mono",
                                         isOverdueTodo &&
-                                          "text-red-500 font-semibold"
+                                          "text-red-500 font-semibold",
+                                        todo.due_date === todayKey &&
+                                          "text-amber-500 font-medium"
                                       )}
                                     >
                                       {todo.due_date === todayKey
@@ -1163,19 +1193,30 @@ export function HomeDashboard({
                               )}
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteTodo(todo.id)}
-                            title="Xóa"
-                            className="p-0.5 text-slate-400 hover:text-red-500 cursor-pointer shrink-0"
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-[4px] px-1.5 py-0.2 text-[10px] font-medium border",
+                              catCfg.bg,
+                              catCfg.color
+                            )}
                           >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
+                            {catCfg.label}
+                          </span>
                         </div>
                       );
                     })
                   )}
                 </div>
+
+                {todos.length > 8 && (
+                  <button
+                    type="button"
+                    onClick={() => router.push("/home?view=todo")}
+                    className="w-full text-center py-1 text-xs text-slate-400 hover:text-brand cursor-pointer"
+                  >
+                    + Xem thêm {todos.length - 8} việc khác...
+                  </button>
+                )}
               </div>
 
               {/* Widget 2: Assigned By Me Widget (matching legacy HomeAssignedByMeWidget) */}
@@ -1231,21 +1272,164 @@ export function HomeDashboard({
       )}
 
       {/* ====================================================================
-       * MODE 2: MY TASKS (Full-width Worklenz HomeMyTasksView)
+       * MODE 2: MY TASKS (Worklenz SubSidebar VIEWS + 4 KPI Cards + Dense Table)
        * ==================================================================== */}
       {activeView === "my-tasks" && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-brand" />
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Công việc được giao cho tôi ({assignedToMeTasks.length})
-              </h2>
+        <div className="flex flex-col md:flex-row items-start gap-4">
+          {/* Sub-sidebar: VIEWS (Dedicated 200px Secondary Rail as seen in legacy Worklenz) */}
+          <aside className="w-full md:w-52 shrink-0 rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-3 space-y-1">
+            <div className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              VIEWS
             </div>
+
+            <button
+              type="button"
+              onClick={() => setSubFacet("all")}
+              className={cn(
+                "flex w-full items-center justify-between rounded-[6px] px-2.5 py-1.5 text-xs font-medium transition cursor-pointer text-left",
+                subFacet === "all"
+                  ? "bg-brand/10 text-brand font-semibold border-l-2 border-brand"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282828]"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <ListFilter className="h-3.5 w-3.5" />
+                <span>Tất cả</span>
+              </div>
+              <span className="font-mono text-[10px] text-slate-400">{tasks.length}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSubFacet("assigned_to_me")}
+              className={cn(
+                "flex w-full items-center justify-between rounded-[6px] px-2.5 py-1.5 text-xs font-medium transition cursor-pointer text-left",
+                subFacet === "assigned_to_me"
+                  ? "bg-brand/10 text-brand font-semibold border-l-2 border-brand"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282828]"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <UserCheck className="h-3.5 w-3.5" />
+                <span>Việc giao cho tôi</span>
+              </div>
+              <span className="font-mono text-[10px] text-slate-400">{assignedToMeTasks.length}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSubFacet("assigned_by_me")}
+              className={cn(
+                "flex w-full items-center justify-between rounded-[6px] px-2.5 py-1.5 text-xs font-medium transition cursor-pointer text-left",
+                subFacet === "assigned_by_me"
+                  ? "bg-brand/10 text-brand font-semibold border-l-2 border-brand"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282828]"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Send className="h-3.5 w-3.5" />
+                <span>Việc tôi đã giao</span>
+              </div>
+              <span className="font-mono text-[10px] text-slate-400">{assignedByMeTasks.length}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSubFacet("overdue")}
+              className={cn(
+                "flex w-full items-center justify-between rounded-[6px] px-2.5 py-1.5 text-xs font-medium transition cursor-pointer text-left",
+                subFacet === "overdue"
+                  ? "bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-semibold border-l-2 border-red-500"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282828]"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <AlertTriangle className={cn("h-3.5 w-3.5", overdueTasksCount > 0 ? "text-red-500" : "")} />
+                <span>Quá hạn</span>
+              </div>
+              {overdueTasksCount > 0 ? (
+                <span className="rounded bg-red-100 dark:bg-red-950/70 px-1.5 py-0.2 font-mono text-[10px] font-bold text-red-600 dark:text-red-300">
+                  {overdueTasksCount}
+                </span>
+              ) : (
+                <span className="font-mono text-[10px] text-slate-400">0</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSubFacet("unassigned")}
+              className={cn(
+                "flex w-full items-center justify-between rounded-[6px] px-2.5 py-1.5 text-xs font-medium transition cursor-pointer text-left",
+                subFacet === "unassigned"
+                  ? "bg-brand/10 text-brand font-semibold border-l-2 border-brand"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282828]"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <UserX className="h-3.5 w-3.5" />
+                <span>Chưa phân công</span>
+              </div>
+              <span className="font-mono text-[10px] text-slate-400">{unassignedTasksCount}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSubFacet("no_due_date")}
+              className={cn(
+                "flex w-full items-center justify-between rounded-[6px] px-2.5 py-1.5 text-xs font-medium transition cursor-pointer text-left",
+                subFacet === "no_due_date"
+                  ? "bg-brand/10 text-brand font-semibold border-l-2 border-brand"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282828]"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <CalendarOff className="h-3.5 w-3.5" />
+                <span>Chưa có hạn</span>
+              </div>
+              <span className="font-mono text-[10px] text-slate-400">{noDueDateTasksCount}</span>
+            </button>
+          </aside>
+
+          {/* Main Area: Top 4 KPI Stat Cards + Table */}
+          <div className="flex-1 min-w-0 space-y-3.5 w-full">
+            {/* 4 Top KPI Stat Cards (Worklenz My Tasks Top Stat Cards) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-3.5">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Total tasks</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  {stats.total}
+                </p>
+              </div>
+
+              <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-3.5">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Overdue</p>
+                <p className={cn("mt-1 font-mono text-2xl font-bold", stats.overdue > 0 ? "text-red-600 dark:text-red-400" : "text-slate-900 dark:text-slate-100")}>
+                  {stats.overdue}
+                </p>
+              </div>
+
+              <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-3.5">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Due today</p>
+                <p className={cn("mt-1 font-mono text-2xl font-bold", stats.dueToday > 0 ? "text-blue-600 dark:text-blue-400" : "text-slate-900 dark:text-slate-100")}>
+                  {stats.dueToday}
+                </p>
+              </div>
+
+              <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-3.5">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">In progress</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                  {stats.inProgress}
+                </p>
+              </div>
+            </div>
+
+            {/* Dense Task Table */}
+            {renderDenseTaskTable(subFacet === "assigned_by_me" || subFacet === "all")}
           </div>
-          {renderDenseTaskTable(false)}
         </div>
       )}
+
 
       {/* ====================================================================
        * MODE 3: DELEGATED BY ME (Full-width Assigned by me)
@@ -1425,27 +1609,40 @@ export function HomeDashboard({
       {/* ====================================================================
        * IN-PLACE TASK DRAWER (Matches legacy HomeLayout TaskDrawer Portal)
        * ==================================================================== */}
-      {activeDrawerTask && (
-        <TaskDrawer
-          taskId={activeDrawerTask.taskId}
-          projectId={activeDrawerTask.projectId}
-          statuses={drawerProjectStatuses}
-          members={allProfiles}
-          allProfiles={allProfiles}
-          currentUser={profile}
-          onClose={() => setActiveDrawerTask(null)}
-          onUpdated={() => router.refresh()}
-          onDeleted={(deletedId) => {
-            setTasks((prev) => prev.filter((t) => t.id !== deletedId));
-            setActiveDrawerTask(null);
-          }}
-          onOpenTask={(nextTaskId) =>
-            setActiveDrawerTask((prev) =>
-              prev ? { ...prev, taskId: nextTaskId } : null
-            )
-          }
-        />
-      )}
+      {activeDrawerTask && (() => {
+        const currentTaskIdx = filteredTasks.findIndex((t) => t.id === activeDrawerTask.taskId);
+        return (
+          <TaskDrawer
+            taskId={activeDrawerTask.taskId}
+            projectId={activeDrawerTask.projectId}
+            statuses={drawerProjectStatuses}
+            members={allProfiles}
+            allProfiles={allProfiles}
+            currentUser={profile}
+            taskList={filteredTasks.map((t) => ({ id: t.id, projectId: t.project_id }))}
+            currentIndex={currentTaskIdx >= 0 ? currentTaskIdx : undefined}
+            onNavigateTask={(nextTaskId) => {
+              const targetTask = tasks.find((t) => t.id === nextTaskId);
+              if (targetTask) {
+                setActiveDrawerTask({ taskId: targetTask.id, projectId: targetTask.project_id });
+              }
+            }}
+            onClose={() => setActiveDrawerTask(null)}
+            onUpdated={() => router.refresh()}
+            onDeleted={(deletedId) => {
+              setTasks((prev) => prev.filter((t) => t.id !== deletedId));
+              setActiveDrawerTask(null);
+            }}
+            onOpenTask={(nextTaskId) => {
+              const targetTask = tasks.find((t) => t.id === nextTaskId);
+              if (targetTask) {
+                setActiveDrawerTask({ taskId: targetTask.id, projectId: targetTask.project_id });
+              }
+            }}
+          />
+        );
+      })()}
+
     </div>
   );
 }

@@ -36,6 +36,7 @@ import {
   Loader2,
   GripVertical,
   MessageSquare,
+  MessageCircle,
   Sliders,
   Settings,
   Columns3,
@@ -56,6 +57,7 @@ import {
 } from "@/lib/permissions";
 import { logTaskActivity } from "@/lib/activity-logger";
 import { ProjectUpdatesTab } from "./ProjectUpdatesTab";
+import { ProjectChatTab } from "./ProjectChatTab";
 import ProjectPhasesTab from "./ProjectPhasesTab";
 import ProjectFilesTab from "./ProjectFilesTab";
 import BulkActionBar from "@/components/projects/BulkActionBar";
@@ -93,7 +95,7 @@ interface ProjectDetailClientProps {
   departments?: Department[];
 }
 
-type ViewMode = "list" | "kanban" | "calendar" | "updates" | "phases" | "files";
+type ViewMode = "list" | "kanban" | "calendar" | "updates" | "phases" | "files" | "chat";
 
 const WEEKDAYS_VI = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
@@ -478,7 +480,8 @@ export default function ProjectDetailClient({
   const [phases, setPhases] = useState<ProjectPhase[]>([]);
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const tabParam = searchParams.get("tab");
+    const tabParam = searchParams.get("tab") || searchParams.get("view");
+    if (tabParam === "chat") return "chat";
     if (tabParam === "updates") return "updates";
     if (tabParam === "phases") return "phases";
     if (tabParam === "files") return "files";
@@ -488,8 +491,9 @@ export default function ProjectDetailClient({
   });
 
   useEffect(() => {
-    const tabParam = searchParams.get("tab");
-    if (tabParam === "updates") setViewMode("updates");
+    const tabParam = searchParams.get("tab") || searchParams.get("view");
+    if (tabParam === "chat") setViewMode("chat");
+    else if (tabParam === "updates") setViewMode("updates");
     else if (tabParam === "phases") setViewMode("phases");
     else if (tabParam === "files") setViewMode("files");
     else if (tabParam === "kanban") setViewMode("kanban");
@@ -1642,10 +1646,11 @@ export default function ProjectDetailClient({
             [
               { key: "list", label: "Danh sách công việc", icon: List, count: tasks.length },
               { key: "kanban", label: "Bảng Kanban", icon: Kanban },
+              { key: "chat", label: "Trò chuyện", icon: MessageCircle },
               { key: "phases", label: "Giai đoạn", icon: Layers, count: phases.length },
               { key: "calendar", label: "Lịch", icon: CalendarIcon },
               { key: "files", label: "Tài liệu & Tệp", icon: FolderArchive },
-              { key: "updates", label: "Thảo luận & Cập nhật", icon: MessageSquare },
+              { key: "updates", label: "Thảo luận", icon: MessageSquare },
             ] as const
           ).map((tab) => {
             const Icon = tab.icon;
@@ -3018,6 +3023,20 @@ export default function ProjectDetailClient({
             })}
           </div>
         </div>
+      )}
+
+      {/* ================================================================
+       * VIEW: PROJECT LIVE CHAT
+       * ============================================================== */}
+      {viewMode === "chat" && (
+        <ProjectChatTab
+          project={project}
+          currentUser={currentUser}
+          allProfiles={allProfiles}
+          onTaskCreated={() => {
+            router.refresh();
+          }}
+        />
       )}
 
       {/* ================================================================

@@ -85,6 +85,7 @@ export const MentionTextarea = forwardRef<
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/đ/gi, "d");
+    const qTokens = qNorm.split(/\s+/).filter(Boolean);
 
     return profiles
       .filter((p) => {
@@ -93,10 +94,18 @@ export const MentionTextarea = forwardRef<
           .normalize("NFD")
           .replace(/[\u0300-\u036f]/g, "")
           .replace(/đ/gi, "d");
-        const nameMatch = name.includes(q) || nameNorm.includes(qNorm);
-        const emailMatch = (p.email ?? "").toLowerCase().includes(q);
-        const roleMatch = (p.job_title ?? "").toLowerCase().includes(q);
-        const deptMatch = (p.department?.name ?? "").toLowerCase().includes(q);
+        const email = (p.email ?? "").toLowerCase();
+        const role = (p.job_title ?? "").toLowerCase();
+        const dept = (p.department?.name ?? "").toLowerCase();
+
+        const nameMatch =
+          name.includes(q) ||
+          nameNorm.includes(qNorm) ||
+          (qTokens.length > 0 &&
+            qTokens.every((t) => nameNorm.includes(t) || email.includes(t)));
+        const emailMatch = email.includes(q);
+        const roleMatch = role.includes(q);
+        const deptMatch = dept.includes(q);
         return nameMatch || emailMatch || roleMatch || deptMatch;
       })
       .slice(0, 8);
@@ -109,7 +118,7 @@ export const MentionTextarea = forwardRef<
     }
   }, [filteredProfiles.length, selectedIndex]);
 
-  // Detect @ keystroke and caret position
+  // Detect @ keystroke and caret position (supports Vietnamese spaces up to 35 chars)
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newVal = e.target.value;
     onChange(newVal);
@@ -118,7 +127,8 @@ export const MentionTextarea = forwardRef<
     const textBeforeCursor = newVal.slice(0, cursor);
 
     // Look for last @ before cursor that is preceded by space, newline, or start of string
-    const match = textBeforeCursor.match(/(?:^|\s)@([^\s@]*)$/);
+    // Allows spaces and characters up to 35 chars so Vietnamese names like "@Nguyễn Văn" work seamlessly
+    const match = textBeforeCursor.match(/(?:^|\s)@([^@\n.,;:!?()\[\]{}]{0,35})$/);
 
     if (match) {
       const query = match[1];
@@ -361,9 +371,9 @@ export function renderContentWithMentions(
       const parts = content.split(regex);
       return parts.map((part, i) => {
         if (part.startsWith("@")) {
-          const nameOnly = part.slice(1);
+          const nameOnly = part.slice(1).trim();
           const matchedProfile = profiles.find(
-            (p) => p.full_name.toLowerCase() === nameOnly.toLowerCase()
+            (p) => (p.full_name || "").trim().toLowerCase() === nameOnly.toLowerCase()
           );
           return (
             <span
@@ -422,7 +432,7 @@ export function renderContentWithMentions(
 }
 
 /**
- * Extracts list of profile IDs mentioned in the text
+ * Extracts list of profile IDs mentioned in the text (case-insensitive & accent-safe)
  */
 export function extractMentionedUserIds(
   text: string,
@@ -430,9 +440,13 @@ export function extractMentionedUserIds(
 ): string[] {
   if (!text || !profiles.length) return [];
   const mentioned = new Set<string>();
+  const lowerText = text.toLowerCase();
   for (const profile of profiles) {
-    if (profile.full_name && text.includes(`@${profile.full_name}`)) {
-      mentioned.add(profile.id);
+    if (profile.full_name) {
+      const token = `@${profile.full_name.trim().toLowerCase()}`;
+      if (lowerText.includes(token)) {
+        mentioned.add(profile.id);
+      }
     }
   }
   return Array.from(mentioned);
