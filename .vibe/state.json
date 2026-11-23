@@ -1,10 +1,19 @@
 {
   "slug": "alpha-task-manager",
   "project_name": "ALPHA Work (Alpha Task Manager)",
-  "description": "Hệ thống quản lý công việc và nhân sự Alpha Work",
+  "description": "Hệ thống quản lý công việc và nhân sự nội bộ Alpha Work",
   "created_at": "2026-11-18T15:02:04Z",
   "repo": "https://github.com/tanchuduc/alpha-task-manager.git",
   "branch": "main",
-  "state": "internal_edition_hardening_phase_1_3",
-  "updated_at": "2026-11-19T09:12:00+07:00"
+  "state": "phase_4_localization_and_ui_polish_completed",
+  "current_version": "3.1.0-alpha.internal",
+  "last_commit": "37a053f2",
+  "completed_phases": [
+    "phase_1_database_supabase_migration",
+    "phase_2_multicloud_deployment_config",
+    "phase_3_internal_edition_hardening",
+    "phase_4_vietnamese_localization_and_ui_polish"
+  ],
+  "next_phase": "phase_5_e2e_verification_and_production_readiness",
+  "updated_at": "2026-11-23T09:20:00+07:00"
 }
