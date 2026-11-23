@@ -11,6 +11,7 @@ export function createAdminSupabaseClient() {
   }
 
   return createClient(url, serviceKey, {
+    db: { schema: "alpha_lite" },
     auth: {
       autoRefreshToken: false,
       persistSession: false,

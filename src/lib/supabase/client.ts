@@ -10,5 +10,7 @@ export function createClient() {
     );
   }
 
-  return createBrowserClient(url, anonKey);
+  return createBrowserClient(url, anonKey, {
+    db: { schema: "alpha_lite" },
+  });
 }

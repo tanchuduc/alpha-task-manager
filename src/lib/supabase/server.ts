@@ -13,6 +13,7 @@ export async function createServerSupabaseClient() {
   }
 
   return createServerClient(url, anonKey, {
+    db: { schema: "alpha_lite" },
     cookies: {
       getAll() {
         return cookieStore.getAll();

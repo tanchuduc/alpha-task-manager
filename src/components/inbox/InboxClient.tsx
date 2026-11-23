@@ -118,7 +118,7 @@ export function InboxClient({
         "postgres_changes",
         {
           event: "INSERT",
-          schema: "public",
+          schema: "alpha_lite",
           table: "notifications",
           filter: `user_id=eq.${currentUserId}`,
         },

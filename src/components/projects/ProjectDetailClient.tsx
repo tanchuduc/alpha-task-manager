@@ -439,7 +439,7 @@ export default function ProjectDetailClient({
         "postgres_changes",
         {
           event: "*",
-          schema: "public",
+          schema: "alpha_lite",
           table: "tasks",
           filter: `project_id=eq.${project.id}`,
         },

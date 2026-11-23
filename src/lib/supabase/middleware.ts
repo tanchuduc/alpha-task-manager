@@ -13,6 +13,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   const supabase = createServerClient(url, anonKey, {
+    db: { schema: "alpha_lite" },
     cookies: {
       getAll() {
         return request.cookies.getAll();
