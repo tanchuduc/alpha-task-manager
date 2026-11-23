@@ -111,6 +111,51 @@ export function AppShell({
     };
   }, [pathname, profile.id]);
 
+  // Refresh and subscribe to unread direct messages for Chat
+  useEffect(() => {
+    let active = true;
+    const supabase = createClient();
+
+    async function refreshUnreadChat() {
+      try {
+        const { count } = await supabase
+          .from("direct_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("receiver_id", profile.id)
+          .eq("is_read", false);
+        if (active && typeof count === "number") {
+          setUnreadChatCount(count);
+        }
+      } catch {
+        // ignore errors
+      }
+    }
+
+    refreshUnreadChat();
+
+    // Realtime changes on direct_messages for this user
+    const dmChannel = supabase
+      .channel("appshell-chat-unread")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "alpha_lite",
+          table: "direct_messages",
+          filter: `receiver_id=eq.${profile.id}`,
+        },
+        () => {
+          refreshUnreadChat();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(dmChannel);
+    };
+  }, [pathname, profile.id]);
+
   function toggleTheme() {
     const nextDark = !document.documentElement.classList.contains("dark");
     document.documentElement.classList.toggle("dark", nextDark);

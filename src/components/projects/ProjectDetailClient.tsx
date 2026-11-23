@@ -367,7 +367,9 @@ export default function ProjectDetailClient({
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
 
-  // Modals
+  // Modals & Selection
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [showCustomFieldsModal, setShowCustomFieldsModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const [memberBusyId, setMemberBusyId] = useState<string | null>(null);
@@ -840,6 +842,16 @@ export default function ProjectDetailClient({
             >
               <Users className="h-4 w-4 text-slate-500" />
               <span>Thành viên ({members.length})</span>
+            </button>
+
+            {/* Custom fields button */}
+            <button
+              type="button"
+              onClick={() => setShowCustomFieldsModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+            >
+              <Sliders className="h-4 w-4 text-brand" />
+              <span>Tùy biến cột / Trường xuất bản</span>
             </button>
 
             {/* Add task button */}
