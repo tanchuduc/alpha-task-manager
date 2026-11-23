@@ -28,6 +28,7 @@ export default async function ProjectsPage() {
     { data: tasksData },
     { data: departmentsData },
     { data: templatesData },
+    { data: profilesData },
   ] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", user.id).single(),
     supabase
@@ -43,6 +44,11 @@ export default async function ProjectsPage() {
       .from("project_templates")
       .select("*, tasks:project_template_tasks(*)")
       .order("created_at", { ascending: false }),
+    supabase
+      .from("profiles")
+      .select("*")
+      .eq("is_active", true)
+      .order("full_name", { ascending: true }),
   ]);
 
   const currentUser: Profile = (profileData as Profile | null) ?? {
@@ -94,6 +100,7 @@ export default async function ProjectsPage() {
       departments={(departmentsData ?? []) as Department[]}
       templates={(templatesData ?? []) as ProjectTemplate[]}
       currentUser={currentUser}
+      profiles={(profilesData ?? []) as Profile[]}
     />
   );
 }

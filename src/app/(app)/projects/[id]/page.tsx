@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import ProjectDetailClient from "@/components/projects/ProjectDetailClient";
 import type {
+  Department,
   Profile,
   Project,
   ProjectMember,
@@ -34,8 +35,13 @@ export default async function ProjectDetailPage({
     { data: allTasksData },
     { data: membersData },
     { data: allProfilesData },
+    { data: departmentsData },
   ] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    supabase
+      .from("profiles")
+      .select("*, custom_role:roles(*)")
+      .eq("id", user.id)
+      .single(),
     supabase
       .from("projects")
       .select("*, department:departments(id, name, code)")
@@ -54,13 +60,17 @@ export default async function ProjectDetailPage({
       .order("created_at", { ascending: true }),
     supabase
       .from("project_members")
-      .select("*, profile:profiles(*)")
+      .select("*, profile:profiles(*), project_role:project_roles(*)")
       .eq("project_id", id),
     supabase
       .from("profiles")
       .select("*")
       .eq("is_active", true)
       .order("full_name", { ascending: true }),
+    supabase
+      .from("departments")
+      .select("*")
+      .order("name", { ascending: true }),
   ]);
 
   if (projectErr || !projectData) {
@@ -128,6 +138,7 @@ export default async function ProjectDetailPage({
       initialMembers={(membersData ?? []) as ProjectMember[]}
       allProfiles={allProfiles}
       currentUser={currentUser}
+      departments={(departmentsData ?? []) as Department[]}
     />
   );
 }

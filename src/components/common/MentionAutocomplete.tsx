@@ -23,8 +23,10 @@ export interface MentionAutocompleteProps {
   disabled?: boolean;
   autoFocus?: boolean;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onBlur?: (e: React.FocusEvent<HTMLTextAreaElement>) => void;
   id?: string;
   name?: string;
+  dropdownPlacement?: "top" | "bottom";
 }
 
 export interface MentionTextareaRef {
@@ -52,8 +54,10 @@ export const MentionTextarea = forwardRef<
     disabled = false,
     autoFocus = false,
     onKeyDown,
+    onBlur,
     id,
     name,
+    dropdownPlacement = "bottom",
   },
   ref
 ) {
@@ -70,17 +74,27 @@ export const MentionTextarea = forwardRef<
     textarea: textareaRef.current,
   }));
 
-  // Filter profiles based on search query
+  // Filter profiles based on search query with Vietnamese accent-insensitive support
   const filteredProfiles = React.useMemo(() => {
     if (!isOpen) return [];
     const q = mentionQuery.toLowerCase().trim();
     if (!q) return profiles.slice(0, 8);
+    const qNorm = q
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/gi, "d");
+
     return profiles
       .filter((p) => {
-        const nameMatch = p.full_name?.toLowerCase().includes(q);
-        const emailMatch = p.email?.toLowerCase().includes(q);
-        const roleMatch = p.job_title?.toLowerCase().includes(q);
-        const deptMatch = p.department?.name?.toLowerCase().includes(q);
+        const name = (p.full_name ?? "").toLowerCase();
+        const nameNorm = name
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/đ/gi, "d");
+        const nameMatch = name.includes(q) || nameNorm.includes(qNorm);
+        const emailMatch = (p.email ?? "").toLowerCase().includes(q);
+        const roleMatch = (p.job_title ?? "").toLowerCase().includes(q);
+        const deptMatch = (p.department?.name ?? "").toLowerCase().includes(q);
         return nameMatch || emailMatch || roleMatch || deptMatch;
       })
       .slice(0, 8);
@@ -204,6 +218,7 @@ export const MentionTextarea = forwardRef<
         value={value}
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
+        onBlur={onBlur}
         placeholder={placeholder}
         rows={rows}
         disabled={disabled}
@@ -215,7 +230,9 @@ export const MentionTextarea = forwardRef<
       {isOpen && filteredProfiles.length > 0 && (
         <div
           ref={dropdownRef}
-          className="absolute bottom-full mb-1 left-0 z-50 w-72 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+          className={`absolute ${
+            dropdownPlacement === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          } left-0 z-50 w-72 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900`}
           style={{ minWidth: "260px" }}
         >
           <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 mb-1">

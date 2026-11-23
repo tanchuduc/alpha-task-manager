@@ -4,8 +4,9 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn, getDepartmentDisplayName, getInitials, ROLE_LABELS } from "@/lib/utils";
-import type { Department, Profile, UserRole } from "@/types/database";
+import type { Department, Profile, SystemRole, UserRole } from "@/types/database";
 import { WebhookSettingsPanel } from "@/components/webhooks/WebhookSettingsPanel";
+import { PermissionsManagerPanel } from "./PermissionsManagerPanel";
 import {
   Bell,
   Building2,
@@ -19,6 +20,7 @@ import {
   Plus,
   Save,
   Search,
+  ShieldCheck,
   Trash2,
   User,
   UserCheck,
@@ -39,15 +41,17 @@ interface SettingsViewProps {
   initialDepartments: Department[];
   initialProfiles: Profile[];
   projects: SettingsProjectOption[];
+  initialRoles?: SystemRole[];
 }
 
-type SettingsTab = "profile" | "departments" | "staff" | "webhooks";
+type SettingsTab = "profile" | "departments" | "staff" | "permissions" | "webhooks";
 
 export function SettingsView({
   currentProfile,
   initialDepartments,
   initialProfiles,
   projects,
+  initialRoles = [],
 }: SettingsViewProps) {
   const router = useRouter();
   const isAdmin = currentProfile.role === "admin";
@@ -388,6 +392,12 @@ export function SettingsView({
       visible: isManagerOrAdmin,
     },
     { id: "staff", label: "Nhân sự nội bộ", icon: Users, visible: isAdmin },
+    {
+      id: "permissions",
+      label: "Phân quyền & Vai trò",
+      icon: ShieldCheck,
+      visible: isManagerOrAdmin,
+    },
     {
       id: "webhooks",
       label: "Thông báo Telegram & Lark",
@@ -963,6 +973,20 @@ export function SettingsView({
             </table>
           </div>
         </div>
+      )}
+
+      {/* TAB: PHÂN QUYỀN & VAI TRÒ HỆ THỐNG */}
+      {activeTab === "permissions" && isManagerOrAdmin && (
+        <PermissionsManagerPanel
+          currentProfile={currentProfile}
+          initialRoles={initialRoles}
+          staffList={staffList}
+          onStaffUpdated={(updated) => {
+            setStaffList((prev) =>
+              prev.map((u) => (u.id === updated.id ? updated : u))
+            );
+          }}
+        />
       )}
 
       {/* TAB 4: WEBHOOKS TELEGRAM & LARK */}

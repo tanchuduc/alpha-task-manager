@@ -25,16 +25,25 @@ import {
   BookOpen,
   History,
   Sliders,
+  Layers,
+  AlertTriangle,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { cn, PRIORITY_CONFIG, getInitials, isOverdue } from "@/lib/utils";
 import { logTaskActivity } from "@/lib/activity-logger";
 import TaskActivityTimeline from "@/components/tasks/TaskActivityTimeline";
+import TaskDependenciesSection from "@/components/tasks/TaskDependenciesSection";
+import {
+  MentionTextarea,
+  renderContentWithMentions,
+} from "@/components/common/MentionAutocomplete";
 import type {
   AttachmentType,
   Profile,
   ProjectCustomField,
+  ProjectPhase,
   Task,
   TaskAttachment,
   TaskComment,
@@ -48,10 +57,12 @@ export interface TaskDrawerProps {
   projectId: string;
   statuses: TaskStatus[];
   members: Profile[];
+  allProfiles?: Profile[];
   currentUser: Profile;
   onClose: () => void;
   onUpdated: () => void;
   onDeleted: (taskId: string) => void;
+  onOpenTask?: (taskId: string) => void;
 }
 
 const ATTACHMENT_TYPE_META: Record<
@@ -124,13 +135,20 @@ export default function TaskDrawer({
   projectId,
   statuses,
   members,
+  allProfiles,
   currentUser,
   onClose,
   onUpdated,
   onDeleted,
+  onOpenTask,
 }: TaskDrawerProps) {
   const supabase = useMemo(() => createClient(), []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   const [loading, setLoading] = useState(true);
   const [task, setTask] = useState<Task | null>(null);
@@ -138,8 +156,45 @@ export default function TaskDrawer({
   const [description, setDescription] = useState("");
   const [savingDesc, setSavingDesc] = useState(false);
 
+  // Phases
+  const [phases, setPhases] = useState<ProjectPhase[]>([]);
+
+  // Dependency Blockers warning state
+  const [hasUnresolvedBlockers, setHasUnresolvedBlockers] = useState(false);
+  const [blockerTasks, setBlockerTasks] = useState<Task[]>([]);
+  const [showBlockerConfirmModal, setShowBlockerConfirmModal] = useState(false);
+  const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
+
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
+  const [assigneeSearch, setAssigneeSearch] = useState("");
+
+  const mentionableProfiles = useMemo(() => {
+    if (allProfiles && allProfiles.length > 0) return allProfiles;
+    return members;
+  }, [allProfiles, members]);
+
+  const filteredAssignees = useMemo(() => {
+    const q = assigneeSearch.toLowerCase().trim();
+    if (!q) return members;
+    const qNorm = q
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/gi, "d");
+
+    return members.filter((m) => {
+      const name = (m.full_name ?? "").toLowerCase();
+      const nameNorm = name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/gi, "d");
+      const nameMatch = name.includes(q) || nameNorm.includes(qNorm);
+      const emailMatch = (m.email ?? "").toLowerCase().includes(q);
+      const roleMatch = (m.job_title ?? "").toLowerCase().includes(q);
+      const deptMatch = (m.department?.name ?? "").toLowerCase().includes(q);
+      return nameMatch || emailMatch || roleMatch || deptMatch;
+    });
+  }, [members, assigneeSearch]);
 
   const [subtasks, setSubtasks] = useState<Task[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
@@ -179,84 +234,96 @@ export default function TaskDrawer({
     [statuses]
   );
 
-  const loadTaskDetails = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [
-        { data: taskData, error: taskErr },
-        { data: assigneesData },
-        { data: subtasksData },
-        { data: attachmentsData },
-        { data: commentsData },
-        { data: customFieldsData },
-        { data: customValuesData },
-      ] = await Promise.all([
-        supabase.from("tasks").select("*").eq("id", taskId).single(),
-        supabase
-          .from("task_assignees")
-          .select("user_id")
-          .eq("task_id", taskId),
-        supabase
-          .from("tasks")
-          .select("*")
-          .eq("parent_id", taskId)
-          .order("position", { ascending: true })
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("task_attachments")
-          .select("*")
-          .eq("task_id", taskId)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("task_comments")
-          .select("*, author:profiles(id, full_name, email, avatar_url, role)")
-          .eq("task_id", taskId)
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("project_custom_fields")
-          .select("*")
-          .eq("project_id", projectId)
-          .order("position", { ascending: true })
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("task_custom_field_values")
-          .select("*")
-          .eq("task_id", taskId),
-      ]);
-
-      if (taskErr || !taskData) {
-        toast.error("Không tìm thấy công việc này");
-        onClose();
-        return;
+  const loadTaskDetails = useCallback(
+    async (isInitial = false) => {
+      if (isInitial) {
+        setLoading(true);
       }
+      try {
+        const [
+          { data: taskData, error: taskErr },
+          { data: assigneesData },
+          { data: subtasksData },
+          { data: attachmentsData },
+          { data: commentsData },
+          { data: customFieldsData },
+          { data: customValuesData },
+          { data: phasesData },
+        ] = await Promise.all([
+          supabase.from("tasks").select("*").eq("id", taskId).single(),
+          supabase
+            .from("task_assignees")
+            .select("user_id")
+            .eq("task_id", taskId),
+          supabase
+            .from("tasks")
+            .select("*")
+            .eq("parent_id", taskId)
+            .order("position", { ascending: true })
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("task_attachments")
+            .select("*")
+            .eq("task_id", taskId)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("task_comments")
+            .select("*, author:profiles(id, full_name, email, avatar_url, role)")
+            .eq("task_id", taskId)
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("project_custom_fields")
+            .select("*")
+            .eq("project_id", projectId)
+            .order("position", { ascending: true })
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("task_custom_field_values")
+            .select("*")
+            .eq("task_id", taskId),
+          supabase
+            .from("project_phases")
+            .select("*")
+            .eq("project_id", projectId)
+            .order("position", { ascending: true }),
+        ]);
 
-      const loadedTask = taskData as Task;
-      setTask(loadedTask);
-      setTitle(loadedTask.title);
-      setDescription(loadedTask.description ?? "");
-      setAssigneeIds(
-        ((assigneesData ?? []) as { user_id: string }[]).map((r) => r.user_id)
-      );
-      setSubtasks((subtasksData ?? []) as Task[]);
-      setAttachments((attachmentsData ?? []) as TaskAttachment[]);
-      setComments((commentsData ?? []) as TaskComment[]);
+        if (taskErr || !taskData) {
+          toast.error("Không tìm thấy công việc này");
+          onCloseRef.current();
+          return;
+        }
 
-      setCustomFields((customFieldsData as ProjectCustomField[]) || []);
-      const valMap: Record<string, string> = {};
-      for (const row of (customValuesData as TaskCustomFieldValue[]) || []) {
-        valMap[row.field_id] = row.value;
+        const loadedTask = taskData as Task;
+        setTask(loadedTask);
+        setTitle(loadedTask.title);
+        setDescription(loadedTask.description ?? "");
+        setAssigneeIds(
+          ((assigneesData ?? []) as { user_id: string }[]).map((r) => r.user_id)
+        );
+        setSubtasks((subtasksData ?? []) as Task[]);
+        setAttachments((attachmentsData ?? []) as TaskAttachment[]);
+        setComments((commentsData ?? []) as TaskComment[]);
+
+        setCustomFields((customFieldsData as ProjectCustomField[]) || []);
+        setPhases((phasesData as ProjectPhase[]) || []);
+        const valMap: Record<string, string> = {};
+        for (const row of (customValuesData as TaskCustomFieldValue[]) || []) {
+          valMap[row.field_id] = row.value;
+        }
+        setCustomValues(valMap);
+      } catch {
+        toast.error("Lỗi khi tải chi tiết công việc");
+      } finally {
+        setLoading(false);
       }
-      setCustomValues(valMap);
-    } catch {
-      toast.error("Lỗi khi tải chi tiết công việc");
-    } finally {
-      setLoading(false);
-    }
-  }, [supabase, taskId, projectId, onClose]);
+    },
+    [supabase, taskId, projectId]
+  );
 
   useEffect(() => {
-    loadTaskDetails();
-  }, [loadTaskDetails]);
+    loadTaskDetails(true);
+  }, [taskId]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -319,6 +386,42 @@ export default function TaskDrawer({
         old_value: oldTitle,
         new_value: trimmed,
         description: `Đổi tiêu đề thành "${trimmed}"`,
+      },
+    });
+  }
+
+  function onAttemptStatusChange(newStatusId: string) {
+    const targetStatus = statuses.find((s) => s.id === newStatusId);
+    if (targetStatus?.category === "done" && hasUnresolvedBlockers) {
+      setPendingStatusId(newStatusId);
+      setShowBlockerConfirmModal(true);
+      return;
+    }
+    handleStatusChange(newStatusId);
+  }
+
+  function handleConfirmCompleteDespiteBlockers() {
+    if (pendingStatusId) {
+      handleStatusChange(pendingStatusId);
+    }
+    setShowBlockerConfirmModal(false);
+    setPendingStatusId(null);
+  }
+
+  async function handlePhaseChange(newPhaseId: string | null) {
+    if (!task || task.phase_id === newPhaseId) return;
+    const oldPhase = phases.find((p) => p.id === task.phase_id);
+    const targetPhase = phases.find((p) => p.id === newPhaseId);
+    await updateTaskFields({ phase_id: newPhaseId });
+
+    await logTaskActivity(supabase, {
+      taskId: task.id,
+      actorId: currentUser.id,
+      action: "phase_changed",
+      details: {
+        old_value: oldPhase?.name || null,
+        new_value: targetPhase?.name || "Chưa phân giai đoạn",
+        description: `Đổi giai đoạn sang "${targetPhase?.name || "Chưa phân giai đoạn"}"`,
       },
     });
   }
@@ -822,8 +925,15 @@ export default function TaskDrawer({
     const trimmed = commentText.trim();
     if (!trimmed) return;
 
-    const activeMentionIds = mentionedUserIds.filter((uid) => {
-      const m = members.find((mem) => mem.id === uid);
+    const activeMentionIds = Array.from(
+      new Set([
+        ...mentionedUserIds,
+        ...mentionableProfiles
+          .filter((p) => trimmed.includes(`@${p.full_name}`))
+          .map((p) => p.id),
+      ])
+    ).filter((uid) => {
+      const m = mentionableProfiles.find((mem) => mem.id === uid);
       return m ? trimmed.includes(`@${m.full_name}`) : false;
     });
 
@@ -985,7 +1095,7 @@ export default function TaskDrawer({
                 </label>
                 <select
                   value={task.status_id ?? ""}
-                  onChange={(e) => handleStatusChange(e.target.value)}
+                  onChange={(e) => onAttemptStatusChange(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 >
                   {statuses.map((st) => (
@@ -1050,6 +1160,26 @@ export default function TaskDrawer({
                       : "text-slate-800 dark:text-slate-100"
                   )}
                 />
+              </div>
+
+              {/* Giai đoạn xuất bản sách (Phase) */}
+              <div className="sm:col-span-2">
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <Layers className="h-3.5 w-3.5 text-brand" />
+                  Giai đoạn xuất bản
+                </label>
+                <select
+                  value={task.phase_id ?? ""}
+                  onChange={(e) => handlePhaseChange(e.target.value || null)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
+                >
+                  <option value="">— Chưa phân giai đoạn —</option>
+                  {phases.map((ph) => (
+                    <option key={ph.id} value={ph.id}>
+                      {ph.name} ({ph.status === "completed" ? "Đã hoàn thành" : ph.status === "in_progress" ? "Đang diễn ra" : "Chờ thực hiện"})
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1144,6 +1274,21 @@ export default function TaskDrawer({
               </div>
             )}
 
+            {/* Công việc phụ thuộc (Task Dependencies) */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+              <TaskDependenciesSection
+                taskId={task.id}
+                projectId={projectId}
+                currentUser={currentUser}
+                statuses={statuses}
+                onOpenTask={onOpenTask}
+                onBlockersChange={(has, blockers) => {
+                  setHasUnresolvedBlockers(has);
+                  setBlockerTasks(blockers);
+                }}
+              />
+            </div>
+
             {/* Assignees */}
             <div>
               <div className="mb-2 flex items-center justify-between">
@@ -1189,33 +1334,70 @@ export default function TaskDrawer({
               </div>
 
               {showAssigneePicker && (
-                <div className="mt-2.5 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                  {members.map((m) => {
-                    const checked = assigneeIds.includes(m.id);
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => handleToggleAssignee(m)}
-                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-700/60 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-soft text-[10px] font-bold text-brand dark:bg-brand/20">
-                            {getInitials(m.full_name)}
-                          </span>
-                          <div>
-                            <p className="font-medium text-slate-800 dark:text-slate-100">
-                              {m.full_name}
-                            </p>
-                            <p className="text-[11px] text-slate-400">
-                              {m.job_title || m.email}
-                            </p>
-                          </div>
-                        </div>
-                        {checked && <Check className="h-4 w-4 text-brand" />}
-                      </button>
-                    );
-                  })}
+                <div className="mt-2.5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md dark:border-slate-700 dark:bg-slate-800">
+                  {/* Search input */}
+                  <div className="border-b border-slate-100 p-2 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/50">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        value={assigneeSearch}
+                        onChange={(e) => setAssigneeSearch(e.target.value)}
+                        placeholder="Tìm nhân sự theo tên, email, chức danh..."
+                        autoFocus
+                        className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-7 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      {assigneeSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setAssigneeSearch("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Members list */}
+                  <div className="max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                    {filteredAssignees.length === 0 ? (
+                      <div className="py-4 text-center text-xs text-slate-400">
+                        Không tìm thấy nhân sự phù hợp
+                      </div>
+                    ) : (
+                      filteredAssignees.map((m) => {
+                        const checked = assigneeIds.includes(m.id);
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => handleToggleAssignee(m)}
+                            className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition cursor-pointer ${
+                              checked
+                                ? "bg-brand/10 dark:bg-brand/20 text-brand"
+                                : "hover:bg-slate-100 dark:hover:bg-slate-700/60 text-slate-800 dark:text-slate-100"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[10px] font-bold text-brand dark:bg-brand/20">
+                                {getInitials(m.full_name)}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="font-medium truncate">
+                                  {m.full_name}
+                                </p>
+                                <p className="text-[11px] text-slate-400 truncate">
+                                  {m.job_title || m.department?.name || m.email}
+                                </p>
+                              </div>
+                            </div>
+                            {checked && <Check className="h-4 w-4 text-brand shrink-0 ml-2" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1237,16 +1419,18 @@ export default function TaskDrawer({
                   </button>
                 )}
               </div>
-              <textarea
-                rows={4}
+              <MentionTextarea
+                profiles={mentionableProfiles}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={setDescription}
+                dropdownPlacement="bottom"
+                rows={4}
                 onBlur={() => {
                   if (description !== (task.description ?? "")) {
                     handleSaveDescription();
                   }
                 }}
-                placeholder="Nhập yêu cầu, checklist hoặc ghi chú cho công việc này..."
+                placeholder="Nhập yêu cầu, checklist hoặc ghi chú... (gõ @ để nhắc tên đồng nghiệp)"
                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100"
               />
             </div>
@@ -1524,9 +1708,12 @@ export default function TaskDrawer({
                                   {formatDateTimeVi(c.created_at)}
                                 </span>
                               </div>
-                              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
-                                {c.content}
-                              </p>
+                              <div className="mt-1 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
+                                {renderContentWithMentions(
+                                  c.content,
+                                  mentionableProfiles
+                                )}
+                              </div>
                             </div>
                           </div>
                         );
@@ -1549,7 +1736,7 @@ export default function TaskDrawer({
 
                     {showMentionBar && (
                       <div className="flex flex-wrap gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/60">
-                        {members.map((m) => (
+                        {mentionableProfiles.map((m) => (
                           <button
                             key={m.id}
                             type="button"
@@ -1562,18 +1749,27 @@ export default function TaskDrawer({
                       </div>
                     )}
 
-                    <div className="flex gap-2">
-                      <textarea
-                        rows={2}
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        placeholder="Viết bình luận... (nhấn @mention ở trên để tag đồng nghiệp)"
-                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                      />
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <MentionTextarea
+                          profiles={mentionableProfiles}
+                          value={commentText}
+                          onChange={setCommentText}
+                          onMention={(p) => {
+                            setMentionedUserIds((prev) =>
+                              prev.includes(p.id) ? prev : [...prev, p.id]
+                            );
+                          }}
+                          dropdownPlacement="top"
+                          rows={2}
+                          placeholder="Viết bình luận... (gõ @ để nhắc tên đồng nghiệp)"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        />
+                      </div>
                       <button
                         type="submit"
                         disabled={postingComment || !commentText.trim()}
-                        className="inline-flex items-center justify-center self-end rounded-xl bg-brand px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-50 cursor-pointer"
+                        className="inline-flex items-center justify-center rounded-xl bg-brand px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-50 cursor-pointer h-[42px]"
                       >
                         {postingComment ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -1592,6 +1788,62 @@ export default function TaskDrawer({
                   <TaskActivityTimeline taskId={task.id} />
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Modal Cảnh báo Phụ thuộc chưa hoàn thành */}
+        {showBlockerConfirmModal && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-2xl border border-red-200 bg-white p-5 shadow-2xl dark:border-red-900/60 dark:bg-slate-900">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600 dark:bg-red-950/60 dark:text-red-400">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    Cảnh báo công việc bị chặn!
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                    Công việc này đang bị chặn bởi{" "}
+                    <span className="font-bold text-red-600 dark:text-red-400">
+                      {blockerTasks.length} công việc chưa hoàn thành
+                    </span>
+                    :
+                  </p>
+                  <ul className="mt-2 max-h-32 overflow-y-auto space-y-1 rounded-lg bg-red-50/70 p-2.5 text-xs text-red-800 dark:bg-red-950/30 dark:text-red-300">
+                    {blockerTasks.map((b) => (
+                      <li key={b.id} className="flex items-center gap-1.5 truncate">
+                        <span className="text-red-500 font-bold">•</span>
+                        <span className="font-semibold truncate">{b.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2.5 text-xs text-slate-500 dark:text-slate-400">
+                    Bạn có chắc chắn muốn bỏ qua và đánh dấu công việc này là Hoàn thành không?
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBlockerConfirmModal(false);
+                    setPendingStatusId(null);
+                  }}
+                  className="rounded-lg border border-slate-200 px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmCompleteDespiteBlockers}
+                  className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-700 shadow-xs cursor-pointer"
+                >
+                  Vẫn hoàn thành
+                </button>
+              </div>
             </div>
           </div>
         )}

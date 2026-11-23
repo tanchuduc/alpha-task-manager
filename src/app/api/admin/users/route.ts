@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         },
         { onConflict: "id" }
       )
-      .select("*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title)")
+      .select("*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title), custom_role:roles(*)")
       .single();
 
     if (profileErr) {
@@ -146,6 +146,7 @@ export async function PATCH(request: Request) {
       role?: UserRole;
       department_id?: string | null;
       manager_id?: string | null;
+      custom_role_id?: string | null;
       job_title?: string | null;
       is_active?: boolean;
     };
@@ -189,6 +190,9 @@ export async function PATCH(request: Request) {
       }
       updates.manager_id = body.manager_id || null;
     }
+    if (body.custom_role_id !== undefined) {
+      updates.custom_role_id = body.custom_role_id || null;
+    }
     if (body.job_title !== undefined) {
       updates.job_title = body.job_title?.trim() || null;
     }
@@ -201,7 +205,7 @@ export async function PATCH(request: Request) {
       .from("profiles")
       .update(updates)
       .eq("id", body.user_id)
-      .select("*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title)")
+      .select("*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title), custom_role:roles(*)")
       .single();
 
     if (updateErr) {

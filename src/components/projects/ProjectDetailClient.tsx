@@ -37,12 +37,22 @@ import {
   GripVertical,
   MessageSquare,
   Sliders,
+  Settings,
+  ShieldCheck,
+  Lock,
+  Layers,
+  FolderArchive,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { hasProjectPermission, PROJECT_PERMISSIONS } from "@/lib/permissions";
 import { ProjectUpdatesTab } from "./ProjectUpdatesTab";
+import ProjectPhasesTab from "./ProjectPhasesTab";
+import ProjectFilesTab from "./ProjectFilesTab";
 import BulkActionBar from "@/components/projects/BulkActionBar";
 import CustomFieldsManagerModal from "@/components/projects/CustomFieldsManagerModal";
+import ProjectRolesManagerModal from "./ProjectRolesManagerModal";
+import ProjectSettingsModal, { CONFIDENCE_CONFIG } from "./ProjectSettingsModal";
 import {
   cn,
   PRIORITY_CONFIG,
@@ -52,9 +62,11 @@ import {
 } from "@/lib/utils";
 import TaskDrawer from "@/components/tasks/TaskDrawer";
 import type {
+  Department,
   Profile,
   Project,
   ProjectMember,
+  ProjectPhase,
   ProjectStatus,
   Task,
   TaskPriority,
@@ -68,9 +80,10 @@ interface ProjectDetailClientProps {
   initialMembers: ProjectMember[];
   allProfiles: Profile[];
   currentUser: Profile;
+  departments?: Department[];
 }
 
-type ViewMode = "list" | "kanban" | "calendar" | "updates";
+type ViewMode = "list" | "kanban" | "calendar" | "updates" | "phases" | "files";
 
 const WEEKDAYS_VI = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
@@ -174,14 +187,17 @@ function KanbanCardContent({
 function DraggableKanbanCard({
   task,
   onOpen,
+  canChangeStatus = true,
 }: {
   task: Task;
   onOpen: (id: string) => void;
+  canChangeStatus?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: task.id,
       data: { task },
+      disabled: !canChangeStatus,
     });
 
   const style = transform
@@ -194,11 +210,11 @@ function DraggableKanbanCard({
     <div
       ref={setNodeRef}
       style={style}
-      {...listeners}
-      {...attributes}
+      {...(canChangeStatus ? listeners : {})}
+      {...(canChangeStatus ? attributes : {})}
       onClick={() => onOpen(task.id)}
       className={cn(
-        "cursor-grab active:cursor-grabbing",
+        canChangeStatus ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
         isDragging && "opacity-35"
       )}
     >
@@ -212,14 +228,19 @@ function DroppableKanbanColumn({
   tasks,
   onOpenTask,
   onQuickAdd,
+  canChangeStatus = true,
+  canCreateTasks = true,
 }: {
   status: TaskStatus;
   tasks: Task[];
   onOpenTask: (id: string) => void;
   onQuickAdd: (statusId: string, title: string) => Promise<void>;
+  canChangeStatus?: boolean;
+  canCreateTasks?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: status.id,
+    disabled: !canChangeStatus,
   });
   const [quickTitle, setQuickTitle] = useState("");
   const [adding, setAdding] = useState(false);
@@ -270,32 +291,35 @@ function DroppableKanbanColumn({
             key={task.id}
             task={task}
             onOpen={onOpenTask}
+            canChangeStatus={canChangeStatus}
           />
         ))}
       </div>
 
       {/* Quick add card */}
-      <form onSubmit={handleSubmit} className="mt-2">
-        <div className="flex items-center gap-1.5">
-          <input
-            type="text"
-            value={quickTitle}
-            onChange={(e) => setQuickTitle(e.target.value)}
-            placeholder="+ Thêm thẻ công việc..."
-            disabled={adding}
-            className="w-full rounded-lg border border-transparent bg-white/80 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:bg-white focus:outline-none dark:bg-slate-800/80 dark:text-slate-100 dark:focus:bg-slate-800"
-          />
-          {quickTitle.trim() && (
-            <button
-              type="submit"
+      {canCreateTasks && (
+        <form onSubmit={handleSubmit} className="mt-2">
+          <div className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={quickTitle}
+              onChange={(e) => setQuickTitle(e.target.value)}
+              placeholder="+ Thêm thẻ công việc..."
               disabled={adding}
-              className="rounded-lg bg-brand px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
-            >
-              Thêm
-            </button>
-          )}
-        </div>
-      </form>
+              className="w-full rounded-lg border border-transparent bg-white/80 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:bg-white focus:outline-none dark:bg-slate-800/80 dark:text-slate-100 dark:focus:bg-slate-800"
+            />
+            {quickTitle.trim() && (
+              <button
+                type="submit"
+                disabled={adding}
+                className="rounded-lg bg-brand px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
+              >
+                Thêm
+              </button>
+            )}
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -311,6 +335,7 @@ export default function ProjectDetailClient({
   initialMembers,
   allProfiles,
   currentUser,
+  departments = [],
 }: ProjectDetailClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -320,16 +345,27 @@ export default function ProjectDetailClient({
   const [statuses] = useState<TaskStatus[]>(initialStatuses);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [members, setMembers] = useState<ProjectMember[]>(initialMembers);
+  const [phases, setPhases] = useState<ProjectPhase[]>([]);
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    return searchParams.get("tab") === "updates" ? "updates" : "list";
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "updates") return "updates";
+    if (tabParam === "phases") return "phases";
+    if (tabParam === "files") return "files";
+    if (tabParam === "kanban") return "kanban";
+    if (tabParam === "calendar") return "calendar";
+    return "list";
   });
 
   useEffect(() => {
-    if (searchParams.get("tab") === "updates") {
-      setViewMode("updates");
-    }
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "updates") setViewMode("updates");
+    else if (tabParam === "phases") setViewMode("phases");
+    else if (tabParam === "files") setViewMode("files");
+    else if (tabParam === "kanban") setViewMode("kanban");
+    else if (tabParam === "calendar") setViewMode("calendar");
   }, [searchParams]);
+
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"all" | TaskPriority>(
     "all"
@@ -337,6 +373,13 @@ export default function ProjectDetailClient({
   const [collapsedStatusIds, setCollapsedStatusIds] = useState<
     Record<string, boolean>
   >({});
+
+  // List View Grouping: By Status vs By Phase
+  const [listGroupBy, setListGroupBy] = useState<"status" | "phase">("status");
+  const [collapsedPhaseIds, setCollapsedPhaseIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [phaseQuickAdd, setPhaseQuickAdd] = useState<Record<string, string>>({});
 
   // Quick-add per status in List view
   const [listQuickAdd, setListQuickAdd] = useState<Record<string, string>>({});
@@ -371,8 +414,49 @@ export default function ProjectDetailClient({
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [showCustomFieldsModal, setShowCustomFieldsModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showProjectRolesModal, setShowProjectRolesModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const [memberBusyId, setMemberBusyId] = useState<string | null>(null);
+
+  // Advanced RBAC Permissions Calculation
+  const currentMember = useMemo(
+    () => members.find((m) => m.user_id === currentUser.id),
+    [members, currentUser.id]
+  );
+
+  const canCreateTasks = useMemo(
+    () =>
+      hasProjectPermission(
+        currentUser,
+        project,
+        currentMember,
+        PROJECT_PERMISSIONS.CREATE_TASKS
+      ),
+    [currentUser, project, currentMember]
+  );
+
+  const canChangeStatus = useMemo(
+    () =>
+      hasProjectPermission(
+        currentUser,
+        project,
+        currentMember,
+        PROJECT_PERMISSIONS.CHANGE_STATUS
+      ),
+    [currentUser, project, currentMember]
+  );
+
+  const canManageMembers = useMemo(
+    () =>
+      hasProjectPermission(
+        currentUser,
+        project,
+        currentMember,
+        PROJECT_PERMISSIONS.MANAGE_MEMBERS
+      ),
+    [currentUser, project, currentMember]
+  );
 
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -382,6 +466,7 @@ export default function ProjectDetailClient({
   const [newTaskPriority, setNewTaskPriority] =
     useState<TaskPriority>("medium");
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
+  const [newTaskPhaseId, setNewTaskPhaseId] = useState<string>("");
   const [creatingTask, setCreatingTask] = useState(false);
 
   const doneStatus = useMemo(
@@ -469,15 +554,99 @@ export default function ProjectDetailClient({
     };
   }, [supabase, project.id, fetchTasks]);
 
-  function openTaskDrawer(taskId: string) {
-    setSelectedTaskId(taskId);
-    router.replace(`/projects/${project.id}?task=${taskId}`, { scroll: false });
+  // Refetch all project phases
+  const fetchPhases = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("project_phases")
+      .select("*")
+      .eq("project_id", project.id)
+      .order("position", { ascending: true });
+    if (!error && data) {
+      setPhases(data as ProjectPhase[]);
+    }
+  }, [supabase, project.id]);
+
+  useEffect(() => {
+    fetchPhases();
+  }, [fetchPhases]);
+
+  // Supabase Realtime subscription on public.project_phases
+  useEffect(() => {
+    const channel = supabase
+      .channel(`project-phases-${project.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "alpha_lite",
+          table: "project_phases",
+          filter: `project_id=eq.${project.id}`,
+        },
+        () => {
+          fetchPhases();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, project.id, fetchPhases]);
+
+  async function handleQuickAddTaskToPhase(
+    phaseId: string | null,
+    title: string
+  ) {
+    if (!canCreateTasks) {
+      toast.error("Bạn không có quyền tạo công việc trong dự án này.");
+      return;
+    }
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert({
+        project_id: project.id,
+        phase_id: phaseId,
+        status_id: todoStatus?.id || statuses[0]?.id || null,
+        title: trimmed,
+        priority: "medium",
+        position: tasks.length,
+        created_by: currentUser.id,
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      toast.error("Không thể thêm công việc");
+      return;
+    }
+
+    setTasks((prev) => [
+      ...prev,
+      {
+        ...(data as Task),
+        assignees: [],
+        subtasks_count: 0,
+        subtasks_done: 0,
+      },
+    ]);
+    toast.success("Đã thêm công việc vào giai đoạn");
   }
 
-  function closeTaskDrawer() {
+  const openTaskDrawer = useCallback(
+    (taskId: string) => {
+      setSelectedTaskId(taskId);
+      router.replace(`/projects/${project.id}?task=${taskId}`, { scroll: false });
+    },
+    [project.id, router]
+  );
+
+  const closeTaskDrawer = useCallback(() => {
     setSelectedTaskId(null);
     router.replace(`/projects/${project.id}`, { scroll: false });
-  }
+  }, [project.id, router]);
 
   async function handleProjectStatusChange(newStatus: ProjectStatus) {
     const prev = project.status;
@@ -495,6 +664,10 @@ export default function ProjectDetailClient({
   }
 
   async function handleQuickAddTask(statusId: string, title: string) {
+    if (!canCreateTasks) {
+      toast.error("Bạn không có quyền tạo công việc trong dự án này.");
+      return;
+    }
     const trimmed = title.trim();
     if (!trimmed) return;
 
@@ -534,6 +707,10 @@ export default function ProjectDetailClient({
 
   async function handleCreateTaskFromModal(e: React.FormEvent) {
     e.preventDefault();
+    if (!canCreateTasks) {
+      toast.error("Bạn không có quyền tạo công việc trong dự án này.");
+      return;
+    }
     const trimmed = newTaskTitle.trim();
     if (!trimmed) return;
 
@@ -551,6 +728,7 @@ export default function ProjectDetailClient({
           title: trimmed,
           priority: newTaskPriority,
           due_date: newTaskDueDate || null,
+          phase_id: newTaskPhaseId || null,
           completed_at,
           position: tasks.length,
           created_by: currentUser.id,
@@ -572,6 +750,7 @@ export default function ProjectDetailClient({
       toast.success("Đã thêm công việc mới");
       setNewTaskTitle("");
       setNewTaskDueDate("");
+      setNewTaskPhaseId("");
       setShowAddTaskModal(false);
     } catch {
       toast.error("Không thể tạo công việc");
@@ -581,6 +760,10 @@ export default function ProjectDetailClient({
   }
 
   async function moveTaskToStatus(task: Task, targetStatusId: string) {
+    if (!canChangeStatus) {
+      toast.error("Bạn không có quyền thay đổi trạng thái công việc trong dự án này.");
+      return;
+    }
     if (task.status_id === targetStatusId) return;
     const targetStatus = statuses.find((s) => s.id === targetStatusId);
     if (!targetStatus) return;
@@ -640,6 +823,11 @@ export default function ProjectDetailClient({
     const { active, over } = event;
     if (!over) return;
 
+    if (!canChangeStatus) {
+      toast.error("Bạn không có quyền kéo thả hoặc đổi trạng thái công việc.");
+      return;
+    }
+
     const taskId = String(active.id);
     const targetStatusId = String(over.id);
     const task = tasks.find((t) => t.id === taskId);
@@ -649,6 +837,10 @@ export default function ProjectDetailClient({
   }
 
   async function handleToggleTaskDone(task: Task) {
+    if (!canChangeStatus) {
+      toast.error("Bạn không có quyền thay đổi trạng thái công việc trong dự án này.");
+      return;
+    }
     if (!doneStatus || !todoStatus) return;
     const isDone = Boolean(task.completed_at) || task.status_id === doneStatus.id;
     await moveTaskToStatus(task, isDone ? todoStatus.id : doneStatus.id);
@@ -661,6 +853,10 @@ export default function ProjectDetailClient({
   );
 
   async function handleAddMember(profile: Profile) {
+    if (!canManageMembers) {
+      toast.error("Bạn không có quyền quản lý thành viên trong dự án này.");
+      return;
+    }
     setMemberBusyId(profile.id);
     try {
       const { error } = await supabase.from("project_members").insert({
@@ -700,6 +896,10 @@ export default function ProjectDetailClient({
   }
 
   async function handleRemoveMember(userId: string) {
+    if (!canManageMembers) {
+      toast.error("Bạn không có quyền quản lý thành viên trong dự án này.");
+      return;
+    }
     setMemberBusyId(userId);
     try {
       const { error } = await supabase
@@ -766,6 +966,10 @@ export default function ProjectDetailClient({
 
   const todayYmd = useMemo(() => formatYmd(new Date()), []);
 
+  const conf =
+    CONFIDENCE_CONFIG[project.delivery_confidence || "on_track"] ??
+    CONFIDENCE_CONFIG.on_track;
+
   const filteredModalProfiles = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
     return allProfiles.filter((p) => {
@@ -807,9 +1011,40 @@ export default function ProjectDetailClient({
               <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 {project.code}
               </span>
+              {project.category && (
+                <span className="rounded-md bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">
+                  {project.category}
+                </span>
+              )}
               <h1 className="truncate text-xl font-bold text-slate-900 dark:text-slate-100">
                 {project.name}
               </h1>
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-2.5">
+              {/* Delivery confidence badge */}
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                  conf.badgeClass
+                )}
+                title={project.confidence_note || conf.desc}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", conf.dotClass)} />
+                {conf.label}
+              </span>
+
+              {project.client_name && (
+                <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
+                  Tác giả/Đối tác: <strong>{project.client_name}</strong>
+                </span>
+              )}
+
+              {project.confidence_note && (
+                <span className="text-xs italic text-slate-500 dark:text-slate-400">
+                  — &quot;{project.confidence_note}&quot;
+                </span>
+              )}
             </div>
 
             {project.description && (
@@ -820,6 +1055,17 @@ export default function ProjectDetailClient({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Project Settings button */}
+            <button
+              type="button"
+              onClick={() => setShowSettingsModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+              title="Cài đặt dự án, danh mục, sức khỏe và tiến độ"
+            >
+              <Settings className="h-4 w-4 text-slate-500" />
+              <span>Cài đặt dự án</span>
+            </button>
+
             {/* Project Status Selector */}
             <select
               value={project.status}
@@ -844,6 +1090,17 @@ export default function ProjectDetailClient({
               <span>Thành viên ({members.length})</span>
             </button>
 
+            {/* Project Roles & Permissions button */}
+            <button
+              type="button"
+              onClick={() => setShowProjectRolesModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+              title="Phân vai trò và kiểm soát 10 quyền hạn trong dự án"
+            >
+              <ShieldCheck className="h-4 w-4 text-brand" />
+              <span>Phân quyền dự án</span>
+            </button>
+
             {/* Custom fields button */}
             <button
               type="button"
@@ -854,15 +1111,17 @@ export default function ProjectDetailClient({
               <span>Tùy biến cột / Trường xuất bản</span>
             </button>
 
-            {/* Add task button */}
-            <button
-              type="button"
-              onClick={() => setShowAddTaskModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-brand-hover cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              Thêm công việc
-            </button>
+            {/* Add task button - conditionally hidden if !canCreateTasks */}
+            {canCreateTasks && (
+              <button
+                type="button"
+                onClick={() => setShowAddTaskModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-brand-hover cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                Thêm công việc
+              </button>
+            )}
           </div>
         </div>
 
@@ -897,6 +1156,19 @@ export default function ProjectDetailClient({
             </button>
             <button
               type="button"
+              onClick={() => setViewMode("phases")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
+                viewMode === "phases"
+                  ? "bg-white text-brand shadow-xs dark:bg-slate-900"
+                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+              )}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Giai đoạn ({phases.length})
+            </button>
+            <button
+              type="button"
               onClick={() => setViewMode("calendar")}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
@@ -907,6 +1179,19 @@ export default function ProjectDetailClient({
             >
               <CalendarIcon className="h-3.5 w-3.5" />
               Lịch
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("files")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
+                viewMode === "files"
+                  ? "bg-white text-brand shadow-xs dark:bg-slate-900"
+                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+              )}
+            >
+              <FolderArchive className="h-3.5 w-3.5" />
+              Tài liệu & Tệp
             </button>
             <button
               type="button"
@@ -924,6 +1209,34 @@ export default function ProjectDetailClient({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {viewMode === "list" && (
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setListGroupBy("status")}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-xs font-semibold transition cursor-pointer",
+                    listGroupBy === "status"
+                      ? "bg-white text-brand shadow-xs dark:bg-slate-900 dark:text-brand"
+                      : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
+                  )}
+                >
+                  Theo Trạng thái
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setListGroupBy("phase")}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-xs font-semibold transition cursor-pointer",
+                    listGroupBy === "phase"
+                      ? "bg-white text-brand shadow-xs dark:bg-slate-900 dark:text-brand"
+                      : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
+                  )}
+                >
+                  Theo Giai đoạn
+                </button>
+              </div>
+            )}
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
@@ -958,7 +1271,507 @@ export default function ProjectDetailClient({
        * ============================================================== */}
       {viewMode === "list" && (
         <div className="space-y-4">
-          {statuses.map((st) => {
+          {listGroupBy === "phase" ? (
+            <div className="space-y-4">
+              {phases.map((phase, idx) => {
+                const groupTasks = filteredTasks.filter(
+                  (t) => t.phase_id === phase.id
+                );
+                const collapsed = !!collapsedPhaseIds[phase.id];
+                const quickVal = phaseQuickAdd[phase.id] ?? "";
+                const isAllGroupSelected =
+                  groupTasks.length > 0 &&
+                  groupTasks.every((t) => selectedTaskIds.has(t.id));
+                const isSomeGroupSelected =
+                  groupTasks.some((t) => selectedTaskIds.has(t.id));
+                const doneCount = groupTasks.filter(
+                  (t) =>
+                    Boolean(t.completed_at) ||
+                    (doneStatus && t.status_id === doneStatus.id)
+                ).length;
+                const progress =
+                  groupTasks.length > 0
+                    ? Math.round((doneCount / groupTasks.length) * 100)
+                    : 0;
+
+                return (
+                  <div
+                    key={phase.id}
+                    className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCollapsedPhaseIds((prev) => ({
+                          ...prev,
+                          [phase.id]: !prev[phase.id],
+                        }))
+                      }
+                      className="flex w-full items-center justify-between bg-slate-50/80 px-4 py-2.5 text-left dark:bg-slate-800/50 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {groupTasks.length > 0 && (
+                          <input
+                            type="checkbox"
+                            checked={isAllGroupSelected}
+                            ref={(el) => {
+                              if (el) {
+                                el.indeterminate =
+                                  isSomeGroupSelected && !isAllGroupSelected;
+                              }
+                            }}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setSelectedTaskIds((prev) => {
+                                const next = new Set(prev);
+                                for (const t of groupTasks) {
+                                  if (isAllGroupSelected) next.delete(t.id);
+                                  else next.add(t.id);
+                                }
+                                return next;
+                              });
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            title="Chọn tất cả công việc trong giai đoạn này"
+                            className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer mr-0.5"
+                          />
+                        )}
+                        {collapsed ? (
+                          <ChevronDown className="h-4 w-4 text-slate-400" />
+                        ) : (
+                          <ChevronUp className="h-4 w-4 text-slate-400" />
+                        )}
+                        <span
+                          className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-2xs"
+                          style={{ backgroundColor: phase.color || "#F26522" }}
+                        >
+                          {idx + 1}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                          {phase.name}
+                        </span>
+                        <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                          {doneCount}/{groupTasks.length} việc ({progress}%)
+                        </span>
+                      </div>
+                    </button>
+
+                    {!collapsed && (
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {groupTasks.map((task) => {
+                          const isDone =
+                            Boolean(task.completed_at) ||
+                            (doneStatus && task.status_id === doneStatus.id);
+                          const pCfg =
+                            PRIORITY_CONFIG[task.priority] ??
+                            PRIORITY_CONFIG.medium;
+                          const overdue = isOverdue(
+                            task.due_date,
+                            task.completed_at
+                          );
+                          const st = statuses.find(
+                            (s) => s.id === task.status_id
+                          );
+
+                          return (
+                            <div
+                              key={task.id}
+                              className={cn(
+                                "group flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
+                                selectedTaskIds.has(task.id) &&
+                                  "bg-brand-soft/40 dark:bg-brand/10"
+                              )}
+                            >
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedTaskIds.has(task.id)}
+                                  onChange={() => {
+                                    setSelectedTaskIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(task.id))
+                                        next.delete(task.id);
+                                      else next.add(task.id);
+                                      return next;
+                                    });
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  aria-label={`Chọn ${task.title}`}
+                                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleTaskDone(task)}
+                                  title={
+                                    isDone
+                                      ? "Đánh dấu chưa xong"
+                                      : "Đánh dấu hoàn thành"
+                                  }
+                                  className="shrink-0 text-slate-400 hover:text-emerald-500 cursor-pointer"
+                                >
+                                  {isDone ? (
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                  ) : (
+                                    <Circle className="h-4 w-4" />
+                                  )}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => openTaskDrawer(task.id)}
+                                  className={cn(
+                                    "truncate text-left text-sm font-medium transition hover:text-brand cursor-pointer",
+                                    isDone
+                                      ? "text-slate-400 line-through"
+                                      : "text-slate-800 dark:text-slate-100"
+                                  )}
+                                >
+                                  {task.title}
+                                </button>
+
+                                {st && (
+                                  <span
+                                    className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                                    style={{
+                                      backgroundColor: `${st.color || "#94A3B8"}20`,
+                                      color: st.color || "#64748B",
+                                    }}
+                                  >
+                                    {st.name}
+                                  </span>
+                                )}
+
+                                {(task.subtasks_count ?? 0) > 0 && (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                    <CheckSquare className="h-3 w-3" />
+                                    {task.subtasks_done ?? 0}/
+                                    {task.subtasks_count}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                    pCfg.bg,
+                                    pCfg.color
+                                  )}
+                                >
+                                  <span
+                                    className={cn(
+                                      "h-1.5 w-1.5 rounded-full",
+                                      pCfg.dot
+                                    )}
+                                  />
+                                  {pCfg.label}
+                                </span>
+
+                                <span
+                                  className={cn(
+                                    "w-24 text-right text-xs",
+                                    overdue
+                                      ? "font-semibold text-red-600 dark:text-red-400"
+                                      : "text-slate-500 dark:text-slate-400"
+                                  )}
+                                >
+                                  {task.due_date
+                                    ? formatDateVi(task.due_date)
+                                    : "—"}
+                                </span>
+
+                                <div className="flex w-16 justify-end -space-x-1.5">
+                                  {task.assignees &&
+                                  task.assignees.length > 0 ? (
+                                    task.assignees.slice(0, 3).map((a) => (
+                                      <span
+                                        key={a.id}
+                                        title={a.full_name}
+                                        className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
+                                      >
+                                        {getInitials(a.full_name)}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-[11px] text-slate-300 dark:text-slate-600">
+                                      —
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Inline Quick-add per phase */}
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!quickVal.trim()) return;
+                            await handleQuickAddTaskToPhase(
+                              phase.id,
+                              quickVal
+                            );
+                            setPhaseQuickAdd((prev) => ({
+                              ...prev,
+                              [phase.id]: "",
+                            }));
+                          }}
+                          className="flex items-center gap-2 px-4 py-2"
+                        >
+                          <Plus className="h-4 w-4 text-slate-400" />
+                          <input
+                            type="text"
+                            value={quickVal}
+                            onChange={(e) =>
+                              setPhaseQuickAdd((prev) => ({
+                                ...prev,
+                                [phase.id]: e.target.value,
+                              }))
+                            }
+                            placeholder={`Thêm công việc vào giai đoạn "${phase.name}"...`}
+                            className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
+                          />
+                          {quickVal.trim() && (
+                            <button
+                              type="submit"
+                              className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
+                            >
+                              Thêm
+                            </button>
+                          )}
+                        </form>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Group: Chưa phân giai đoạn */}
+              {(() => {
+                const unassigned = filteredTasks.filter((t) => !t.phase_id);
+                if (unassigned.length === 0) return null;
+                const collapsed = !!collapsedPhaseIds["unassigned"];
+                const quickVal = phaseQuickAdd["unassigned"] ?? "";
+                const isAllSelected =
+                  unassigned.length > 0 &&
+                  unassigned.every((t) => selectedTaskIds.has(t.id));
+                const isSomeSelected = unassigned.some((t) =>
+                  selectedTaskIds.has(t.id)
+                );
+
+                return (
+                  <div className="overflow-hidden rounded-xl border border-dashed border-slate-300 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCollapsedPhaseIds((prev) => ({
+                          ...prev,
+                          unassigned: !prev["unassigned"],
+                        }))
+                      }
+                      className="flex w-full items-center justify-between bg-slate-100/80 px-4 py-2.5 text-left dark:bg-slate-800/60 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected}
+                          ref={(el) => {
+                            if (el) {
+                              el.indeterminate =
+                                isSomeSelected && !isAllSelected;
+                            }
+                          }}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setSelectedTaskIds((prev) => {
+                              const next = new Set(prev);
+                              for (const t of unassigned) {
+                                if (isAllSelected) next.delete(t.id);
+                                else next.add(t.id);
+                              }
+                              return next;
+                            });
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          title="Chọn tất cả việc chưa phân giai đoạn"
+                          className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer mr-0.5"
+                        />
+                        {collapsed ? (
+                          <ChevronDown className="h-4 w-4 text-slate-400" />
+                        ) : (
+                          <ChevronUp className="h-4 w-4 text-slate-400" />
+                        )}
+                        <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          Chưa phân giai đoạn
+                        </span>
+                        <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                          {unassigned.length}
+                        </span>
+                      </div>
+                    </button>
+
+                    {!collapsed && (
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {unassigned.map((task) => {
+                          const isDone =
+                            Boolean(task.completed_at) ||
+                            (doneStatus && task.status_id === doneStatus.id);
+                          const pCfg =
+                            PRIORITY_CONFIG[task.priority] ??
+                            PRIORITY_CONFIG.medium;
+                          const overdue = isOverdue(
+                            task.due_date,
+                            task.completed_at
+                          );
+                          const st = statuses.find(
+                            (s) => s.id === task.status_id
+                          );
+
+                          return (
+                            <div
+                              key={task.id}
+                              className={cn(
+                                "group flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
+                                selectedTaskIds.has(task.id) &&
+                                  "bg-brand-soft/40 dark:bg-brand/10"
+                              )}
+                            >
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedTaskIds.has(task.id)}
+                                  onChange={() => {
+                                    setSelectedTaskIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(task.id))
+                                        next.delete(task.id);
+                                      else next.add(task.id);
+                                      return next;
+                                    });
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  aria-label={`Chọn ${task.title}`}
+                                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleTaskDone(task)}
+                                  className="shrink-0 text-slate-400 hover:text-emerald-500 cursor-pointer"
+                                >
+                                  {isDone ? (
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                  ) : (
+                                    <Circle className="h-4 w-4" />
+                                  )}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => openTaskDrawer(task.id)}
+                                  className={cn(
+                                    "truncate text-left text-sm font-medium transition hover:text-brand cursor-pointer",
+                                    isDone
+                                      ? "text-slate-400 line-through"
+                                      : "text-slate-800 dark:text-slate-100"
+                                  )}
+                                >
+                                  {task.title}
+                                </button>
+
+                                {st && (
+                                  <span
+                                    className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                                    style={{
+                                      backgroundColor: `${st.color || "#94A3B8"}20`,
+                                      color: st.color || "#64748B",
+                                    }}
+                                  >
+                                    {st.name}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                    pCfg.bg,
+                                    pCfg.color
+                                  )}
+                                >
+                                  <span
+                                    className={cn(
+                                      "h-1.5 w-1.5 rounded-full",
+                                      pCfg.dot
+                                    )}
+                                  />
+                                  {pCfg.label}
+                                </span>
+
+                                <span
+                                  className={cn(
+                                    "w-24 text-right text-xs",
+                                    overdue
+                                      ? "font-semibold text-red-600 dark:text-red-400"
+                                      : "text-slate-500 dark:text-slate-400"
+                                  )}
+                                >
+                                  {task.due_date
+                                    ? formatDateVi(task.due_date)
+                                    : "—"}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Inline Quick-add for unassigned */}
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!quickVal.trim()) return;
+                            await handleQuickAddTaskToPhase(null, quickVal);
+                            setPhaseQuickAdd((prev) => ({
+                              ...prev,
+                              unassigned: "",
+                            }));
+                          }}
+                          className="flex items-center gap-2 px-4 py-2"
+                        >
+                          <Plus className="h-4 w-4 text-slate-400" />
+                          <input
+                            type="text"
+                            value={quickVal}
+                            onChange={(e) =>
+                              setPhaseQuickAdd((prev) => ({
+                                ...prev,
+                                unassigned: e.target.value,
+                              }))
+                            }
+                            placeholder="Thêm công việc chưa phân giai đoạn..."
+                            className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
+                          />
+                          {quickVal.trim() && (
+                            <button
+                              type="submit"
+                              className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
+                            >
+                              Thêm
+                            </button>
+                          )}
+                        </form>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            statuses.map((st) => {
             const groupTasks = filteredTasks.filter(
               (t) => t.status_id === st.id
             );
@@ -1196,7 +2009,8 @@ export default function ProjectDetailClient({
                 )}
               </div>
             );
-          })}
+          })
+          )}
         </div>
       )}
 
@@ -1360,6 +2174,37 @@ export default function ProjectDetailClient({
       )}
 
       {/* ================================================================
+       * VIEW 5: PROJECT PHASES ROADMAP
+       * ============================================================== */}
+      {viewMode === "phases" && (
+        <ProjectPhasesTab
+          projectId={project.id}
+          projectName={project.name}
+          phases={phases}
+          tasks={tasks}
+          statuses={statuses}
+          members={allProfiles}
+          currentUser={currentUser}
+          onSelectTask={openTaskDrawer}
+          onPhasesUpdated={fetchPhases}
+          onTasksUpdated={fetchTasks}
+        />
+      )}
+
+      {/* ================================================================
+       * VIEW 6: PROJECT FILES & LINKS HUB
+       * ============================================================== */}
+      {viewMode === "files" && (
+        <ProjectFilesTab
+          projectId={project.id}
+          projectName={project.name}
+          tasks={tasks}
+          currentUser={currentUser}
+          onOpenTask={openTaskDrawer}
+        />
+      )}
+
+      {/* ================================================================
        * ADD TASK MODAL
        * ============================================================== */}
       {showAddTaskModal && (
@@ -1452,6 +2297,24 @@ export default function ProjectDetailClient({
                 />
               </div>
 
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Giai đoạn xuất bản
+                </label>
+                <select
+                  value={newTaskPhaseId}
+                  onChange={(e) => setNewTaskPhaseId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
+                >
+                  <option value="">— Chưa phân giai đoạn —</option>
+                  {phases.map((ph) => (
+                    <option key={ph.id} value={ph.id}>
+                      {ph.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="flex items-center justify-end gap-2.5 border-t border-slate-100 pt-4 dark:border-slate-800">
                 <button
                   type="button"
@@ -1510,6 +2373,13 @@ export default function ProjectDetailClient({
               />
             </div>
 
+            {!canManageMembers && (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300 flex items-center gap-2">
+                <Lock className="h-4 w-4 shrink-0" />
+                <span>Chế độ chỉ xem. Bạn không có quyền thêm hoặc gỡ thành viên dự án này.</span>
+              </div>
+            )}
+
             <div className="mt-4 flex-1 space-y-2 overflow-y-auto pr-1">
               {filteredModalProfiles.map((p) => {
                 const isInProject = memberIds.has(p.id);
@@ -1537,9 +2407,9 @@ export default function ProjectDetailClient({
                     {isInProject ? (
                       <button
                         type="button"
-                        disabled={busy}
+                        disabled={busy || !canManageMembers}
                         onClick={() => handleRemoveMember(p.id)}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:bg-slate-900 dark:text-red-400 cursor-pointer"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-red-900 dark:bg-slate-900 dark:text-red-400 cursor-pointer"
                       >
                         {busy ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1551,9 +2421,9 @@ export default function ProjectDetailClient({
                     ) : (
                       <button
                         type="button"
-                        disabled={busy}
+                        disabled={busy || !canManageMembers}
                         onClick={() => handleAddMember(p)}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-brand px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-brand px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                       >
                         {busy ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1567,8 +2437,43 @@ export default function ProjectDetailClient({
                 );
               })}
             </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMembersModal(false);
+                  setShowProjectRolesModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline cursor-pointer"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                <span>Cấu hình vai trò & phân quyền dự án &rarr;</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMembersModal(false)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* ================================================================
+       * PROJECT ROLES & PERMISSIONS MODAL
+       * ============================================================== */}
+      {showProjectRolesModal && (
+        <ProjectRolesManagerModal
+          project={project}
+          members={members}
+          currentUser={currentUser}
+          canManageMembers={canManageMembers}
+          onClose={() => setShowProjectRolesModal(false)}
+          onMembersUpdated={(updated) => setMembers(updated)}
+        />
       )}
 
       {/* ================================================================
@@ -1580,8 +2485,10 @@ export default function ProjectDetailClient({
           projectId={project.id}
           statuses={statuses}
           members={assignableProfiles}
+          allProfiles={allProfiles}
           currentUser={currentUser}
           onClose={closeTaskDrawer}
+          onOpenTask={openTaskDrawer}
           onUpdated={fetchTasks}
           onDeleted={(deletedId) => {
             setTasks((prev) => prev.filter((t) => t.id !== deletedId));
@@ -1615,6 +2522,20 @@ export default function ProjectDetailClient({
         onClose={() => setShowCustomFieldsModal(false)}
         onFieldsUpdated={fetchTasks}
       />
+
+      {/* ================================================================
+       * PROJECT SETTINGS MODAL
+       * ============================================================== */}
+      {showSettingsModal && (
+        <ProjectSettingsModal
+          project={project}
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          departments={departments}
+          profiles={allProfiles}
+          onProjectUpdated={(updated) => setProject(updated)}
+        />
+      )}
     </div>
   );
 }

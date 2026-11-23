@@ -13,6 +13,10 @@ export type NotificationType =
   | "direct_message";
 export type WebhookProvider = "telegram" | "lark";
 export type CustomFieldType = "text" | "number" | "dropdown" | "date";
+export type DependencyType = "blocked_by" | "blocking" | "relates_to";
+export type PhaseStatus = "pending" | "in_progress" | "completed";
+export type DeliveryConfidence = "on_track" | "at_risk" | "off_track";
+export type ProgressMode = "auto" | "manual";
 
 export interface Department {
   id: string;
@@ -21,8 +25,17 @@ export interface Department {
   description: string | null;
   parent_id?: string | null;
   created_at: string;
-  parent?: Pick<Department, "id" | "name" | "code"> | null;
-  children?: Department[];
+  parent?: Department | null;
+}
+
+export interface SystemRole {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  permissions: string[];
+  is_system: boolean;
+  created_at: string;
 }
 
 export interface Profile {
@@ -34,12 +47,38 @@ export interface Profile {
   job_title: string | null;
   department_id: string | null;
   manager_id?: string | null;
+  custom_role_id?: string | null;
   telegram_chat_id: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
   department?: Department | null;
-  manager?: Pick<Profile, "id" | "full_name" | "email" | "avatar_url" | "job_title"> | null;
+  manager?: Profile | null;
+  custom_role?: SystemRole | null;
+}
+
+export interface ProjectRole {
+  id: string;
+  project_id: string | null;
+  name: string;
+  code: string;
+  description: string | null;
+  permissions: string[];
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface ProjectPhase {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  status: PhaseStatus;
+  start_date: string | null;
+  due_date: string | null;
+  position: number;
+  created_at: string;
 }
 
 export interface Project {
@@ -50,20 +89,30 @@ export interface Project {
   color: string;
   status: ProjectStatus;
   department_id: string | null;
+  category?: string | null;
+  delivery_confidence?: DeliveryConfidence;
+  confidence_note?: string | null;
+  client_name?: string | null;
+  project_manager_id?: string | null;
+  progress_mode?: ProgressMode;
+  manual_progress?: number;
   start_date: string | null;
   due_date: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
   department?: Department | null;
+  project_manager?: Pick<Profile, "id" | "full_name" | "email" | "avatar_url" | "job_title"> | null;
 }
 
 export interface ProjectMember {
   project_id: string;
   user_id: string;
   role: "owner" | "member";
+  project_role_id?: string | null;
   joined_at: string;
   profile?: Profile;
+  project_role?: ProjectRole | null;
 }
 
 export interface TaskStatus {
@@ -82,11 +131,21 @@ export interface Label {
   color: string;
 }
 
+export interface TaskDependency {
+  id: string;
+  task_id: string;
+  depends_on_task_id: string;
+  dependency_type: DependencyType;
+  created_at: string;
+  depends_on_task?: Pick<Task, "id" | "title" | "status_id" | "status">;
+}
+
 export interface Task {
   id: string;
   project_id: string;
   parent_id: string | null;
   status_id: string | null;
+  phase_id?: string | null;
   title: string;
   description: string | null;
   priority: TaskPriority;
@@ -99,12 +158,14 @@ export interface Task {
   updated_at: string;
   // Joined optional fields
   status?: TaskStatus | null;
+  phase?: ProjectPhase | null;
   project?: Pick<Project, "id" | "name" | "code" | "color"> | null;
   assignees?: Profile[];
   labels?: Label[];
   subtasks_count?: number;
   subtasks_done?: number;
   custom_values?: Record<string, string>;
+  dependencies?: TaskDependency[];
 }
 
 export interface TaskComment {
@@ -189,10 +250,6 @@ export interface WebhookConfig {
   created_at: string;
   project?: Pick<Project, "id" | "name" | "code"> | null;
 }
-
-// ==========================================
-// MIGRATION 002: CHAT, UPDATES, AUDIT, FIELDS
-// ==========================================
 
 export interface DirectMessage {
   id: string;
@@ -281,4 +338,28 @@ export interface TaskCustomFieldValue {
   field_id: string;
   value: string;
   updated_at: string;
+}
+
+export interface ProjectFile {
+  id: string;
+  project_id: string;
+  name: string;
+  file_url: string;
+  storage_path: string | null;
+  file_size: number | null;
+  category: string;
+  uploaded_by: string | null;
+  created_at: string;
+  uploader?: Profile;
+}
+
+export interface ProjectLink {
+  id: string;
+  project_id: string;
+  title: string;
+  url: string;
+  link_type: "gdrive" | "gsheet" | "lark" | "other";
+  created_by: string | null;
+  created_at: string;
+  creator?: Profile;
 }

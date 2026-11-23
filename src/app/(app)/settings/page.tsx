@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { SettingsView } from "@/components/settings/SettingsView";
-import type { Department, Profile } from "@/types/database";
+import type { Department, Profile, SystemRole } from "@/types/database";
 
 export default async function SettingsPage() {
   const supabase = await createServerSupabaseClient();
@@ -18,11 +18,12 @@ export default async function SettingsPage() {
     { data: departmentsData },
     { data: profilesData },
     { data: projectsData },
+    { data: rolesData },
   ] = await Promise.all([
     supabase
       .from("profiles")
       .select(
-        "*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title)"
+        "*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title), custom_role:roles(*)"
       )
       .eq("id", user.id)
       .single(),
@@ -33,13 +34,17 @@ export default async function SettingsPage() {
     supabase
       .from("profiles")
       .select(
-        "*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title)"
+        "*, department:departments(*), manager:profiles!manager_id(id, full_name, email, avatar_url, job_title), custom_role:roles(*)"
       )
       .order("created_at", { ascending: false }),
     supabase
       .from("projects")
       .select("id, name, code")
       .order("name", { ascending: true }),
+    supabase
+      .from("roles")
+      .select("*")
+      .order("created_at", { ascending: true }),
   ]);
 
   const currentProfile: Profile = (currentProfileData as Profile | null) ?? {
@@ -60,6 +65,7 @@ export default async function SettingsPage() {
     updated_at: new Date().toISOString(),
     department: null,
     manager: null,
+    custom_role: null,
   };
 
   return (
@@ -70,6 +76,7 @@ export default async function SettingsPage() {
       projects={
         (projectsData as Array<{ id: string; name: string; code: string }>) ?? []
       }
+      initialRoles={(rolesData as SystemRole[]) ?? []}
     />
   );
 }

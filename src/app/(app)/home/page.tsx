@@ -13,46 +13,72 @@ export default async function HomePage() {
     redirect("/login");
   }
 
-  const [{ data: profileData }, { data: assigneeRows }, { data: todosData }] =
-    await Promise.all([
-      supabase.from("profiles").select("*").eq("id", user.id).single(),
-      supabase
-        .from("task_assignees")
-        .select("task_id")
-        .eq("user_id", user.id),
-      supabase
-        .from("personal_todos")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("is_done", { ascending: true })
-        .order("created_at", { ascending: false }),
-    ]);
+  const [
+    { data: profileData },
+    { data: assigneeRows },
+    { data: createdRows },
+    { data: todosData },
+    { data: projectsData },
+  ] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    supabase.from("task_assignees").select("task_id").eq("user_id", user.id),
+    supabase.from("tasks").select("id").eq("created_by", user.id),
+    supabase
+      .from("personal_todos")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("is_done", { ascending: true })
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("projects")
+      .select("id, name, code, color")
+      .order("name", { ascending: true }),
+  ]);
 
-  const taskIds = (assigneeRows ?? []).map((r) => r.task_id as string);
+  const assignedTaskIds = (assigneeRows ?? []).map((r) => r.task_id as string);
+  const createdTaskIds = (createdRows ?? []).map((r) => r.id as string);
+  const allTaskIds = Array.from(new Set([...assignedTaskIds, ...createdTaskIds]));
 
   let tasks: Task[] = [];
-  if (taskIds.length > 0) {
+  if (allTaskIds.length > 0) {
     const { data: tasksData } = await supabase
       .from("tasks")
-      .select(
-        "*, status:task_statuses(*), project:projects(id, name, code, color)"
-      )
-      .in("id", taskIds)
+      .select(`
+        *,
+        status:task_statuses(*),
+        project:projects(id, name, code, color),
+        task_assignees(
+          user_id,
+          profile:profiles(id, full_name, email, avatar_url, job_title)
+        )
+      `)
+      .in("id", allTaskIds)
       .order("due_date", { ascending: true, nullsFirst: false })
       .order("updated_at", { ascending: false });
 
-    const raw = (tasksData ?? []) as unknown as Array<
-      Omit<Task, "status" | "project"> & {
-        status: Task["status"] | Array<NonNullable<Task["status"]>>;
-        project: Task["project"] | Array<NonNullable<Task["project"]>>;
-      }
-    >;
+    type RawTask = Omit<Task, "status" | "project" | "assignees"> & {
+      status: Task["status"] | Array<NonNullable<Task["status"]>>;
+      project: Task["project"] | Array<NonNullable<Task["project"]>>;
+      task_assignees?: Array<{
+        user_id: string;
+        profile?: Profile | Profile[];
+      }>;
+    };
 
-    tasks = raw.map((t) => ({
-      ...t,
-      status: Array.isArray(t.status) ? t.status[0] ?? null : t.status,
-      project: Array.isArray(t.project) ? t.project[0] ?? null : t.project,
-    }));
+    const raw = (tasksData ?? []) as unknown as RawTask[];
+
+    tasks = raw.map((t) => {
+      const assignees: Profile[] = (t.task_assignees ?? [])
+        .map((ta) => (Array.isArray(ta.profile) ? ta.profile[0] : ta.profile))
+        .filter((p): p is Profile => Boolean(p));
+
+      return {
+        ...t,
+        status: Array.isArray(t.status) ? t.status[0] ?? null : t.status,
+        project: Array.isArray(t.project) ? t.project[0] ?? null : t.project,
+        assignees,
+      };
+    });
   }
 
   const profile: Profile = (profileData as Profile | null) ?? {
@@ -77,6 +103,7 @@ export default async function HomePage() {
       profile={profile}
       initialTasks={tasks}
       initialTodos={(todosData as PersonalTodo[]) ?? []}
+      projects={projectsData ?? []}
     />
   );
 }
