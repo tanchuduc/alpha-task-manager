@@ -1,19 +1,19 @@
 {
   "slug": "alpha-task-manager",
-  "project_name": "ALPHA Work (Alpha Task Manager)",
-  "description": "Hệ thống quản lý công việc và nhân sự nội bộ Alpha Work",
+  "project_name": "ALPHA Work Lite",
+  "description": "Hệ thống quản lý công việc nội bộ Alpha Books (Next.js 15 + Supabase + Vercel)",
   "created_at": "2026-11-18T15:02:04Z",
   "repo": "https://github.com/tanchuduc/alpha-task-manager.git",
   "branch": "main",
-  "state": "phase_4_localization_and_ui_polish_completed",
-  "current_version": "3.1.0-alpha.internal",
-  "last_commit": "37a053f2",
+  "legacy_branch": "legacy-worklenz",
+  "state": "mvp_v1_lite_built_and_verified",
+  "current_version": "1.0.0-lite",
   "completed_phases": [
-    "phase_1_database_supabase_migration",
-    "phase_2_multicloud_deployment_config",
-    "phase_3_internal_edition_hardening",
-    "phase_4_vietnamese_localization_and_ui_polish"
+    "audit_legacy_worklenz_fork",
+    "backup_legacy_worklenz_branch",
+    "alpha_work_lite_mvp_scaffold_and_schema",
+    "alpha_work_lite_mvp_full_modules_and_build_verification"
   ],
-  "next_phase": "phase_5_e2e_verification_and_production_readiness",
-  "updated_at": "2026-11-23T09:20:00+07:00"
+  "next_phase": "supabase_sql_execution_env_setup_and_vercel_deploy",
+  "updated_at": "2026-11-23T10:43:00+07:00"
 }

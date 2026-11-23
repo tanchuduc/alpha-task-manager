@@ -1,9 +1,0 @@
-{
-  "nameColumn": "Name",
-  "createdColumn": "Erstellt",
-  "editToolTip": "Bearbeiten",
-  "deleteToolTip": "Löschen",
-  "confirmText": "Sind Sie sicher?",
-  "okText": "Ja",
-  "cancelText": "Abbrechen"
-}

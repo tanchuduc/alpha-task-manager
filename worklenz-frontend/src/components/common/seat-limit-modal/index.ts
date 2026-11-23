@@ -1,1 +1,0 @@
-export { SeatLimitModal } from './SeatLimitModal';
