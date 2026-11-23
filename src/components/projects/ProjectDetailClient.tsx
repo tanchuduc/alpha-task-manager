@@ -35,9 +35,14 @@ import {
   UserMinus,
   Loader2,
   GripVertical,
+  MessageSquare,
+  Sliders,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { ProjectUpdatesTab } from "./ProjectUpdatesTab";
+import BulkActionBar from "@/components/projects/BulkActionBar";
+import CustomFieldsManagerModal from "@/components/projects/CustomFieldsManagerModal";
 import {
   cn,
   PRIORITY_CONFIG,
@@ -65,7 +70,7 @@ interface ProjectDetailClientProps {
   currentUser: Profile;
 }
 
-type ViewMode = "list" | "kanban" | "calendar";
+type ViewMode = "list" | "kanban" | "calendar" | "updates";
 
 const WEEKDAYS_VI = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
@@ -316,7 +321,15 @@ export default function ProjectDetailClient({
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [members, setMembers] = useState<ProjectMember[]>(initialMembers);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    return searchParams.get("tab") === "updates" ? "updates" : "list";
+  });
+
+  useEffect(() => {
+    if (searchParams.get("tab") === "updates") {
+      setViewMode("updates");
+    }
+  }, [searchParams]);
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"all" | TaskPriority>(
     "all"
@@ -883,6 +896,19 @@ export default function ProjectDetailClient({
               <CalendarIcon className="h-3.5 w-3.5" />
               Lịch
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("updates")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
+                viewMode === "updates"
+                  ? "bg-white text-brand shadow-xs dark:bg-slate-900"
+                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+              )}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Thảo luận & Cập nhật
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -1257,6 +1283,17 @@ export default function ProjectDetailClient({
             })}
           </div>
         </div>
+      )}
+
+      {/* ================================================================
+       * VIEW 4: PROJECT UPDATES & DISCUSSIONS
+       * ============================================================== */}
+      {viewMode === "updates" && (
+        <ProjectUpdatesTab
+          project={project}
+          currentUser={currentUser}
+          allProfiles={allProfiles}
+        />
       )}
 
       {/* ================================================================

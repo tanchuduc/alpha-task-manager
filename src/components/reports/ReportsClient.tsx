@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import {
   cn,
   formatDateVi,
+  getDepartmentDisplayName,
   getInitials,
   isOverdue,
   PRIORITY_CONFIG,
@@ -951,7 +952,7 @@ export function ReportsClient({
                   <option value="all">Tất cả phòng ban</option>
                   {departments.map((d) => (
                     <option key={d.id} value={d.id}>
-                      {d.name}
+                      {getDepartmentDisplayName(d, departments)}
                     </option>
                   ))}
                   <option value="__unassigned__">Chưa phân phòng ban</option>
@@ -1091,7 +1092,7 @@ export function ReportsClient({
                 <option value="all">Tất cả phòng ban</option>
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.name}
+                    {getDepartmentDisplayName(d, departments)}
                   </option>
                 ))}
               </select>

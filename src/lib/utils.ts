@@ -88,3 +88,20 @@ export function generateProjectCode(name: string): string {
     .join("")
     .toUpperCase();
 }
+
+export function getDepartmentDisplayName(
+  dept: {
+    id: string;
+    name: string;
+    parent_id?: string | null;
+    parent?: { id: string; name: string } | null;
+  },
+  allDepts?: Array<{ id: string; name: string }>
+): string {
+  if (dept.parent?.name) {
+    return `${dept.parent.name} › ${dept.name}`;
+  }
+  if (!dept.parent_id || !allDepts) return dept.name;
+  const parent = allDepts.find((p) => p.id === dept.parent_id);
+  return parent ? `${parent.name} › ${dept.name}` : dept.name;
+}

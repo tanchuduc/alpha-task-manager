@@ -15,6 +15,7 @@ import {
   Inbox,
   LogOut,
   Menu,
+  MessageSquare,
   Moon,
   Search,
   Settings,
@@ -32,6 +33,7 @@ interface AppShellProps {
 const NAV_ITEMS = [
   { href: "/home", label: "Trang chủ", icon: Home },
   { href: "/projects", label: "Dự án", icon: FolderKanban },
+  { href: "/chat", label: "Trò chuyện", icon: MessageSquare },
   { href: "/reports", label: "Báo cáo", icon: BarChart3 },
   { href: "/inbox", label: "Hộp thư", icon: Inbox },
   { href: "/settings", label: "Cài đặt", icon: Settings },
@@ -50,6 +52,7 @@ export function AppShell({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
 

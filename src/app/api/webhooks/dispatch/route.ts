@@ -9,6 +9,8 @@ const ALLOWED_EVENTS = new Set<WebhookEventPayload["event"]>([
   "task_assigned",
   "task_mentioned",
   "task_completed",
+  "direct_message",
+  "project_update_posted",
   "test",
 ]);
 

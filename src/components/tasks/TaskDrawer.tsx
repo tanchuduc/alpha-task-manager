@@ -23,16 +23,22 @@ import {
   FileSpreadsheet,
   HardDrive,
   BookOpen,
+  History,
+  Sliders,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { cn, PRIORITY_CONFIG, getInitials, isOverdue } from "@/lib/utils";
+import { logTaskActivity } from "@/lib/activity-logger";
+import TaskActivityTimeline from "@/components/tasks/TaskActivityTimeline";
 import type {
   AttachmentType,
   Profile,
+  ProjectCustomField,
   Task,
   TaskAttachment,
   TaskComment,
+  TaskCustomFieldValue,
   TaskPriority,
   TaskStatus,
 } from "@/types/database";
@@ -153,6 +159,14 @@ export default function TaskDrawer({
   const [showMentionBar, setShowMentionBar] = useState(false);
   const [postingComment, setPostingComment] = useState(false);
 
+  // Custom fields
+  const [customFields, setCustomFields] = useState<ProjectCustomField[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  const [savingFieldId, setSavingFieldId] = useState<string | null>(null);
+
+  // Tabs: Bình luận vs Lịch sử hoạt động
+  const [activeBottomTab, setActiveBottomTab] = useState<"comments" | "activity">("comments");
+
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
 
@@ -174,6 +188,8 @@ export default function TaskDrawer({
         { data: subtasksData },
         { data: attachmentsData },
         { data: commentsData },
+        { data: customFieldsData },
+        { data: customValuesData },
       ] = await Promise.all([
         supabase.from("tasks").select("*").eq("id", taskId).single(),
         supabase
@@ -196,6 +212,16 @@ export default function TaskDrawer({
           .select("*, author:profiles(id, full_name, email, avatar_url, role)")
           .eq("task_id", taskId)
           .order("created_at", { ascending: true }),
+        supabase
+          .from("project_custom_fields")
+          .select("*")
+          .eq("project_id", projectId)
+          .order("position", { ascending: true })
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("task_custom_field_values")
+          .select("*")
+          .eq("task_id", taskId),
       ]);
 
       if (taskErr || !taskData) {
@@ -214,12 +240,19 @@ export default function TaskDrawer({
       setSubtasks((subtasksData ?? []) as Task[]);
       setAttachments((attachmentsData ?? []) as TaskAttachment[]);
       setComments((commentsData ?? []) as TaskComment[]);
+
+      setCustomFields((customFieldsData as ProjectCustomField[]) || []);
+      const valMap: Record<string, string> = {};
+      for (const row of (customValuesData as TaskCustomFieldValue[]) || []) {
+        valMap[row.field_id] = row.value;
+      }
+      setCustomValues(valMap);
     } catch {
       toast.error("Lỗi khi tải chi tiết công việc");
     } finally {
       setLoading(false);
     }
-  }, [supabase, taskId, onClose]);
+  }, [supabase, taskId, projectId, onClose]);
 
   useEffect(() => {
     loadTaskDetails();
@@ -275,7 +308,19 @@ export default function TaskDrawer({
       return;
     }
     if (trimmed === task.title) return;
+    const oldTitle = task.title;
     await updateTaskFields({ title: trimmed });
+
+    await logTaskActivity(supabase, {
+      taskId: task.id,
+      actorId: currentUser.id,
+      action: "title_changed",
+      details: {
+        old_value: oldTitle,
+        new_value: trimmed,
+        description: `Đổi tiêu đề thành "${trimmed}"`,
+      },
+    });
   }
 
   async function handleStatusChange(newStatusId: string) {
@@ -295,6 +340,18 @@ export default function TaskDrawer({
 
     await updateTaskFields({ status_id: newStatusId, completed_at });
 
+    // Ghi nhật ký đổi trạng thái
+    await logTaskActivity(supabase, {
+      taskId: task.id,
+      actorId: currentUser.id,
+      action: "status_changed",
+      details: {
+        old_value: prevStatus?.name || null,
+        new_value: targetStatus.name,
+        description: `Đổi trạng thái sang "${targetStatus.name}"`,
+      },
+    });
+
     if (movingToDone && !wasDone) {
       fireWebhook({
         event: "task_completed",
@@ -306,11 +363,54 @@ export default function TaskDrawer({
     }
   }
 
+  async function handlePriorityChange(newPriority: TaskPriority) {
+    if (!task || task.priority === newPriority) return;
+    const oldPriority = task.priority;
+    await updateTaskFields({ priority: newPriority });
+
+    await logTaskActivity(supabase, {
+      taskId: task.id,
+      actorId: currentUser.id,
+      action: "priority_changed",
+      details: {
+        old_value: oldPriority,
+        new_value: newPriority,
+        description: `Đổi mức ưu tiên sang "${PRIORITY_CONFIG[newPriority]?.label || newPriority}"`,
+      },
+    });
+  }
+
+  async function handleDueDateChange(newDate: string) {
+    if (!task) return;
+    const oldDueDate = task.due_date;
+    const val = newDate || null;
+    await updateTaskFields({ due_date: val });
+
+    await logTaskActivity(supabase, {
+      taskId: task.id,
+      actorId: currentUser.id,
+      action: "due_date_changed",
+      details: {
+        old_value: oldDueDate,
+        new_value: val,
+        description: val ? `Cập nhật hạn hoàn thành thành ${val}` : "Xóa hạn hoàn thành",
+      },
+    });
+  }
+
   async function handleSaveDescription() {
     if (!task) return;
     setSavingDesc(true);
     try {
       await updateTaskFields({ description: description.trim() || null });
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "description_changed",
+        details: {
+          description: "Cập nhật mô tả chi tiết công việc",
+        },
+      });
       toast.success("Đã lưu mô tả công việc");
     } finally {
       setSavingDesc(false);
@@ -350,6 +450,18 @@ export default function TaskDrawer({
         toast.error("Không thể gỡ người phụ trách");
         return;
       }
+
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "assignee_removed",
+        details: {
+          old_value: member.full_name,
+          label: member.full_name,
+          description: `Bỏ phân công ${member.full_name}`,
+        },
+      });
+
       onUpdated();
     } else {
       setAssigneeIds((prev) => [...prev, member.id]);
@@ -363,6 +475,17 @@ export default function TaskDrawer({
         toast.error("Không thể giao việc cho thành viên này");
         return;
       }
+
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "assignee_added",
+        details: {
+          new_value: member.full_name,
+          label: member.full_name,
+          description: `Gán công việc cho ${member.full_name}`,
+        },
+      });
 
       onUpdated();
 
@@ -416,6 +539,18 @@ export default function TaskDrawer({
       if (error || !data) throw new Error(error?.message);
       setSubtasks((prev) => [...prev, data as Task]);
       setNewSubtaskTitle("");
+
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "subtask_created",
+        details: {
+          new_value: trimmed,
+          label: trimmed,
+          description: `Đã tạo việc con "${trimmed}"`,
+        },
+      });
+
       onUpdated();
     } catch {
       toast.error("Không thể thêm công việc con");
@@ -425,7 +560,7 @@ export default function TaskDrawer({
   }
 
   async function handleToggleSubtask(sub: Task) {
-    if (!todoStatus || !doneStatus) return;
+    if (!todoStatus || !doneStatus || !task) return;
     const isDone = Boolean(sub.completed_at) || sub.status_id === doneStatus.id;
     const nextStatusId = isDone ? todoStatus.id : doneStatus.id;
     const nextCompletedAt = isDone ? null : new Date().toISOString();
@@ -448,6 +583,20 @@ export default function TaskDrawer({
       loadTaskDetails();
       return;
     }
+
+    if (!isDone) {
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "subtask_completed",
+        details: {
+          new_value: sub.title,
+          label: sub.title,
+          description: `Đã hoàn thành việc con "${sub.title}"`,
+        },
+      });
+    }
+
     onUpdated();
   }
 
@@ -502,6 +651,18 @@ export default function TaskDrawer({
       }
 
       setAttachments((prev) => [row as TaskAttachment, ...prev]);
+
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "attachment_added",
+        details: {
+          new_value: file.name,
+          label: file.name,
+          description: `Đã tải lên tệp "${file.name}"`,
+        },
+      });
+
       toast.success(`Đã tải lên "${file.name}"`);
     } catch (err) {
       toast.error(
@@ -550,6 +711,18 @@ export default function TaskDrawer({
       setLinkName("");
       setLinkUrl("");
       setShowLinkForm(false);
+
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "attachment_added",
+        details: {
+          new_value: trimmedName,
+          label: trimmedName,
+          description: `Đã gắn liên kết "${trimmedName}"`,
+        },
+      });
+
       toast.success("Đã gắn liên kết tài liệu");
     } catch {
       toast.error("Không thể thêm liên kết");
@@ -559,6 +732,7 @@ export default function TaskDrawer({
   }
 
   async function handleDeleteAttachment(att: TaskAttachment) {
+    if (!task) return;
     setAttachments((prev) => prev.filter((a) => a.id !== att.id));
     if (att.storage_path) {
       await supabase.storage.from("attachments").remove([att.storage_path]);
@@ -570,6 +744,67 @@ export default function TaskDrawer({
     if (error) {
       toast.error("Không thể xóa tài liệu đính kèm");
       loadTaskDetails();
+      return;
+    }
+
+    await logTaskActivity(supabase, {
+      taskId: task.id,
+      actorId: currentUser.id,
+      action: "attachment_removed",
+      details: {
+        old_value: att.name,
+        label: att.name,
+        description: `Đã xóa tệp "${att.name}"`,
+      },
+    });
+  }
+
+  // Lưu giá trị trường tùy biến
+  async function handleSaveCustomFieldValue(
+    field: ProjectCustomField,
+    newValue: string
+  ) {
+    if (!task) return;
+    const oldValue = customValues[field.id] || "";
+    if (oldValue === newValue) return;
+
+    setCustomValues((prev) => ({ ...prev, [field.id]: newValue }));
+    setSavingFieldId(field.id);
+
+    try {
+      const { error } = await supabase
+        .from("task_custom_field_values")
+        .upsert(
+          {
+            task_id: task.id,
+            field_id: field.id,
+            value: newValue,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "task_id,field_id" }
+        );
+
+      if (error) throw error;
+
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "custom_field_changed",
+        details: {
+          old_value: oldValue,
+          new_value: newValue,
+          label: field.name,
+          description: `Cập nhật [${field.name}]: ${newValue || "(trống)"}`,
+        },
+      });
+
+      toast.success(`Đã lưu "${field.name}"`);
+      onUpdated();
+    } catch {
+      setCustomValues((prev) => ({ ...prev, [field.id]: oldValue }));
+      toast.error(`Không thể lưu "${field.name}"`);
+    } finally {
+      setSavingFieldId(null);
     }
   }
 
@@ -587,7 +822,6 @@ export default function TaskDrawer({
     const trimmed = commentText.trim();
     if (!trimmed) return;
 
-    // Keep only mentioned users whose @FullName is still present in text
     const activeMentionIds = mentionedUserIds.filter((uid) => {
       const m = members.find((mem) => mem.id === uid);
       return m ? trimmed.includes(`@${m.full_name}`) : false;
@@ -771,9 +1005,7 @@ export default function TaskDrawer({
                 <select
                   value={task.priority}
                   onChange={(e) =>
-                    updateTaskFields({
-                      priority: e.target.value as TaskPriority,
-                    })
+                    handlePriorityChange(e.target.value as TaskPriority)
                   }
                   className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 >
@@ -810,9 +1042,7 @@ export default function TaskDrawer({
                 <input
                   type="date"
                   value={task.due_date ? task.due_date.slice(0, 10) : ""}
-                  onChange={(e) =>
-                    updateTaskFields({ due_date: e.target.value || null })
-                  }
+                  onChange={(e) => handleDueDateChange(e.target.value)}
                   className={cn(
                     "w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800",
                     isOverdue(task.due_date, task.completed_at)
@@ -822,6 +1052,97 @@ export default function TaskDrawer({
                 />
               </div>
             </div>
+
+            {/* Thông tin xuất bản & Trường tùy biến */}
+            {customFields.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                    <Sliders className="h-3.5 w-3.5 text-brand" />
+                    Thông tin xuất bản & Trường tùy biến
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {customFields.length} trường
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {customFields.map((field) => {
+                    const currentVal = customValues[field.id] ?? "";
+                    const isSaving = savingFieldId === field.id;
+
+                    return (
+                      <div key={field.id} className="space-y-1">
+                        <label className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
+                          <span className="truncate">{field.name}</span>
+                          {isSaving && (
+                            <Loader2 className="h-3 w-3 animate-spin text-brand" />
+                          )}
+                        </label>
+
+                        {field.field_type === "dropdown" ? (
+                          <select
+                            value={currentVal}
+                            onChange={(e) =>
+                              handleSaveCustomFieldValue(field, e.target.value)
+                            }
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          >
+                            <option value="">— Chọn {field.name} —</option>
+                            {(field.options || []).map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        ) : field.field_type === "date" ? (
+                          <input
+                            type="date"
+                            value={currentVal ? currentVal.slice(0, 10) : ""}
+                            onChange={(e) =>
+                              handleSaveCustomFieldValue(field, e.target.value)
+                            }
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          />
+                        ) : field.field_type === "number" ? (
+                          <input
+                            type="number"
+                            value={currentVal}
+                            onChange={(e) =>
+                              setCustomValues((prev) => ({
+                                ...prev,
+                                [field.id]: e.target.value,
+                              }))
+                            }
+                            onBlur={(e) =>
+                              handleSaveCustomFieldValue(field, e.target.value)
+                            }
+                            placeholder="Nhập số..."
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={currentVal}
+                            onChange={(e) =>
+                              setCustomValues((prev) => ({
+                                ...prev,
+                                [field.id]: e.target.value,
+                              }))
+                            }
+                            onBlur={(e) =>
+                              handleSaveCustomFieldValue(field, e.target.value)
+                            }
+                            placeholder={`Nhập ${field.name.toLowerCase()}...`}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Assignees */}
             <div>
@@ -1144,94 +1465,133 @@ export default function TaskDrawer({
               )}
             </div>
 
-            {/* Comments */}
+            {/* Bottom Tabs: Trao đổi & Bình luận vs Lịch sử hoạt động */}
             <div className="border-t border-slate-200 pt-5 dark:border-slate-800">
-              <span className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                <MessageSquare className="h-4 w-4 text-slate-400" />
-                Trao đổi & Bình luận ({comments.length})
-              </span>
-
-              <div className="space-y-3">
-                {comments.length === 0 ? (
-                  <p className="text-xs italic text-slate-400">
-                    Chưa có bình luận nào. Hãy nhắc tên đồng nghiệp bằng @ để thông báo nhanh!
-                  </p>
-                ) : (
-                  comments.map((c) => {
-                    const authorName = c.author?.full_name ?? "Thành viên";
-                    return (
-                      <div key={c.id} className="flex items-start gap-2.5">
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[11px] font-bold text-brand dark:bg-brand/20">
-                          {getInitials(authorName)}
-                        </div>
-                        <div className="flex-1 rounded-xl bg-slate-50 px-3.5 py-2.5 dark:bg-slate-800/60">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">
-                              {authorName}
-                            </span>
-                            <span className="text-[11px] text-slate-400">
-                              {formatDateTimeVi(c.created_at)}
-                            </span>
-                          </div>
-                          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
-                            {c.content}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Comment input with @mention helper */}
-              <form onSubmit={handlePostComment} className="mt-4 space-y-2">
-                <div className="flex items-center justify-between">
+              <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-2 dark:border-slate-800">
+                <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
                   <button
                     type="button"
-                    onClick={() => setShowMentionBar((v) => !v)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline cursor-pointer"
-                  >
-                    <AtSign className="h-3.5 w-3.5" />
-                    Nhắc tên thành viên (@mention)
-                  </button>
-                </div>
-
-                {showMentionBar && (
-                  <div className="flex flex-wrap gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/60">
-                    {members.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => handleInsertMention(m)}
-                        className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-brand-soft hover:text-brand hover:ring-brand/40 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700 cursor-pointer"
-                      >
-                        @{m.full_name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <textarea
-                    rows={2}
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Viết bình luận... (nhấn @mention ở trên để tag đồng nghiệp)"
-                    className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                  />
-                  <button
-                    type="submit"
-                    disabled={postingComment || !commentText.trim()}
-                    className="inline-flex items-center justify-center self-end rounded-xl bg-brand px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-50 cursor-pointer"
-                  >
-                    {postingComment ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
+                    onClick={() => setActiveBottomTab("comments")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
+                      activeBottomTab === "comments"
+                        ? "bg-white text-brand shadow-xs dark:bg-slate-900"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
                     )}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Bình luận ({comments.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveBottomTab("activity")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
+                      activeBottomTab === "activity"
+                        ? "bg-white text-brand shadow-xs dark:bg-slate-900"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                    )}
+                  >
+                    <History className="h-3.5 w-3.5" />
+                    Lịch sử hoạt động
                   </button>
                 </div>
-              </form>
+              </div>
+
+              {/* Tab 1: Bình luận */}
+              {activeBottomTab === "comments" && (
+                <div>
+                  <div className="space-y-3">
+                    {comments.length === 0 ? (
+                      <p className="text-xs italic text-slate-400">
+                        Chưa có bình luận nào. Hãy nhắc tên đồng nghiệp bằng @ để thông báo nhanh!
+                      </p>
+                    ) : (
+                      comments.map((c) => {
+                        const authorName = c.author?.full_name ?? "Thành viên";
+                        return (
+                          <div key={c.id} className="flex items-start gap-2.5">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[11px] font-bold text-brand dark:bg-brand/20">
+                              {getInitials(authorName)}
+                            </div>
+                            <div className="flex-1 rounded-xl bg-slate-50 px-3.5 py-2.5 dark:bg-slate-800/60">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                  {authorName}
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  {formatDateTimeVi(c.created_at)}
+                                </span>
+                              </div>
+                              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
+                                {c.content}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Comment input with @mention helper */}
+                  <form onSubmit={handlePostComment} className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setShowMentionBar((v) => !v)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline cursor-pointer"
+                      >
+                        <AtSign className="h-3.5 w-3.5" />
+                        Nhắc tên thành viên (@mention)
+                      </button>
+                    </div>
+
+                    {showMentionBar && (
+                      <div className="flex flex-wrap gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/60">
+                        {members.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => handleInsertMention(m)}
+                            className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-brand-soft hover:text-brand hover:ring-brand/40 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700 cursor-pointer"
+                          >
+                            @{m.full_name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <textarea
+                        rows={2}
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        placeholder="Viết bình luận... (nhấn @mention ở trên để tag đồng nghiệp)"
+                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      <button
+                        type="submit"
+                        disabled={postingComment || !commentText.trim()}
+                        className="inline-flex items-center justify-center self-end rounded-xl bg-brand px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-50 cursor-pointer"
+                      >
+                        {postingComment ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Tab 2: Lịch sử hoạt động Realtime */}
+              {activeBottomTab === "activity" && (
+                <div className="pt-1">
+                  <TaskActivityTimeline taskId={task.id} />
+                </div>
+              )}
             </div>
           </div>
         )}

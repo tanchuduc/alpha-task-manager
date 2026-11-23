@@ -1,22 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { cn, getInitials, ROLE_LABELS } from "@/lib/utils";
+import { cn, getDepartmentDisplayName, getInitials, ROLE_LABELS } from "@/lib/utils";
 import type { Department, Profile, UserRole } from "@/types/database";
 import { WebhookSettingsPanel } from "@/components/webhooks/WebhookSettingsPanel";
 import {
   Bell,
   Building2,
+  ChevronRight,
+  CornerDownRight,
+  FolderTree,
   KeyRound,
   Loader2,
+  Network,
   Pencil,
   Plus,
   Save,
   Search,
   Trash2,
   User,
+  UserCheck,
   UserPlus,
   Users,
   X,
@@ -71,6 +76,7 @@ export function SettingsView({
   const [deptName, setDeptName] = useState("");
   const [deptCode, setDeptCode] = useState("");
   const [deptDesc, setDeptDesc] = useState("");
+  const [deptParentId, setDeptParentId] = useState("");
   const [savingDept, setSavingDept] = useState(false);
 
   // --- Tab 3: Staff state ---
@@ -82,6 +88,7 @@ export function SettingsView({
   const [newUserName, setNewUserName] = useState("");
   const [newUserRole, setNewUserRole] = useState<UserRole>("member");
   const [newUserDeptId, setNewUserDeptId] = useState("");
+  const [newUserManagerId, setNewUserManagerId] = useState("");
   const [newUserJobTitle, setNewUserJobTitle] = useState("");
   const [creatingUser, setCreatingUser] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
@@ -148,11 +155,12 @@ export function SettingsView({
   }
 
   // ---------------- Tab 2 Handlers ----------------
-  function openCreateDepartment() {
+  function openCreateDepartment(defaultParentId?: string) {
     setEditingDept(null);
     setDeptName("");
     setDeptCode("");
     setDeptDesc("");
+    setDeptParentId(defaultParentId ?? "");
     setDeptModalOpen(true);
   }
 
@@ -161,6 +169,7 @@ export function SettingsView({
     setDeptName(dept.name);
     setDeptCode(dept.code ?? "");
     setDeptDesc(dept.description ?? "");
+    setDeptParentId(dept.parent_id ?? "");
     setDeptModalOpen(true);
   }
 
@@ -181,9 +190,10 @@ export function SettingsView({
             name: deptName.trim(),
             code: deptCode.trim() || null,
             description: deptDesc.trim() || null,
+            parent_id: deptParentId || null,
           })
           .eq("id", editingDept.id)
-          .select("*")
+          .select("*, parent:departments!parent_id(id, name, code)")
           .single();
 
         if (error) throw error;
@@ -198,8 +208,9 @@ export function SettingsView({
             name: deptName.trim(),
             code: deptCode.trim() || null,
             description: deptDesc.trim() || null,
+            parent_id: deptParentId || null,
           })
-          .select("*")
+          .select("*, parent:departments!parent_id(id, name, code)")
           .single();
 
         if (error) throw error;
@@ -257,6 +268,7 @@ export function SettingsView({
           password: newUserPassword,
           role: newUserRole,
           department_id: newUserDeptId || null,
+          manager_id: newUserManagerId || null,
           job_title: newUserJobTitle.trim() || null,
         }),
       });
@@ -277,6 +289,7 @@ export function SettingsView({
       setNewUserPassword("");
       setNewUserRole("member");
       setNewUserDeptId("");
+      setNewUserManagerId("");
       setNewUserJobTitle("");
       toast.success(`Đã tạo tài khoản cho ${payload.profile.full_name}.`);
     } catch (err) {
@@ -293,6 +306,7 @@ export function SettingsView({
     patch: {
       role?: UserRole;
       department_id?: string | null;
+      manager_id?: string | null;
       is_active?: boolean;
     }
   ) {
@@ -325,6 +339,30 @@ export function SettingsView({
       setUpdatingUserId(null);
     }
   }
+
+  // Cấu trúc phân cấp phòng ban: Cấp 1 (Khối / Ban lớn) và Team con
+  const parentDepartments = useMemo(
+    () => departments.filter((d) => !d.parent_id),
+    [departments]
+  );
+
+  const orphanSubDepartments = useMemo(
+    () =>
+      departments.filter(
+        (d) => d.parent_id && !departments.some((p) => p.id === d.parent_id)
+      ),
+    [departments]
+  );
+
+  const staffCountByDept = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of staffList) {
+      if (s.department_id) {
+        counts.set(s.department_id, (counts.get(s.department_id) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [staffList]);
 
   const filteredStaff = staffList.filter((u) => {
     const q = staffSearch.trim().toLowerCase();
@@ -548,72 +586,197 @@ export function SettingsView({
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-4">
             <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                Danh sách phòng ban ({departments.length})
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Quản lý cơ cấu phòng ban / khối nội bộ Alpha Books.
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  Cơ cấu phòng ban ({departments.length})
+                </h2>
+                <span className="rounded-md bg-brand-soft dark:bg-brand-soft-dark px-2 py-0.5 text-xs font-medium text-brand">
+                  Mô hình phân cấp 2 cấp
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Quản lý Khối / Phòng ban lớn và các Bộ phận / Team con trực thuộc tại Alpha Books.
               </p>
             </div>
             <button
               type="button"
-              onClick={openCreateDepartment}
+              onClick={() => openCreateDepartment()}
               className="inline-flex items-center gap-2 rounded-xl bg-brand hover:bg-brand-hover px-4 py-2 text-sm font-semibold text-white transition cursor-pointer self-start sm:self-auto"
             >
               <Plus className="h-4 w-4" />
-              <span>Thêm phòng ban</span>
+              <span>Thêm phòng ban / Khối</span>
             </button>
           </div>
 
           {departments.length === 0 ? (
             <div className="py-14 text-center text-sm text-slate-500 dark:text-slate-400">
-              Chưa có phòng ban nào. Nhấn &ldquo;Thêm phòng ban&rdquo; để bắt đầu.
+              Chưa có phòng ban nào. Nhấn &ldquo;Thêm phòng ban / Khối&rdquo; để bắt đầu.
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {departments.map((dept) => (
-                <div
-                  key={dept.id}
-                  className="flex items-center justify-between gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        {dept.name}
-                      </p>
-                      {dept.code && (
-                        <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-mono text-slate-600 dark:text-slate-300">
-                          {dept.code}
-                        </span>
-                      )}
+              {parentDepartments.map((parent) => {
+                const children = departments.filter((d) => d.parent_id === parent.id);
+                const parentStaffCount = staffCountByDept.get(parent.id) ?? 0;
+
+                return (
+                  <div key={parent.id} className="bg-white dark:bg-slate-900">
+                    {/* Cấp 1: Khối / Phòng ban lớn */}
+                    <div className="flex items-center justify-between gap-4 px-5 py-3.5 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
+                      <div className="min-w-0 flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-soft dark:bg-brand-soft-dark text-brand">
+                          <Building2 className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {parent.name}
+                            </p>
+                            {parent.code && (
+                              <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-mono text-slate-600 dark:text-slate-300">
+                                {parent.code}
+                              </span>
+                            )}
+                            <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                              Khối / Cấp 1
+                            </span>
+                            {children.length > 0 && (
+                              <span className="rounded-full bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                                {children.length} team con
+                              </span>
+                            )}
+                            <span className="text-xs text-slate-400">
+                              • {parentStaffCount} nhân sự
+                            </span>
+                          </div>
+                          {parent.description && (
+                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
+                              {parent.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openCreateDepartment(parent.id)}
+                          className="hidden sm:inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-brand hover:bg-brand-soft dark:hover:bg-brand-soft-dark transition cursor-pointer"
+                          title="Thêm team con thuộc khối này"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>Team con</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEditDepartment(parent)}
+                          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100 transition cursor-pointer"
+                          aria-label="Chỉnh sửa"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDepartment(parent)}
+                          className="rounded-lg p-2 text-slate-500 hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-600 dark:hover:text-red-400 transition cursor-pointer"
+                          aria-label="Xóa"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-                    {dept.description && (
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {dept.description}
-                      </p>
+
+                    {/* Cấp 2: Các Team / Bộ phận con */}
+                    {children.length > 0 && (
+                      <div className="pl-6 sm:pl-11 pr-5 pb-2 divide-y divide-slate-100 dark:divide-slate-800/60 bg-slate-50/40 dark:bg-slate-950/20">
+                        {children.map((child) => {
+                          const childStaffCount = staffCountByDept.get(child.id) ?? 0;
+                          return (
+                            <div
+                              key={child.id}
+                              className="flex items-center justify-between gap-4 py-2.5 hover:bg-white dark:hover:bg-slate-800/40 rounded-lg px-3 transition"
+                            >
+                              <div className="min-w-0 flex items-center gap-2.5">
+                                <CornerDownRight className="h-4 w-4 text-slate-400 shrink-0" />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200">
+                                      {child.name}
+                                    </p>
+                                    {child.code && (
+                                      <span className="rounded bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                                        {child.code}
+                                      </span>
+                                    )}
+                                    <span className="text-[11px] text-slate-400">
+                                      • {childStaffCount} nhân sự
+                                    </span>
+                                  </div>
+                                  {child.description && (
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                      {child.description}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditDepartment(child)}
+                                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
+                                  aria-label="Chỉnh sửa team con"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDepartment(child)}
+                                  className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-600 dark:hover:text-red-400 transition cursor-pointer"
+                                  aria-label="Xóa team con"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
+                );
+              })}
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => openEditDepartment(dept)}
-                      className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100 transition cursor-pointer"
-                      aria-label="Chỉnh sửa phòng ban"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteDepartment(dept)}
-                      className="rounded-lg p-2 text-slate-500 hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-600 dark:hover:text-red-400 transition cursor-pointer"
-                      aria-label="Xóa phòng ban"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+              {/* Các phòng ban con mồ côi (nếu có) */}
+              {orphanSubDepartments.length > 0 && (
+                <div className="px-5 py-4 bg-amber-50/30 dark:bg-amber-950/20">
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-2">
+                    Các phòng ban chưa rõ cấp trên ({orphanSubDepartments.length})
+                  </p>
+                  <div className="space-y-2">
+                    {orphanSubDepartments.map((dept) => (
+                      <div
+                        key={dept.id}
+                        className="flex items-center justify-between gap-4 py-2 px-3 rounded-lg bg-white dark:bg-slate-900 border border-amber-200/50 dark:border-amber-900/40"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200">
+                            {dept.name}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => openEditDepartment(dept)}
+                            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-700"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
@@ -651,6 +814,7 @@ export function SettingsView({
                   <th className="px-5 py-3">Nhân sự</th>
                   <th className="px-4 py-3">Vai trò</th>
                   <th className="px-4 py-3">Phòng ban</th>
+                  <th className="px-4 py-3">Quản lý trực tiếp</th>
                   <th className="px-4 py-3 text-right">Trạng thái</th>
                 </tr>
               </thead>
@@ -712,14 +876,56 @@ export function SettingsView({
                               department_id: e.target.value || null,
                             })
                           }
-                          className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:border-brand focus:outline-none max-w-[200px]"
+                          className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:border-brand focus:outline-none max-w-[210px]"
                         >
                           <option value="">— Chưa gán —</option>
-                          {departments.map((d) => (
-                            <option key={d.id} value={d.id}>
-                              {d.name}
+                          {parentDepartments.map((p) => {
+                            const subDepts = departments.filter((d) => d.parent_id === p.id);
+                            if (subDepts.length === 0) {
+                              return (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              );
+                            }
+                            return (
+                              <optgroup key={p.id} label={p.name}>
+                                <option value={p.id}>{p.name} (Khối chung)</option>
+                                {subDepts.map((sub) => (
+                                  <option key={sub.id} value={sub.id}>
+                                    ↳ {sub.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            );
+                          })}
+                          {orphanSubDepartments.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.name}
                             </option>
                           ))}
+                        </select>
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <select
+                          value={member.manager_id ?? ""}
+                          disabled={busy}
+                          onChange={(e) =>
+                            handleUpdateStaff(member.id, {
+                              manager_id: e.target.value || null,
+                            })
+                          }
+                          className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:border-brand focus:outline-none max-w-[190px]"
+                        >
+                          <option value="">— Chưa chỉ định —</option>
+                          {staffList
+                            .filter((s) => s.id !== member.id && s.is_active)
+                            .map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.full_name} ({ROLE_LABELS[s.role] || s.role})
+                              </option>
+                            ))}
                         </select>
                       </td>
 
@@ -801,6 +1007,7 @@ export function SettingsView({
                   className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm focus:border-brand focus:outline-none"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Mã phòng ban
@@ -813,6 +1020,30 @@ export function SettingsView({
                   className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm focus:border-brand focus:outline-none"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Thuộc Khối / Phòng ban cấp trên
+                </label>
+                <select
+                  value={deptParentId}
+                  onChange={(e) => setDeptParentId(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm focus:border-brand focus:outline-none"
+                >
+                  <option value="">— Là Khối / Phòng ban lớn (Cấp 1) —</option>
+                  {parentDepartments
+                    .filter((p) => p.id !== editingDept?.id)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        Khối: {p.name}
+                      </option>
+                    ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Để trống nếu đây là Khối lớn độc lập; hoặc chọn Khối cha nếu là Bộ phận / Team con.
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Mô tả
@@ -941,26 +1172,68 @@ export function SettingsView({
                     className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm focus:border-brand focus:outline-none"
                   >
                     <option value="">— Chưa gán —</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
+                    {parentDepartments.map((p) => {
+                      const subDepts = departments.filter((d) => d.parent_id === p.id);
+                      if (subDepts.length === 0) {
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        );
+                      }
+                      return (
+                        <optgroup key={p.id} label={p.name}>
+                          <option value={p.id}>{p.name} (Khối chung)</option>
+                          {subDepts.map((sub) => (
+                            <option key={sub.id} value={sub.id}>
+                              ↳ {sub.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                    {orphanSubDepartments.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Chức danh
-                </label>
-                <input
-                  type="text"
-                  value={newUserJobTitle}
-                  onChange={(e) => setNewUserJobTitle(e.target.value)}
-                  placeholder="VD: Chuyên viên truyền thông"
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm focus:border-brand focus:outline-none"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Quản lý trực tiếp
+                  </label>
+                  <select
+                    value={newUserManagerId}
+                    onChange={(e) => setNewUserManagerId(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                  >
+                    <option value="">— Chưa chỉ định —</option>
+                    {staffList
+                      .filter((s) => s.is_active)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name} ({ROLE_LABELS[s.role] || s.role})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Chức danh
+                  </label>
+                  <input
+                    type="text"
+                    value={newUserJobTitle}
+                    onChange={(e) => setNewUserJobTitle(e.target.value)}
+                    placeholder="VD: Chuyên viên truyền thông"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm focus:border-brand focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

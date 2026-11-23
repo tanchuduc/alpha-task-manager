@@ -2,7 +2,13 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { WebhookConfig } from "@/types/database";
 
 export interface WebhookEventPayload {
-  event: "task_assigned" | "task_mentioned" | "task_completed" | "test";
+  event:
+    | "task_assigned"
+    | "task_mentioned"
+    | "task_completed"
+    | "direct_message"
+    | "project_update_posted"
+    | "test";
   projectId?: string | null;
   title: string;
   body: string;

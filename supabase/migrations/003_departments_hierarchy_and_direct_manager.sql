@@ -1,5 +1,5 @@
 -- ============================================================================
--- ALPHA WORK LITE — Migration 002: Phòng ban phân cấp & Quản lý trực tiếp
+-- ALPHA WORK LITE — Migration 003: Phòng ban phân cấp & Quản lý trực tiếp
 -- 1. Departments: Hỗ trợ phân cấp 2 cấp (Khối / Ban lớn -> Bộ phận / Team con)
 -- 2. Profiles: Hỗ trợ Quản lý trực tiếp (Direct Manager / Reports To)
 -- Chạy trong Supabase SQL Editor.

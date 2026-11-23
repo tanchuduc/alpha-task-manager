@@ -8,8 +8,11 @@ export type NotificationType =
   | "task_mentioned"
   | "task_commented"
   | "task_status_changed"
-  | "project_added";
+  | "project_added"
+  | "project_update_posted"
+  | "direct_message";
 export type WebhookProvider = "telegram" | "lark";
+export type CustomFieldType = "text" | "number" | "dropdown" | "date";
 
 export interface Department {
   id: string;
@@ -101,6 +104,7 @@ export interface Task {
   labels?: Label[];
   subtasks_count?: number;
   subtasks_done?: number;
+  custom_values?: Record<string, string>;
 }
 
 export interface TaskComment {
@@ -184,4 +188,97 @@ export interface WebhookConfig {
   created_by: string | null;
   created_at: string;
   project?: Pick<Project, "id" | "name" | "code"> | null;
+}
+
+// ==========================================
+// MIGRATION 002: CHAT, UPDATES, AUDIT, FIELDS
+// ==========================================
+
+export interface DirectMessage {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  attachment_url: string | null;
+  attachment_name: string | null;
+  is_read: boolean;
+  created_at: string;
+  sender?: Profile;
+  receiver?: Profile;
+}
+
+export interface ChannelMessage {
+  id: string;
+  department_id: string;
+  author_id: string;
+  content: string;
+  attachment_url: string | null;
+  attachment_name: string | null;
+  parent_id: string | null;
+  created_at: string;
+  author?: Profile;
+}
+
+export interface ProjectUpdateComment {
+  id: string;
+  update_id: string;
+  author_id: string;
+  content: string;
+  created_at: string;
+  author?: Profile;
+}
+
+export interface ProjectUpdateReaction {
+  id: string;
+  update_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+  user?: Profile;
+}
+
+export interface ProjectUpdate {
+  id: string;
+  project_id: string;
+  author_id: string;
+  title: string;
+  content: string;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+  author?: Profile;
+  comments?: ProjectUpdateComment[];
+  reactions?: ProjectUpdateReaction[];
+}
+
+export interface TaskActivityLog {
+  id: string;
+  task_id: string;
+  actor_id: string | null;
+  action: string;
+  details: {
+    old_value?: string | null;
+    new_value?: string | null;
+    label?: string;
+    description?: string;
+  };
+  created_at: string;
+  actor?: Profile;
+}
+
+export interface ProjectCustomField {
+  id: string;
+  project_id: string;
+  name: string;
+  field_type: CustomFieldType;
+  options: string[];
+  position: number;
+  created_at: string;
+}
+
+export interface TaskCustomFieldValue {
+  task_id: string;
+  field_id: string;
+  value: string;
+  updated_at: string;
 }

@@ -22,6 +22,7 @@ import {
   formatDateVi,
   isOverdue,
   generateProjectCode,
+  getDepartmentDisplayName,
 } from "@/lib/utils";
 import type {
   Department,
@@ -356,7 +357,7 @@ export default function ProjectsListClient({
             <option value="all">Tất cả phòng ban</option>
             {departments.map((dept) => (
               <option key={dept.id} value={dept.id}>
-                {dept.name}
+                {getDepartmentDisplayName(dept, departments)}
               </option>
             ))}
           </select>
@@ -598,7 +599,7 @@ export default function ProjectsListClient({
                     <option value="">Chung / Liên phòng ban</option>
                     {departments.map((d) => (
                       <option key={d.id} value={d.id}>
-                        {d.name}
+                        {getDepartmentDisplayName(d, departments)}
                       </option>
                     ))}
                   </select>

@@ -19,7 +19,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { cn, PRIORITY_CONFIG, generateProjectCode } from "@/lib/utils";
+import {
+  cn,
+  PRIORITY_CONFIG,
+  generateProjectCode,
+  getDepartmentDisplayName,
+} from "@/lib/utils";
 import type {
   Department,
   Profile,
@@ -853,7 +858,7 @@ export default function TemplatesManagerClient({
                     <option value="">Chung</option>
                     {departments.map((d) => (
                       <option key={d.id} value={d.id}>
-                        {d.name}
+                        {getDepartmentDisplayName(d, departments)}
                       </option>
                     ))}
                   </select>
