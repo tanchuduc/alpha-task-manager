@@ -48,6 +48,7 @@ import { logTaskActivity } from "@/lib/activity-logger";
 import TaskActivityTimeline from "@/components/tasks/TaskActivityTimeline";
 import TaskDependenciesSection from "@/components/tasks/TaskDependenciesSection";
 import TaskRecurringConfig from "@/components/tasks/TaskRecurringConfig";
+import { ShareTaskToChatModal } from "@/components/chat/ShareTaskToChatModal";
 import {
   MentionTextarea,
   renderContentWithMentions,
@@ -361,6 +362,7 @@ export default function TaskDrawer({
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const todoStatus = useMemo(
     () => statuses.find((s) => s.category === "todo") ?? statuses[0] ?? null,
@@ -1411,6 +1413,18 @@ export default function TaskDrawer({
               </div>
             )}
 
+            {task && (
+              <button
+                type="button"
+                onClick={() => setShowShareModal(true)}
+                title="Chia sẻ thẻ công việc vào Chat"
+                className="inline-flex items-center gap-1 rounded-[6px] px-2 py-1 text-xs font-medium text-slate-600 hover:text-brand hover:bg-brand-soft/60 dark:text-slate-300 dark:hover:text-brand dark:hover:bg-brand-soft-dark/30 transition cursor-pointer"
+              >
+                <MessageSquare className="h-3.5 w-3.5 text-brand" />
+                <span className="hidden sm:inline">Chia sẻ</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onClose}
@@ -2322,6 +2336,19 @@ export default function TaskDrawer({
               </div>
             </div>
           </div>
+        )}
+        {/* Share Task to Chat Modal */}
+        {showShareModal && task && (
+          <ShareTaskToChatModal
+            task={{
+              ...task,
+              projectId,
+              projectName: project?.name,
+            }}
+            currentUser={currentUser}
+            allProfiles={allProfiles && allProfiles.length > 0 ? allProfiles : members}
+            onClose={() => setShowShareModal(false)}
+          />
         )}
       </div>
     </div>

@@ -7,6 +7,7 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile, Project, ProjectMessage } from "@/types/database";
 import {
@@ -18,8 +19,10 @@ import {
   ConvertMessageToTaskModal,
   type SourceChatMessage,
 } from "@/components/chat/ConvertMessageToTaskModal";
+import { TaskCardMessage } from "@/components/chat/TaskCardMessage";
 import {
   Send,
+  MessageSquare,
   Paperclip,
   Smile,
   Reply,
@@ -35,6 +38,7 @@ import {
   PinOff,
   CornerDownRight,
   Sparkles,
+  ExternalLink,
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import { toast } from "sonner";
@@ -481,6 +485,16 @@ export function ProjectChatTab({
             <Pin className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Đã ghim</span>
           </button>
+
+          <Link
+            href={`/chat?project=${project.id}`}
+            title="Mở toàn màn hình trong Chat Center"
+            className="flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:text-brand hover:border-brand/40 dark:border-[#303030] dark:bg-[#202020] dark:text-slate-300 dark:hover:text-brand transition shadow-2xs"
+          >
+            <MessageSquare className="h-3.5 w-3.5 text-brand" />
+            <span className="hidden sm:inline">Chat Center</span>
+            <ExternalLink className="h-3 w-3 opacity-60" />
+          </Link>
         </div>
       </div>
 
@@ -589,11 +603,62 @@ export function ProjectChatTab({
                       </span>
                     ) : (
                       <>
-                        <div className="whitespace-pre-wrap">
-                          {renderContentWithMentions(msg.content, allProfiles, {
-                            isInverse: isMine,
-                          })}
-                        </div>
+                        {(() => {
+                          const taskCardMatch = msg.content
+                            ? msg.content.match(
+                                /\[(Tạo việc thành công|Thẻ công việc):\s*([^\]]+)\]\(([^)]+)\)/
+                              )
+                            : null;
+
+                          if (taskCardMatch) {
+                            const [fullMatch, cardType, taskTitle, taskUrl] =
+                              taskCardMatch;
+                            const preText = msg.content
+                              .replace(fullMatch, "")
+                              .trim();
+                            const urlMatch = taskUrl.match(
+                              /\/projects\/([^?]+)\?task=([^&#]+)/
+                            );
+                            const projectId = urlMatch ? urlMatch[1] : project.id;
+                            const taskId = urlMatch ? urlMatch[2] : "task";
+
+                            return (
+                              <div className="space-y-1.5 text-slate-800 dark:text-slate-100">
+                                {preText && (
+                                  <div className={cn(isMine && "text-white")}>
+                                    {renderContentWithMentions(
+                                      preText,
+                                      allProfiles,
+                                      { isInverse: isMine }
+                                    )}
+                                  </div>
+                                )}
+                                <TaskCardMessage
+                                  task={{
+                                    id: taskId,
+                                    title: taskTitle,
+                                    projectId,
+                                    projectName: project.name,
+                                    statusName:
+                                      cardType === "Tạo việc thành công"
+                                        ? "Mới tạo"
+                                        : "Đang mở",
+                                    statusCategory: "doing",
+                                    taskUrl,
+                                  }}
+                                />
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="whitespace-pre-wrap">
+                              {renderContentWithMentions(msg.content, allProfiles, {
+                                isInverse: isMine,
+                              })}
+                            </div>
+                          );
+                        })()}
 
                         {/* Attachment */}
                         {msg.attachment_url && (

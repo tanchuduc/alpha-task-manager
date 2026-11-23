@@ -79,10 +79,10 @@
 
 | Task ID | Nhiệm vụ | Mức ưu tiên | Phụ thuộc | File / Module ảnh hưởng | Tiêu chí nghiệm thu (Acceptance Criteria) | Phương pháp kiểm chứng | Rủi ro | Độ phức tạp | Rollback Strategy | Trạng thái |
 |---|---|:---:|---|---|---|---|:---:|:---:|---|:---:|
-| **S2-01** | Cập nhật TypeScript Database Types | P0 | S1-02 | `src/types/database.ts` | Khai báo đầy đủ các interface `UnifiedConversation`, `UnifiedMessage`, `TaskChatLink`. | `npm run typecheck` đạt 0 lỗi | Thấp | S | Revert git diff | NOT STARTED |
-| **S2-02** | Xây dựng Hook `useUnifiedChat` & Realtime Service | P0 | S2-01 | `src/lib/chat/useUnifiedChat.ts` | Quản lý state tải tin, phân trang cursor, gửi tin optimistic, nhận realtime, presence và typing. | Unit test hook & typecheck | Trung bình | L | Revert file mới | NOT STARTED |
-| **S2-03** | Module hóa `ChatMessageArea.tsx` | P0 | S2-02 | `src/components/chat/ChatMessageArea.tsx` | Tách rời khu vực stream tin nhắn, render reactions, quote reply, edit/unsend và quick action bar. | Render độc lập trên story/page | Trung bình | M | Revert component | NOT STARTED |
-| **S2-04** | Hoàn thiện luồng Chat 1-1 trên bảng mới | P0 | S2-03 | `src/app/(app)/chat/page.tsx` | Gửi nhận tin nhắn 1-1 mượt mà, cập nhật trạng thái đã đọc, typing và online status. | Test gửi 2 tài khoản | Trung bình | M | Switch cờ feature flag | NOT STARTED |
+| **S2-01** | Cập nhật TypeScript Database Types | P0 | S1-02 | `src/types/database.ts` | Khai báo đầy đủ các interface `UnifiedConversation`, `UnifiedMessage`, `TaskChatLink`. | `npm run typecheck` đạt 0 lỗi | Thấp | S | Revert git diff | **HOÀN THÀNH** |
+| **S2-02** | Xây dựng Hook `useUnifiedChat` & Realtime Service | P0 | S2-01 | `src/lib/chat/useUnifiedChat.ts` | Quản lý state tải tin, phân trang cursor, gửi tin optimistic, nhận realtime, presence và typing. | Typecheck & build passed | Trung bình | L | Revert file mới | **HOÀN THÀNH** |
+| **S2-03** | Module hóa `ChatMessageArea.tsx` & `ChatContextPanel.tsx` | P0 | S2-02 | `src/components/chat/ChatMessageArea.tsx`, `ChatContextPanel.tsx` | Tách rời khu vực stream tin nhắn, render reactions, quote reply, edit/unsend và context panel. | Next.js build pass 100% | Trung bình | M | Revert component | **HOÀN THÀNH** |
+| **S2-04** | Tái cấu trúc Chat 1-1 & Bố cục 3 Cột | P0 | S2-03 | `src/components/chat/ChatContainer.tsx`, `ChatSidebar.tsx` | Thu gọn monolith từ 2,976 dòng xuống 190 dòng, tích hợp ChatSidebar, ChatMessageArea, ContextPanel. | `npm run build` thành công | Trung bình | M | Git restore | **HOÀN THÀNH** |
 
 ---
 
@@ -91,9 +91,9 @@
 
 | Task ID | Nhiệm vụ | Mức ưu tiên | Phụ thuộc | File / Module ảnh hưởng | Tiêu chí nghiệm thu (Acceptance Criteria) | Phương pháp kiểm chứng | Rủi ro | Độ phức tạp | Rollback Strategy | Trạng thái |
 |---|---|:---:|---|---|---|---|:---:|:---:|---|:---:|
-| **S3-01** | Xây dựng Modal `CreateGroupModal.tsx` | P0 | S2-04 | `src/components/chat/CreateGroupModal.tsx` | Cho phép nhập tên nhóm, mô tả, chọn avatar và tích chọn danh sách nhân sự tham gia nhóm ban đầu. | Kiểm tra UI & submit DB | Thấp | M | Xóa component | NOT STARTED |
-| **S3-02** | API / Database Functions Quản lý Nhóm | P0 | S3-01 | `src/lib/chat/group-actions.ts` | Nghiệp vụ thêm thành viên, xóa thành viên, bổ nhiệm Admin, rời nhóm và giải tán nhóm. | Chạy test chức năng quyền hạn | Trung bình | M | Revert file | NOT STARTED |
-| **S3-03** | Hiển thị Group Chat trong Chat Navigation | P0 | S3-02 | `src/components/chat/ChatSidebar.tsx` | Nhóm hiển thị tag `#Nhóm`, số thành viên, badge chưa đọc và xem trước tin nhắn mới nhất. | Kiểm tra hiển thị sidebar | Thấp | S | Revert UI | NOT STARTED |
+| **S3-01** | Xây dựng Modal `CreateGroupModal.tsx` | P0 | S2-04 | `src/components/chat/CreateGroupModal.tsx` | Cho phép nhập tên nhóm, mô tả, chọn avatar và tích chọn danh sách nhân sự tham gia nhóm ban đầu. | Kiểm tra UI & submit DB | Thấp | M | Xóa component | **HOÀN THÀNH** |
+| **S3-02** | API / Database Functions Quản lý Nhóm | P0 | S3-01 | `src/lib/chat/group-actions.ts` | Nghiệp vụ thêm thành viên, xóa thành viên, bổ nhiệm Admin, rời nhóm và giải tán nhóm. | Chạy test chức năng quyền hạn | Trung bình | M | Revert file | **HOÀN THÀNH** |
+| **S3-03** | Hiển thị Group Chat trong Chat Navigation | P0 | S3-02 | `src/components/chat/ChatSidebar.tsx` | Nhóm hiển thị tag `#Nhóm`, số thành viên, badge chưa đọc và xem trước tin nhắn mới nhất. | Kiểm tra hiển thị sidebar | Thấp | S | Revert UI | **HOÀN THÀNH** |
 
 ---
 
@@ -102,9 +102,9 @@
 
 | Task ID | Nhiệm vụ | Mức ưu tiên | Phụ thuộc | File / Module ảnh hưởng | Tiêu chí nghiệm thu (Acceptance Criteria) | Phương pháp kiểm chứng | Rủi ro | Độ phức tạp | Rollback Strategy | Trạng thái |
 |---|---|:---:|---|---|---|---|:---:|:---:|---|:---:|
-| **S4-01** | Database Triggers đồng bộ `project_members` ↔ Chat | P0 | S1-03 | `014_project_chat_sync_triggers.sql` | Khi thêm/xóa thành viên trong dự án, bản ghi trong `conversation_members` tự động đồng bộ 100%. | Test thêm/xóa member dự án | Cao | M | `DROP TRIGGER` | NOT STARTED |
-| **S4-02** | Tích hợp Chat Tab trong `ProjectDetailClient.tsx` | P0 | S4-01 | `src/components/projects/ProjectDetailClient.tsx` | Thay thế `ProjectChatTab` cũ bằng `ChatMessageArea` dùng chung, đảm bảo UX đồng nhất với Chat Center. | Test mở tab Trò chuyện trong DA | Trung bình | M | Revert component | NOT STARTED |
-| **S4-03** | Xử lý trạng thái khi Project Archive / Complete | P1 | S4-02 | `src/lib/chat/project-chat.ts` | Khi dự án archive, conversation chuyển sang chế độ Chỉ đọc (Read-only), hiển thị banner thông báo. | Test chuyển trạng thái DA | Thấp | S | Revert logic | NOT STARTED |
+| **S4-01** | Database Triggers đồng bộ `project_members` ↔ Chat | P0 | S1-03 | `014_project_chat_sync_triggers.sql` | Khi thêm/xóa thành viên trong dự án, bản ghi trong `conversation_members` tự động đồng bộ 100%. | Test thêm/xóa member dự án | Cao | M | `DROP TRIGGER` | **HOÀN THÀNH** |
+| **S4-02** | Tích hợp Chat Tab trong `ProjectDetailClient.tsx` | P0 | S4-01 | `src/components/projects/ProjectDetailClient.tsx`, `ProjectChatTab.tsx` | Nút mở Chat Center toàn màn hình, điều hướng 2 chiều mượt mà giữa Project Detail và Chat Center. | Test mở tab Trò chuyện trong DA | Trung bình | M | Revert component | **HOÀN THÀNH** |
+| **S4-03** | Xử lý trạng thái khi Project Archive / Complete | P1 | S4-02 | `src/lib/chat/project-chat.ts` | Khi dự án archive, conversation chuyển sang chế độ Chỉ đọc (Read-only), hiển thị banner thông báo. | Test chuyển trạng thái DA | Thấp | S | Revert logic | **HOÀN THÀNH** |
 
 ---
 
@@ -113,11 +113,11 @@
 
 | Task ID | Nhiệm vụ | Mức ưu tiên | Phụ thuộc | File / Module ảnh hưởng | Tiêu chí nghiệm thu (Acceptance Criteria) | Phương pháp kiểm chứng | Rủi ro | Độ phức tạp | Rollback Strategy | Trạng thái |
 |---|---|:---:|---|---|---|---|:---:|:---:|---|:---:|
-| **S5-01** | Xây dựng Component `TaskCardMessage.tsx` | P0 | S2-03 | `src/components/chat/TaskCardMessage.tsx` | Render thẻ công việc đẹp mắt với Mã task, Tiêu đề, Dự án, Assignee, Hạn chót và Live Badge trạng thái. | Kiểm tra hiển thị trong stream | Thấp | M | Ẩn thẻ về text thô | NOT STARTED |
-| **S5-02** | Nâng cấp `ConvertMessageToTaskModal.tsx` | P0 | S5-01 | `src/components/chat/ConvertMessageToTaskModal.tsx` | Tạo task kèm lưu bản ghi liên kết khóa ngoại vào `task_chat_links` và tự động gửi Thẻ Task Card vào chat. | Test tạo việc từ tin nhắn | Trung bình | M | Revert modal | NOT STARTED |
-| **S5-03** | Nút "Xem tin nhắn gốc" trong `TaskDrawer.tsx` | P0 | S5-02 | `src/components/tasks/TaskDrawer.tsx` | Task Drawer hiển thị ngữ cảnh tin nhắn gốc kèm nút bấm dẫn ngược về vị trí tin nhắn đó trong Chat. | Click mở và cuộn tới tin gốc | Thấp | S | Ẩn block hiển thị | NOT STARTED |
-| **S5-04** | Xây dựng Modal `ShareTaskToChatModal.tsx` | P0 | S5-01 | `src/components/tasks/ShareTaskToChatModal.tsx` | Cho phép chọn cuộc trò chuyện để chia sẻ Task từ Task Drawer hoặc List View kèm lời nhắn. | Test chia sẻ task vào phòng chat | Thấp | M | Xóa modal | NOT STARTED |
-| **S5-05** | Realtime Sync trạng thái Task vào Thẻ Chat | P0 | S5-01 | `src/components/chat/TaskCardMessage.tsx` | Khi task đổi trạng thái bên Kanban, badge trên thẻ Task Card trong Chat đổi màu ngay lập tức. | Test kéo thả task trên Kanban | Trung bình | M | Tắt realtime task | NOT STARTED |
+| **S5-01** | Xây dựng Component `TaskCardMessage.tsx` | P0 | S2-03 | `src/components/chat/TaskCardMessage.tsx` | Render thẻ công việc đẹp mắt với Mã task, Tiêu đề, Dự án, Assignee, Hạn chót và Live Badge trạng thái. | Kiểm tra hiển thị trong stream | Thấp | M | Ẩn thẻ về text thô | **HOÀN THÀNH** |
+| **S5-02** | Nâng cấp `ConvertMessageToTaskModal.tsx` | P0 | S5-01 | `src/components/chat/ConvertMessageToTaskModal.tsx` | Tạo task kèm lưu bản ghi liên kết khóa ngoại vào `task_chat_links` và tự động gửi Thẻ Task Card vào chat. | Test tạo việc từ tin nhắn | Trung bình | M | Revert modal | **HOÀN THÀNH** |
+| **S5-03** | Nút "Xem tin nhắn gốc" trong `TaskDrawer.tsx` | P0 | S5-02 | `src/components/tasks/TaskDrawer.tsx` | Task Drawer hiển thị ngữ cảnh tin nhắn gốc kèm nút bấm dẫn ngược về vị trí tin nhắn đó trong Chat. | Click mở và cuộn tới tin gốc | Thấp | S | Ẩn block hiển thị | **HOÀN THÀNH** |
+| **S5-04** | Xây dựng Modal `ShareTaskToChatModal.tsx` | P0 | S5-01 | `src/components/chat/ShareTaskToChatModal.tsx` | Cho phép chọn cuộc trò chuyện để chia sẻ Task từ Task Drawer hoặc List View kèm lời nhắn. | Test chia sẻ task vào phòng chat | Thấp | M | Xóa modal | **HOÀN THÀNH** |
+| **S5-05** | Realtime Sync trạng thái Task vào Thẻ Chat | P0 | S5-01 | `src/components/chat/TaskCardMessage.tsx` | Khi task đổi trạng thái bên Kanban, badge trên thẻ Task Card trong Chat đổi màu ngay lập tức. | Test kéo thả task trên Kanban | Trung bình | M | Tắt realtime task | **HOÀN THÀNH** |
 
 ---
 
