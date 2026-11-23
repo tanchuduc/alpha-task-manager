@@ -370,6 +370,103 @@ export interface ProjectChatReadState {
   last_read_at: string;
 }
 
+// ============================================================================
+// UNIFIED CHAT & COLLABORATION TYPES (Migration 011)
+// Direct 1:1, Group Chat tự do & Project Chat
+// ============================================================================
+export type ConversationType = "direct" | "group" | "project";
+export type ConversationMemberRole = "owner" | "admin" | "member";
+export type MessageType = "text" | "task_card" | "file" | "system_event";
+
+export interface TaskCardMetadata {
+  taskId: string;
+  taskTitle: string;
+  projectId: string;
+  projectName?: string;
+  status: string;
+  statusLabel?: string;
+  priority: string;
+  priorityLabel?: string;
+  assigneeId?: string | null;
+  assigneeName?: string | null;
+  dueDate?: string | null;
+}
+
+export interface Conversation {
+  id: string;
+  type: ConversationType;
+  title: string | null;
+  avatar_url: string | null;
+  description: string | null;
+  project_id: string | null;
+  created_by: string | null;
+  is_archived: boolean;
+  metadata: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  // Joins
+  project?: Project | null;
+  members?: ConversationMember[];
+}
+
+export interface ConversationMember {
+  conversation_id: string;
+  user_id: string;
+  role: ConversationMemberRole;
+  last_read_at: string;
+  is_pinned: boolean;
+  is_muted: boolean;
+  joined_at: string;
+  // Joins
+  profile?: Profile;
+}
+
+export interface MessageAttachment {
+  id: string;
+  message_id: string;
+  file_name: string;
+  file_type: string | null;
+  file_size: number | null;
+  storage_path: string;
+  created_at: string;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  message_type: MessageType;
+  metadata: {
+    task?: TaskCardMetadata;
+    system_event?: string;
+    [key: string]: any;
+  };
+  reply_to_id: string | null;
+  is_pinned: boolean;
+  is_deleted: boolean;
+  edited_at: string | null;
+  reactions: Record<string, string[]>;
+  created_at: string;
+  // Joins
+  sender?: Profile;
+  reply_to?: Message | null;
+  attachments?: MessageAttachment[];
+}
+
+export interface TaskChatLink {
+  id: string;
+  task_id: string;
+  conversation_id: string;
+  message_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  // Joins
+  task?: Task;
+  message?: Message;
+  conversation?: Conversation;
+}
+
 export interface ProjectUpdateComment {
   id: string;
   update_id: string;
