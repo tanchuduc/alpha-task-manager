@@ -209,6 +209,7 @@ export function AppShell({
                   pathname === item.href ||
                   pathname.startsWith(`${item.href}/`);
                 const isInbox = item.href === "/inbox";
+                const isChat = item.href === "/chat";
 
                 return (
                   <Link
@@ -226,6 +227,11 @@ export function AppShell({
                     {isInbox && unreadCount > 0 && (
                       <span className="inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">
                         {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    )}
+                    {isChat && unreadChatCount > 0 && (
+                      <span className="inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">
+                        {unreadChatCount > 99 ? "99+" : unreadChatCount}
                       </span>
                     )}
                   </Link>
@@ -351,6 +357,7 @@ export function AppShell({
               const isActive =
                 pathname === item.href || pathname.startsWith(`${item.href}/`);
               const isInbox = item.href === "/inbox";
+              const isChat = item.href === "/chat";
 
               return (
                 <Link
@@ -371,6 +378,11 @@ export function AppShell({
                   {isInbox && unreadCount > 0 && (
                     <span className="inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">
                       {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                  {isChat && unreadChatCount > 0 && (
+                    <span className="inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">
+                      {unreadChatCount > 99 ? "99+" : unreadChatCount}
                     </span>
                   )}
                 </Link>

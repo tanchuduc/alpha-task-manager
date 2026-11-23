@@ -166,11 +166,13 @@ export function ChatContainer({
         .eq("is_read", false);
 
       // Decrement unread map
-      setUnreadMap((prev) => {
-        const next = { ...prev };
-        delete next[selectedUserId];
-        return next;
-      });
+      if (selectedUserId) {
+        setUnreadMap((prev) => {
+          const next = { ...prev };
+          delete next[selectedUserId];
+          return next;
+        });
+      }
     }
 
     loadDMs();

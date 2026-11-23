@@ -964,6 +964,11 @@ export default function ProjectDetailClient({
             );
             const collapsed = !!collapsedStatusIds[st.id];
             const quickVal = listQuickAdd[st.id] ?? "";
+            const isAllGroupSelected =
+              groupTasks.length > 0 &&
+              groupTasks.every((t) => selectedTaskIds.has(t.id));
+            const isSomeGroupSelected =
+              groupTasks.some((t) => selectedTaskIds.has(t.id));
 
             return (
               <div
@@ -981,6 +986,32 @@ export default function ProjectDetailClient({
                   className="flex w-full items-center justify-between bg-slate-50/80 px-4 py-2.5 text-left dark:bg-slate-800/50 cursor-pointer"
                 >
                   <div className="flex items-center gap-2.5">
+                    {groupTasks.length > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={isAllGroupSelected}
+                        ref={(el) => {
+                          if (el) {
+                            el.indeterminate =
+                              isSomeGroupSelected && !isAllGroupSelected;
+                          }
+                        }}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          setSelectedTaskIds((prev) => {
+                            const next = new Set(prev);
+                            for (const t of groupTasks) {
+                              if (isAllGroupSelected) next.delete(t.id);
+                              else next.add(t.id);
+                            }
+                            return next;
+                          });
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Chọn tất cả công việc trong nhóm này"
+                        className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer mr-0.5"
+                      />
+                    )}
                     {collapsed ? (
                       <ChevronDown className="h-4 w-4 text-slate-400" />
                     ) : (
@@ -1015,9 +1046,29 @@ export default function ProjectDetailClient({
                       return (
                         <div
                           key={task.id}
-                          className="group flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+                          className={cn(
+                            "group flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
+                            selectedTaskIds.has(task.id) &&
+                              "bg-brand-soft/40 dark:bg-brand/10"
+                          )}
                         >
                           <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedTaskIds.has(task.id)}
+                              onChange={() => {
+                                setSelectedTaskIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(task.id)) next.delete(task.id);
+                                  else next.add(task.id);
+                                  return next;
+                                });
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Chọn ${task.title}`}
+                              className="h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand/40 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
+                            />
+
                             <button
                               type="button"
                               onClick={() => handleToggleTaskDone(task)}
@@ -1537,6 +1588,33 @@ export default function ProjectDetailClient({
           }}
         />
       )}
+
+      {/* ================================================================
+       * BULK ACTION BAR
+       * ============================================================== */}
+      <BulkActionBar
+        selectedTaskIds={Array.from(selectedTaskIds)}
+        selectedTasks={tasks.filter((t) => selectedTaskIds.has(t.id))}
+        statuses={statuses}
+        profiles={assignableProfiles}
+        currentUser={currentUser}
+        onClearSelection={() => setSelectedTaskIds(new Set())}
+        onTasksUpdated={() => {
+          fetchTasks();
+          setSelectedTaskIds(new Set());
+        }}
+      />
+
+      {/* ================================================================
+       * CUSTOM FIELDS MANAGER MODAL
+       * ============================================================== */}
+      <CustomFieldsManagerModal
+        projectId={project.id}
+        projectName={project.name}
+        isOpen={showCustomFieldsModal}
+        onClose={() => setShowCustomFieldsModal(false)}
+        onFieldsUpdated={fetchTasks}
+      />
     </div>
   );
 }
