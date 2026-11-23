@@ -214,7 +214,7 @@ VALUES
     false
   ),
   (
-    'NULL',
+    NULL,
     'Biên tập / Thiết kế chính (Core Member)',
     'CORE',
     'Tạo và chỉnh sửa công việc, tải tài liệu, đăng bài thảo luận',
