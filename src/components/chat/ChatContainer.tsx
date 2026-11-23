@@ -8,6 +8,7 @@ import React, {
   useCallback,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { cn, getInitials } from "@/lib/utils";
 import type {
@@ -16,6 +17,7 @@ import type {
   Project,
   DirectMessage,
   ChannelMessage,
+  ProjectMessage,
 } from "@/types/database";
 import {
   MentionTextarea,
@@ -30,6 +32,7 @@ import {
   Search,
   MessageSquare,
   Hash,
+  FolderKanban,
   Send,
   Paperclip,
   X,
@@ -43,7 +46,7 @@ import {
   Pencil,
   Trash2,
   CheckSquare,
-  RotateCcw,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -54,7 +57,7 @@ interface ChatContainerProps {
   allProjects?: Project[];
 }
 
-type ChatMode = "direct" | "channel";
+type ChatMode = "direct" | "channel" | "project";
 
 interface PendingAttachment {
   file: File;
@@ -131,16 +134,26 @@ export function ChatContainer({
   const [activeTab, setActiveTab] = useState<ChatMode>("direct");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
   // Messages state
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>([]);
   const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
+  const [projectMessages, setProjectMessages] = useState<ProjectMessage[]>([]);
+
+  // Inbox counters and previews
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
   const [channelUnreadMap, setChannelUnreadMap] = useState<Record<string, number>>({});
+  const [projectUnreadMap, setProjectUnreadMap] = useState<Record<string, number>>({});
+
   const [dmLastMsgMap, setDmLastMsgMap] = useState<Record<string, LastMessagePreview>>({});
   const [channelLastMsgMap, setChannelLastMsgMap] = useState<
     Record<string, LastMessagePreview>
   >({});
+  const [projectLastMsgMap, setProjectLastMsgMap] = useState<
+    Record<string, LastMessagePreview>
+  >({});
+
   const [loadingMessages, setLoadingMessages] = useState(false);
 
   // Online Presence & Typing state
@@ -184,26 +197,38 @@ export function ChatContainer({
     setReplyingTo(null);
     setEditingMessage(null);
     setShowPinnedDrawer(false);
-  }, [activeTab, selectedUserId, selectedDeptId]);
+  }, [activeTab, selectedUserId, selectedDeptId, selectedProjectId]);
 
   // Initialize selection from query params or defaults
   useEffect(() => {
     const userParam = searchParams.get("user");
     const deptParam = searchParams.get("dept");
+    const projectParam = searchParams.get("project");
 
-    if (deptParam && allDepartments.some((d) => d.id === deptParam)) {
+    if (projectParam && allProjects.some((p) => p.id === projectParam)) {
+      setActiveTab("project");
+      setSelectedProjectId(projectParam);
+      setSelectedUserId(null);
+      setSelectedDeptId(null);
+      setMobileShowSidebar(false);
+    } else if (deptParam && allDepartments.some((d) => d.id === deptParam)) {
       setActiveTab("channel");
       setSelectedDeptId(deptParam);
       setSelectedUserId(null);
+      setSelectedProjectId(null);
       setMobileShowSidebar(false);
     } else if (userParam && otherProfiles.some((p) => p.id === userParam)) {
       setActiveTab("direct");
       setSelectedUserId(userParam);
       setSelectedDeptId(null);
+      setSelectedProjectId(null);
       setMobileShowSidebar(false);
-    } else if (!selectedUserId && !selectedDeptId) {
+    } else if (!selectedUserId && !selectedDeptId && !selectedProjectId) {
       if (otherProfiles.length > 0) {
         setSelectedUserId(otherProfiles[0].id);
+      } else if (allProjects.length > 0) {
+        setActiveTab("project");
+        setSelectedProjectId(allProjects[0].id);
       } else if (allDepartments.length > 0) {
         setActiveTab("channel");
         setSelectedDeptId(allDepartments[0].id);
@@ -213,13 +238,15 @@ export function ChatContainer({
     searchParams,
     otherProfiles,
     allDepartments,
+    allProjects,
     selectedUserId,
     selectedDeptId,
+    selectedProjectId,
   ]);
 
-  // Fetch initial Inbox metadata: unread counts, last messages per user & department
+  // Fetch initial Inbox metadata: unread counts & last messages per user, dept, project
   const fetchInboxSummaries = useCallback(async () => {
-    // 1. Recent DMs involving current user
+    // 1. Recent DMs
     const { data: dmData } = await supabase
       .from("direct_messages")
       .select("id, sender_id, receiver_id, content, is_read, is_deleted, created_at")
@@ -256,7 +283,7 @@ export function ChatContainer({
     }
 
     // 2. Recent Channel messages & channel_read_states
-    const [cmRes, readStatesRes] = await Promise.all([
+    const [cmRes, deptReadRes] = await Promise.all([
       supabase
         .from("channel_messages")
         .select("id, department_id, author_id, content, is_deleted, created_at")
@@ -268,10 +295,10 @@ export function ChatContainer({
         .eq("user_id", currentUser.id),
     ]);
 
-    const readMap: Record<string, number> = {};
-    if (readStatesRes.data) {
-      readStatesRes.data.forEach((rs) => {
-        readMap[rs.department_id] = new Date(rs.last_read_at).getTime();
+    const deptReadMap: Record<string, number> = {};
+    if (deptReadRes.data) {
+      deptReadRes.data.forEach((rs) => {
+        deptReadMap[rs.department_id] = new Date(rs.last_read_at).getTime();
       });
     }
 
@@ -291,7 +318,7 @@ export function ChatContainer({
           };
         }
 
-        const lastReadMs = readMap[cm.department_id] || 0;
+        const lastReadMs = deptReadMap[cm.department_id] || 0;
         const msgMs = new Date(cm.created_at).getTime();
         if (
           cm.author_id !== currentUser.id &&
@@ -306,13 +333,65 @@ export function ChatContainer({
       setChannelLastMsgMap(cmPreviews);
       setChannelUnreadMap(cmUnreads);
     }
-  }, [currentUser.id, selectedDeptId, supabase]);
+
+    // 3. Recent Project messages & project_chat_read_states
+    const [pmRes, projReadRes] = await Promise.all([
+      supabase
+        .from("project_messages")
+        .select("id, project_id, author_id, content, is_deleted, created_at")
+        .order("created_at", { ascending: false })
+        .limit(300),
+      supabase
+        .from("project_chat_read_states")
+        .select("project_id, last_read_at")
+        .eq("user_id", currentUser.id),
+    ]);
+
+    const projReadMap: Record<string, number> = {};
+    if (projReadRes.data) {
+      projReadRes.data.forEach((rs) => {
+        projReadMap[rs.project_id] = new Date(rs.last_read_at).getTime();
+      });
+    }
+
+    if (pmRes.data) {
+      const pmPreviews: Record<string, LastMessagePreview> = {};
+      const pmUnreads: Record<string, number> = {};
+
+      pmRes.data.forEach((pm) => {
+        if (!pmPreviews[pm.project_id]) {
+          pmPreviews[pm.project_id] = {
+            content: pm.is_deleted
+              ? "Tin nhắn đã thu hồi"
+              : pm.content || "[Tệp đính kèm]",
+            createdAt: pm.created_at,
+            senderId: pm.author_id,
+            isDeleted: pm.is_deleted,
+          };
+        }
+
+        const lastReadMs = projReadMap[pm.project_id] || 0;
+        const msgMs = new Date(pm.created_at).getTime();
+        if (
+          pm.author_id !== currentUser.id &&
+          lastReadMs > 0 &&
+          msgMs > lastReadMs &&
+          pm.project_id !== selectedProjectId
+        ) {
+          pmUnreads[pm.project_id] = (pmUnreads[pm.project_id] || 0) + 1;
+        }
+      });
+
+      setProjectLastMsgMap(pmPreviews);
+      setProjectUnreadMap(pmUnreads);
+    }
+  }, [currentUser.id, selectedDeptId, selectedProjectId, supabase]);
 
   useEffect(() => {
     fetchInboxSummaries();
   }, [fetchInboxSummaries]);
 
-  // Mark channel as read helper
+  // Mark channel or project as read helper
   const markChannelAsRead = useCallback(
     async (deptId: string) => {
       setChannelUnreadMap((prev) => {
@@ -329,6 +408,27 @@ export function ChatContainer({
           last_read_at: new Date().toISOString(),
         },
         { onConflict: "user_id,department_id" }
+      );
+    },
+    [currentUser.id, supabase]
+  );
+
+  const markProjectAsRead = useCallback(
+    async (projId: string) => {
+      setProjectUnreadMap((prev) => {
+        if (!prev[projId]) return prev;
+        const next = { ...prev };
+        delete next[projId];
+        return next;
+      });
+
+      await supabase.from("project_chat_read_states").upsert(
+        {
+          user_id: currentUser.id,
+          project_id: projId,
+          last_read_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,project_id" }
       );
     },
     [currentUser.id, supabase]
@@ -388,7 +488,7 @@ export function ChatContainer({
     };
   }, [currentUser.id, currentUser.full_name, supabase]);
 
-  // Broadcast typing signal when user types
+  // Broadcast typing signal
   const broadcastTyping = useCallback(() => {
     const now = Date.now();
     if (now - lastTypingBroadcastRef.current < 1800) return;
@@ -400,7 +500,9 @@ export function ChatContainer({
         ? `dm:${[currentUser.id, selectedUserId].sort().join("_")}`
         : activeTab === "channel" && selectedDeptId
           ? `dept:${selectedDeptId}`
-          : null;
+          : activeTab === "project" && selectedProjectId
+            ? `proj:${selectedProjectId}`
+            : null;
 
     if (!targetKey) return;
 
@@ -417,11 +519,12 @@ export function ChatContainer({
     activeTab,
     selectedUserId,
     selectedDeptId,
+    selectedProjectId,
     currentUser.id,
     currentUser.full_name,
   ]);
 
-  // Load Direct Messages when selectedUserId changes
+  // Load Direct Messages
   useEffect(() => {
     if (activeTab !== "direct" || !selectedUserId) return;
 
@@ -450,7 +553,6 @@ export function ChatContainer({
         setLoadingMessages(false);
       }
 
-      // Mark received unread messages as read
       await supabase
         .from("direct_messages")
         .update({ is_read: true })
@@ -458,7 +560,6 @@ export function ChatContainer({
         .eq("receiver_id", currentUser.id)
         .eq("is_read", false);
 
-      // Decrement unread map
       if (selectedUserId) {
         setUnreadMap((prev) => {
           const next = { ...prev };
@@ -474,7 +575,7 @@ export function ChatContainer({
     };
   }, [activeTab, selectedUserId, currentUser.id, supabase]);
 
-  // Load Channel Messages when selectedDeptId changes
+  // Load Channel Messages
   useEffect(() => {
     if (activeTab !== "channel" || !selectedDeptId) return;
 
@@ -510,11 +611,47 @@ export function ChatContainer({
     };
   }, [activeTab, selectedDeptId, markChannelAsRead, supabase]);
 
-  // Realtime Subscriptions (INSERT + UPDATE for both DMs and Channel Messages)
+  // Load Project Messages
+  useEffect(() => {
+    if (activeTab !== "project" || !selectedProjectId) return;
+
+    let isMounted = true;
+    async function loadPMs() {
+      setLoadingMessages(true);
+      const { data, error } = await supabase
+        .from("project_messages")
+        .select("*, author:profiles!project_messages_author_id_fkey(*)")
+        .eq("project_id", selectedProjectId)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (isMounted) {
+        if (!error && data) {
+          const uniqueMap = new Map<string, ProjectMessage>();
+          (data as ProjectMessage[])
+            .reverse()
+            .forEach((m) => uniqueMap.set(m.id, m));
+          setProjectMessages(Array.from(uniqueMap.values()));
+        }
+        setLoadingMessages(false);
+      }
+
+      if (selectedProjectId) {
+        markProjectAsRead(selectedProjectId);
+      }
+    }
+
+    loadPMs();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, selectedProjectId, markProjectAsRead, supabase]);
+
+  // Realtime Subscriptions (Direct, Channel, Project)
   useEffect(() => {
     const channelSuffix = `${currentUser.id}-${Date.now()}`;
 
-    // 1. Direct Messages subscription
+    // 1. Direct Messages
     const dmChannel = supabase
       .channel(`chat-direct-messages-${channelSuffix}`)
       .on(
@@ -537,7 +674,6 @@ export function ChatContainer({
               ? newDM.receiver_id
               : newDM.sender_id;
 
-          // Update sidebar preview immediately
           setDmLastMsgMap((prev) => ({
             ...prev,
             [partnerId]: {
@@ -550,7 +686,6 @@ export function ChatContainer({
             },
           }));
 
-          // If current conversation is open with this user
           if (
             activeTab === "direct" &&
             ((newDM.sender_id === selectedUserId &&
@@ -577,7 +712,6 @@ export function ChatContainer({
                 .eq("id", newDM.id);
             }
           } else if (newDM.receiver_id === currentUser.id) {
-            // Unread message from someone else
             setUnreadMap((prev) => ({
               ...prev,
               [newDM.sender_id]: (prev[newDM.sender_id] || 0) + 1,
@@ -617,7 +751,7 @@ export function ChatContainer({
       )
       .subscribe();
 
-    // 2. Channel Messages subscription
+    // 2. Channel Messages
     const cmChannel = supabase
       .channel(`chat-channel-messages-${channelSuffix}`)
       .on(
@@ -630,7 +764,6 @@ export function ChatContainer({
         (payload) => {
           const newCM = payload.new as ChannelMessage;
 
-          // Update department preview in sidebar
           setChannelLastMsgMap((prev) => ({
             ...prev,
             [newCM.department_id]: {
@@ -693,24 +826,107 @@ export function ChatContainer({
       )
       .subscribe();
 
+    // 3. Project Messages
+    const pmChannel = supabase
+      .channel(`chat-project-messages-${channelSuffix}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "alpha_lite",
+          table: "project_messages",
+        },
+        (payload) => {
+          const newPM = payload.new as ProjectMessage;
+
+          setProjectLastMsgMap((prev) => ({
+            ...prev,
+            [newPM.project_id]: {
+              content: newPM.is_deleted
+                ? "Tin nhắn đã thu hồi"
+                : newPM.content || "[Tệp đính kèm]",
+              createdAt: newPM.created_at,
+              senderId: newPM.author_id,
+              isDeleted: newPM.is_deleted,
+            },
+          }));
+
+          if (
+            activeTab === "project" &&
+            selectedProjectId &&
+            newPM.project_id === selectedProjectId
+          ) {
+            const author = allProfiles.find((p) => p.id === newPM.author_id);
+            const enrichedPM: ProjectMessage = {
+              ...newPM,
+              author,
+            };
+            setProjectMessages((prev) => {
+              if (prev.some((m) => m.id === enrichedPM.id)) return prev;
+              return [...prev, enrichedPM];
+            });
+            markProjectAsRead(selectedProjectId);
+          } else if (newPM.author_id !== currentUser.id) {
+            setProjectUnreadMap((prev) => ({
+              ...prev,
+              [newPM.project_id]: (prev[newPM.project_id] || 0) + 1,
+            }));
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "alpha_lite",
+          table: "project_messages",
+        },
+        (payload) => {
+          const updatedPM = payload.new as ProjectMessage;
+          setProjectMessages((prev) =>
+            prev.map((m) =>
+              m.id === updatedPM.id
+                ? {
+                    ...m,
+                    content: updatedPM.content,
+                    is_pinned: updatedPM.is_pinned,
+                    is_deleted: updatedPM.is_deleted,
+                    edited_at: updatedPM.edited_at,
+                    reactions: updatedPM.reactions,
+                  }
+                : m
+            )
+          );
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(dmChannel);
       supabase.removeChannel(cmChannel);
+      supabase.removeChannel(pmChannel);
     };
   }, [
     currentUser.id,
     activeTab,
     selectedUserId,
     selectedDeptId,
+    selectedProjectId,
     allProfiles,
     markChannelAsRead,
+    markProjectAsRead,
     supabase,
   ]);
 
   // Auto-scroll to bottom on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [directMessages.length, channelMessages.length, loadingMessages]);
+  }, [
+    directMessages.length,
+    channelMessages.length,
+    projectMessages.length,
+    loadingMessages,
+  ]);
 
   // File attachment helpers
   const attachFile = (file: File) => {
@@ -803,7 +1019,7 @@ export function ChatContainer({
     }
   };
 
-  // Helper to send a raw text message (also used by Convert-to-Task callback)
+  // Helper to send a raw text message
   const sendTextToCurrentConversation = useCallback(
     async (textContent: string) => {
       if (activeTab === "direct" && selectedUserId) {
@@ -843,9 +1059,33 @@ export function ChatContainer({
             return [...prev, insertedCM as ChannelMessage];
           });
         }
+      } else if (activeTab === "project" && selectedProjectId) {
+        const { data: insertedPM, error } = await supabase
+          .from("project_messages")
+          .insert({
+            project_id: selectedProjectId,
+            author_id: currentUser.id,
+            content: textContent,
+          })
+          .select("*, author:profiles!project_messages_author_id_fkey(*)")
+          .single();
+
+        if (!error && insertedPM) {
+          setProjectMessages((prev) => {
+            if (prev.some((m) => m.id === insertedPM.id)) return prev;
+            return [...prev, insertedPM as ProjectMessage];
+          });
+        }
       }
     },
-    [activeTab, selectedUserId, selectedDeptId, currentUser.id, supabase]
+    [
+      activeTab,
+      selectedUserId,
+      selectedDeptId,
+      selectedProjectId,
+      currentUser.id,
+      supabase,
+    ]
   );
 
   // Send or Edit Message
@@ -864,7 +1104,11 @@ export function ChatContainer({
       try {
         const nowIso = new Date().toISOString();
         const table =
-          activeTab === "direct" ? "direct_messages" : "channel_messages";
+          activeTab === "direct"
+            ? "direct_messages"
+            : activeTab === "channel"
+              ? "channel_messages"
+              : "project_messages";
 
         const { error } = await supabase
           .from(table)
@@ -881,8 +1125,16 @@ export function ChatContainer({
                 : m
             )
           );
-        } else {
+        } else if (activeTab === "channel") {
           setChannelMessages((prev) =>
+            prev.map((m) =>
+              m.id === editingMessage.id
+                ? { ...m, content: trimmed, edited_at: nowIso }
+                : m
+            )
+          );
+        } else {
+          setProjectMessages((prev) =>
             prev.map((m) =>
               m.id === editingMessage.id
                 ? { ...m, content: trimmed, edited_at: nowIso }
@@ -958,7 +1210,6 @@ export function ChatContainer({
           }));
         }
 
-        // Create notification for receiver
         await supabase.from("notifications").insert({
           user_id: selectedUserId,
           actor_id: currentUser.id,
@@ -969,7 +1220,6 @@ export function ChatContainer({
           is_read: false,
         });
 
-        // Trigger webhook dispatch
         fetch("/api/webhooks/dispatch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1014,7 +1264,6 @@ export function ChatContainer({
           }));
         }
 
-        // Notify mentioned users
         const mentionedIds = extractMentionedUserIds(
           trimmed,
           allProfiles
@@ -1027,6 +1276,57 @@ export function ChatContainer({
             title: `${currentUser.full_name} đã nhắc bạn trong kênh ${dept?.name || "phòng ban"}`,
             body: trimmed.slice(0, 100),
             link: `/chat?dept=${selectedDeptId}`,
+            is_read: false,
+          }));
+          await supabase.from("notifications").insert(notificationsToInsert);
+        }
+      } else if (activeTab === "project" && selectedProjectId) {
+        const projectObj = allProjects.find((p) => p.id === selectedProjectId);
+        const { data: insertedPM, error } = await supabase
+          .from("project_messages")
+          .insert({
+            project_id: selectedProjectId,
+            author_id: currentUser.id,
+            content:
+              trimmed ||
+              (attachmentName ? `[Đã gửi tệp: ${attachmentName}]` : ""),
+            attachment_url: attachmentUrl,
+            attachment_name: attachmentName,
+            reply_to_id: replyingTo?.id || null,
+          })
+          .select("*, author:profiles!project_messages_author_id_fkey(*)")
+          .single();
+
+        if (error) throw error;
+
+        if (insertedPM) {
+          setProjectMessages((prev) => {
+            if (prev.some((m) => m.id === insertedPM.id)) return prev;
+            return [...prev, insertedPM as ProjectMessage];
+          });
+          setProjectLastMsgMap((prev) => ({
+            ...prev,
+            [selectedProjectId]: {
+              content: insertedPM.content,
+              createdAt: insertedPM.created_at,
+              senderId: currentUser.id,
+            },
+          }));
+        }
+
+        // Notify mentioned users in project
+        const mentionedIds = extractMentionedUserIds(
+          trimmed,
+          allProfiles
+        ).filter((id) => id !== currentUser.id);
+        if (mentionedIds.length > 0) {
+          const notificationsToInsert = mentionedIds.map((uid) => ({
+            user_id: uid,
+            actor_id: currentUser.id,
+            type: "task_mentioned" as const,
+            title: `${currentUser.full_name} đã nhắc bạn trong dự án ${projectObj?.name || ""}`,
+            body: trimmed.slice(0, 100),
+            link: `/chat?project=${selectedProjectId}`,
             is_read: false,
           }));
           await supabase.from("notifications").insert(notificationsToInsert);
@@ -1071,7 +1371,7 @@ export function ChatContainer({
         .from("direct_messages")
         .update({ reactions: currentReactions })
         .eq("id", msg.id);
-    } else {
+    } else if (activeTab === "channel") {
       setChannelMessages((prev) =>
         prev.map((m) =>
           m.id === msg.id ? { ...m, reactions: currentReactions } : m
@@ -1079,6 +1379,16 @@ export function ChatContainer({
       );
       await supabase
         .from("channel_messages")
+        .update({ reactions: currentReactions })
+        .eq("id", msg.id);
+    } else {
+      setProjectMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id ? { ...m, reactions: currentReactions } : m
+        )
+      );
+      await supabase
+        .from("project_messages")
         .update({ reactions: currentReactions })
         .eq("id", msg.id);
     }
@@ -1097,7 +1407,7 @@ export function ChatContainer({
         .from("direct_messages")
         .update({ is_pinned: nextPinned })
         .eq("id", msg.id);
-    } else {
+    } else if (activeTab === "channel") {
       setChannelMessages((prev) =>
         prev.map((m) =>
           m.id === msg.id ? { ...m, is_pinned: nextPinned } : m
@@ -1105,6 +1415,16 @@ export function ChatContainer({
       );
       await supabase
         .from("channel_messages")
+        .update({ is_pinned: nextPinned })
+        .eq("id", msg.id);
+    } else {
+      setProjectMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id ? { ...m, is_pinned: nextPinned } : m
+        )
+      );
+      await supabase
+        .from("project_messages")
         .update({ is_pinned: nextPinned })
         .eq("id", msg.id);
     }
@@ -1126,7 +1446,7 @@ export function ChatContainer({
         .from("direct_messages")
         .update({ is_deleted: true, is_pinned: false })
         .eq("id", msg.id);
-    } else {
+    } else if (activeTab === "channel") {
       setChannelMessages((prev) =>
         prev.map((m) =>
           m.id === msg.id
@@ -1138,11 +1458,23 @@ export function ChatContainer({
         .from("channel_messages")
         .update({ is_deleted: true, is_pinned: false })
         .eq("id", msg.id);
+    } else {
+      setProjectMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id
+            ? { ...m, is_deleted: true, is_pinned: false }
+            : m
+        )
+      );
+      await supabase
+        .from("project_messages")
+        .update({ is_deleted: true, is_pinned: false })
+        .eq("id", msg.id);
     }
     toast.info("Đã thu hồi tin nhắn");
   };
 
-  // Scroll to a specific message by ID (for Reply quote click & Pinned messages click)
+  // Scroll to a specific message by ID
   const scrollToMessage = (msgId: string) => {
     const el = document.getElementById(`chat-msg-${msgId}`);
     if (el) {
@@ -1159,6 +1491,7 @@ export function ChatContainer({
     setActiveTab("direct");
     setSelectedUserId(userId);
     setSelectedDeptId(null);
+    setSelectedProjectId(null);
     setMobileShowSidebar(false);
     router.replace(`/chat?user=${userId}`);
   };
@@ -1167,12 +1500,23 @@ export function ChatContainer({
     setActiveTab("channel");
     setSelectedDeptId(deptId);
     setSelectedUserId(null);
+    setSelectedProjectId(null);
     setMobileShowSidebar(false);
     markChannelAsRead(deptId);
     router.replace(`/chat?dept=${deptId}`);
   };
 
-  // Smart sorted & filtered profiles for sidebar: Unread first -> Latest message -> Online -> A-Z
+  const handleSelectProject = (projId: string) => {
+    setActiveTab("project");
+    setSelectedProjectId(projId);
+    setSelectedUserId(null);
+    setSelectedDeptId(null);
+    setMobileShowSidebar(false);
+    markProjectAsRead(projId);
+    router.replace(`/chat?project=${projId}`);
+  };
+
+  // Smart sorted & filtered profiles
   const filteredProfiles = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const base = !q
@@ -1233,11 +1577,40 @@ export function ChatContainer({
     });
   }, [allDepartments, searchQuery, channelUnreadMap, channelLastMsgMap]);
 
+  const filteredProjects = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    const base = !q
+      ? allProjects
+      : allProjects.filter(
+          (p) =>
+            p.name?.toLowerCase().includes(q) ||
+            p.code?.toLowerCase().includes(q) ||
+            p.description?.toLowerCase().includes(q)
+        );
+
+    return [...base].sort((a, b) => {
+      const unreadA = projectUnreadMap[a.id] || 0;
+      const unreadB = projectUnreadMap[b.id] || 0;
+      if (unreadA !== unreadB) return unreadB - unreadA;
+
+      const lastA = projectLastMsgMap[a.id]?.createdAt
+        ? new Date(projectLastMsgMap[a.id].createdAt).getTime()
+        : 0;
+      const lastB = projectLastMsgMap[b.id]?.createdAt
+        ? new Date(projectLastMsgMap[b.id].createdAt).getTime()
+        : 0;
+      if (lastA !== lastB) return lastB - lastA;
+
+      return (a.name || "").localeCompare(b.name || "", "vi");
+    });
+  }, [allProjects, searchQuery, projectUnreadMap, projectLastMsgMap]);
+
   // Current active entity info
   const activeUser = otherProfiles.find((p) => p.id === selectedUserId);
   const activeDept = allDepartments.find((d) => d.id === selectedDeptId);
+  const activeProject = allProjects.find((p) => p.id === selectedProjectId);
 
-  // Unified messages list (deduplicated)
+  // Unified messages list
   const unifiedMessages: UnifiedMessage[] = useMemo(() => {
     const rawList: UnifiedMessage[] =
       activeTab === "direct"
@@ -1257,22 +1630,39 @@ export function ChatContainer({
             editedAt: m.edited_at || null,
             reactions: m.reactions || {},
           }))
-        : channelMessages.map((m) => ({
-            id: m.id,
-            authorId: m.author_id,
-            author: m.author || allProfiles.find((p) => p.id === m.author_id),
-            content: m.content,
-            attachmentUrl: m.attachment_url,
-            attachmentName: m.attachment_name,
-            createdAt: m.created_at,
-            isMine: m.author_id === currentUser.id,
-            isRead: true,
-            replyToId: m.parent_id || null,
-            isPinned: !!m.is_pinned,
-            isDeleted: !!m.is_deleted,
-            editedAt: m.edited_at || null,
-            reactions: m.reactions || {},
-          }));
+        : activeTab === "channel"
+          ? channelMessages.map((m) => ({
+              id: m.id,
+              authorId: m.author_id,
+              author: m.author || allProfiles.find((p) => p.id === m.author_id),
+              content: m.content,
+              attachmentUrl: m.attachment_url,
+              attachmentName: m.attachment_name,
+              createdAt: m.created_at,
+              isMine: m.author_id === currentUser.id,
+              isRead: true,
+              replyToId: m.parent_id || null,
+              isPinned: !!m.is_pinned,
+              isDeleted: !!m.is_deleted,
+              editedAt: m.edited_at || null,
+              reactions: m.reactions || {},
+            }))
+          : projectMessages.map((m) => ({
+              id: m.id,
+              authorId: m.author_id,
+              author: m.author || allProfiles.find((p) => p.id === m.author_id),
+              content: m.content,
+              attachmentUrl: m.attachment_url,
+              attachmentName: m.attachment_name,
+              createdAt: m.created_at,
+              isMine: m.author_id === currentUser.id,
+              isRead: true,
+              replyToId: m.reply_to_id || null,
+              isPinned: !!m.is_pinned,
+              isDeleted: !!m.is_deleted,
+              editedAt: m.edited_at || null,
+              reactions: m.reactions || {},
+            }));
 
     const seenIds = new Set<string>();
     return rawList.filter((msg) => {
@@ -1284,24 +1674,22 @@ export function ChatContainer({
     activeTab,
     directMessages,
     channelMessages,
+    projectMessages,
     allProfiles,
     currentUser.id,
   ]);
 
-  // Map message by ID for O(1) reply lookup
   const messageById = useMemo(() => {
     const map = new Map<string, UnifiedMessage>();
     unifiedMessages.forEach((m) => map.set(m.id, m));
     return map;
   }, [unifiedMessages]);
 
-  // Pinned messages in current conversation
   const pinnedMessages = useMemo(
     () => unifiedMessages.filter((m) => m.isPinned && !m.isDeleted),
     [unifiedMessages]
   );
 
-  // Group messages by date
   const groupedMessages = useMemo(() => {
     const groups: { dateLabel: string; items: UnifiedMessage[] }[] = [];
     const todayStr = new Date().toDateString();
@@ -1337,19 +1725,31 @@ export function ChatContainer({
     return groups;
   }, [unifiedMessages]);
 
-  // Current conversation typing indicator text
   const currentTypingUser = useMemo(() => {
     const key =
       activeTab === "direct" && selectedUserId
         ? `dm:${[currentUser.id, selectedUserId].sort().join("_")}`
         : activeTab === "channel" && selectedDeptId
           ? `dept:${selectedDeptId}`
-          : null;
+          : activeTab === "project" && selectedProjectId
+            ? `proj:${selectedProjectId}`
+            : null;
     return key ? typingUsers[key] : null;
-  }, [activeTab, selectedUserId, selectedDeptId, currentUser.id, typingUsers]);
+  }, [
+    activeTab,
+    selectedUserId,
+    selectedDeptId,
+    selectedProjectId,
+    currentUser.id,
+    typingUsers,
+  ]);
 
   const totalDmUnread = Object.values(unreadMap).reduce((a, b) => a + b, 0);
   const totalChannelUnread = Object.values(channelUnreadMap).reduce(
+    (a, b) => a + b,
+    0
+  );
+  const totalProjectUnread = Object.values(projectUnreadMap).reduce(
     (a, b) => a + b,
     0
   );
@@ -1357,7 +1757,7 @@ export function ChatContainer({
   return (
     <div className="flex h-[calc(100vh-6.5rem)] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
       {/* ====================================================================
-       * LEFT SIDEBAR: SMART INBOX (1-1 PROFILES & DEPARTMENTS)
+       * LEFT SIDEBAR: SMART INBOX (1-1 PROFILES, DEPARTMENTS, PROJECTS)
        * ==================================================================== */}
       <div
         className={cn(
@@ -1390,25 +1790,25 @@ export function ChatContainer({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm đồng nghiệp, phòng ban..."
+              placeholder="Tìm đồng nghiệp, phòng ban, dự án..."
               className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand"
             />
           </div>
 
-          {/* Section Tabs */}
-          <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800/80">
+          {/* 3 Section Tabs: 1-1, Phòng ban, Dự án */}
+          <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800/80">
             <button
               type="button"
               onClick={() => setActiveTab("direct")}
               className={cn(
-                "flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer",
+                "flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer",
                 activeTab === "direct"
                   ? "bg-white text-brand shadow-xs dark:bg-slate-900 dark:text-brand"
                   : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
               )}
             >
               <MessageSquare className="h-3.5 w-3.5" />
-              <span>Tin nhắn 1-1</span>
+              <span>1-1</span>
               {totalDmUnread > 0 && (
                 <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-white">
                   {totalDmUnread}
@@ -1420,7 +1820,7 @@ export function ChatContainer({
               type="button"
               onClick={() => setActiveTab("channel")}
               className={cn(
-                "flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer",
+                "flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer",
                 activeTab === "channel"
                   ? "bg-white text-brand shadow-xs dark:bg-slate-900 dark:text-brand"
                   : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
@@ -1431,6 +1831,25 @@ export function ChatContainer({
               {totalChannelUnread > 0 && (
                 <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-white">
                   {totalChannelUnread}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("project")}
+              className={cn(
+                "flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer",
+                activeTab === "project"
+                  ? "bg-white text-brand shadow-xs dark:bg-slate-900 dark:text-brand"
+                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+              )}
+            >
+              <FolderKanban className="h-3.5 w-3.5" />
+              <span>Dự án</span>
+              {totalProjectUnread > 0 && (
+                <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-white">
+                  {totalProjectUnread}
                 </span>
               )}
             </button>
@@ -1463,7 +1882,6 @@ export function ChatContainer({
                         : "hover:bg-slate-200/50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200"
                     )}
                   >
-                    {/* Avatar with real-time Presence indicator */}
                     <div className="relative shrink-0">
                       {p.avatar_url ? (
                         <img
@@ -1480,7 +1898,9 @@ export function ChatContainer({
                         title={isOnline ? "Đang trực tuyến" : "Ngoại tuyến"}
                         className={cn(
                           "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-slate-900",
-                          isOnline ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+                          isOnline
+                            ? "bg-emerald-500"
+                            : "bg-slate-300 dark:bg-slate-600"
                         )}
                       />
                     </div>
@@ -1525,7 +1945,7 @@ export function ChatContainer({
                 );
               })
             )
-          ) : (
+          ) : activeTab === "channel" ? (
             filteredDepartments.map((dept) => {
               const isSelected = selectedDeptId === dept.id;
               const unread = channelUnreadMap[dept.id] || 0;
@@ -1601,6 +2021,87 @@ export function ChatContainer({
                 </button>
               );
             })
+          ) : (
+            filteredProjects.map((project) => {
+              const isSelected = selectedProjectId === project.id;
+              const unread = projectUnreadMap[project.id] || 0;
+              const lastMsg = projectLastMsgMap[project.id];
+              const lastSender = lastMsg
+                ? allProfiles.find((p) => p.id === lastMsg.senderId)
+                : null;
+
+              return (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => handleSelectProject(project.id)}
+                  className={cn(
+                    "w-full flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition cursor-pointer",
+                    isSelected
+                      ? "bg-brand/10 dark:bg-brand/20 text-brand"
+                      : "hover:bg-slate-200/50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-bold text-xs",
+                      isSelected
+                        ? "bg-brand text-white"
+                        : "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                    )}
+                    style={
+                      !isSelected && project.color
+                        ? { backgroundColor: `${project.color}20`, color: project.color }
+                        : undefined
+                    }
+                  >
+                    <FolderKanban className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <p
+                        className={cn(
+                          "truncate text-xs text-slate-900 dark:text-slate-100",
+                          unread > 0 ? "font-bold" : "font-semibold"
+                        )}
+                      >
+                        {project.name}
+                      </p>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {lastMsg && (
+                          <span className="text-[10px] text-slate-400">
+                            {formatRelativeShort(lastMsg.createdAt)}
+                          </span>
+                        )}
+                        {unread > 0 ? (
+                          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-white">
+                            {unread}
+                          </span>
+                        ) : (
+                          project.code && (
+                            <span className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-[10px] font-mono text-slate-500">
+                              {project.code}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+                    <p
+                      className={cn(
+                        "truncate text-[11px] mt-0.5",
+                        unread > 0
+                          ? "font-semibold text-slate-800 dark:text-slate-200"
+                          : "text-slate-400 dark:text-slate-500"
+                      )}
+                    >
+                      {lastMsg
+                        ? `${lastMsg.senderId === currentUser.id ? "Bạn" : lastSender?.full_name?.split(" ").pop() || "Đồng nghiệp"}: ${lastMsg.content}`
+                        : project.description || "Luồng trao đổi dự án"}
+                    </p>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       </div>
@@ -1617,7 +2118,6 @@ export function ChatContainer({
         {/* Chat Pane Header */}
         <div className="h-16 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xs">
           <div className="flex items-center gap-3 min-w-0">
-            {/* Mobile back button */}
             <button
               type="button"
               onClick={() => setMobileShowSidebar(true)}
@@ -1704,12 +2204,55 @@ export function ChatContainer({
                   </p>
                 </div>
               </div>
+            ) : activeTab === "project" && activeProject ? (
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-bold text-sm"
+                  style={{
+                    backgroundColor: `${activeProject.color || "#3b82f6"}20`,
+                    color: activeProject.color || "#3b82f6",
+                  }}
+                >
+                  <FolderKanban className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="truncate text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                    {activeProject.name}
+                    {activeProject.code && (
+                      <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono font-medium text-slate-600 dark:text-slate-300">
+                        {activeProject.code}
+                      </span>
+                    )}
+                  </h2>
+                  <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                    {currentTypingUser ? (
+                      <span className="text-brand font-medium animate-pulse">
+                        ✍️ {currentTypingUser} đang soạn tin nhắn...
+                      </span>
+                    ) : (
+                      activeProject.description || "Trò chuyện & Trao đổi dự án"
+                    )}
+                  </p>
+                </div>
+              </div>
             ) : (
               <p className="text-xs text-slate-400">Chọn cuộc trò chuyện</p>
             )}
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Quick Link to Project Page if on project tab */}
+            {activeTab === "project" && activeProject && (
+              <Link
+                href={`/projects/${activeProject.id}`}
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                title="Mở bảng công việc dự án"
+              >
+                <span>Xem dự án</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            )}
+
             {/* Pinned Messages Toggle Button */}
             <button
               type="button"
@@ -1733,7 +2276,7 @@ export function ChatContainer({
           </div>
         </div>
 
-        {/* Pinned Message Quick Banner (shows latest pinned message) */}
+        {/* Pinned Message Quick Banner */}
         {pinnedMessages.length > 0 && !showPinnedDrawer && (
           <div className="flex items-center justify-between gap-2 border-b border-brand/20 bg-brand-soft/30 px-4 py-2 text-xs dark:bg-brand-soft-dark/20 shrink-0">
             <button
@@ -1777,14 +2320,18 @@ export function ChatContainer({
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand mb-3 dark:bg-brand-soft-dark">
                   {activeTab === "direct" ? (
                     <MessageSquare className="h-6 w-6" />
-                  ) : (
+                  ) : activeTab === "channel" ? (
                     <Hash className="h-6 w-6" />
+                  ) : (
+                    <FolderKanban className="h-6 w-6" />
                   )}
                 </div>
                 <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
                   {activeTab === "direct"
                     ? `Bắt đầu cuộc trò chuyện với ${activeUser?.full_name || "đồng nghiệp"}`
-                    : `Chào mừng đến với kênh ${activeDept?.name || "phòng ban"}`}
+                    : activeTab === "channel"
+                      ? `Chào mừng đến với kênh ${activeDept?.name || "phòng ban"}`
+                      : `Trao đổi về dự án ${activeProject?.name || ""}`}
                 </h3>
                 <p className="mt-1 text-xs text-slate-400 max-w-sm">
                   Gõ tin nhắn, dán ảnh trực tiếp (Ctrl+V), nhắc tên bằng @ hoặc
@@ -1892,7 +2439,7 @@ export function ChatContainer({
                             </div>
                           )}
 
-                          {/* Floating Hover Toolbar (Hidden if message is deleted) */}
+                          {/* Floating Hover Toolbar */}
                           {!msg.isDeleted && (
                             <div
                               className={cn(
@@ -1969,7 +2516,7 @@ export function ChatContainer({
                                 <Pin className="h-3.5 w-3.5" />
                               </button>
 
-                              {/* Edit & Unsend (Only for own messages) */}
+                              {/* Edit & Unsend */}
                               {msg.isMine && (
                                 <>
                                   <button
@@ -2009,7 +2556,6 @@ export function ChatContainer({
                                   : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs"
                             )}
                           >
-                            {/* Pinned badge inside bubble */}
                             {msg.isPinned && !msg.isDeleted && (
                               <div
                                 className={cn(
@@ -2022,7 +2568,6 @@ export function ChatContainer({
                               </div>
                             )}
 
-                            {/* Quoted Reply Snippet */}
                             {!msg.isDeleted && repliedParent && (
                               <button
                                 type="button"
@@ -2048,7 +2593,6 @@ export function ChatContainer({
                               </button>
                             )}
 
-                            {/* Text content */}
                             {msg.isDeleted ? (
                               <span>Tin nhắn đã được thu hồi</span>
                             ) : (
@@ -2075,7 +2619,6 @@ export function ChatContainer({
                               </div>
                             )}
 
-                            {/* Attachment preview */}
                             {!msg.isDeleted && msg.attachmentUrl && (
                               <div className="mt-2.5 pt-2 border-t border-black/10 dark:border-white/10">
                                 {msg.attachmentUrl.match(
@@ -2117,7 +2660,6 @@ export function ChatContainer({
                             )}
                           </div>
 
-                          {/* Emoji Reaction Pills below bubble */}
                           {!msg.isDeleted && reactionEntries.length > 0 && (
                             <div
                               className={cn(
@@ -2158,7 +2700,6 @@ export function ChatContainer({
                             </div>
                           )}
 
-                          {/* Time & Read check for sent messages */}
                           {msg.isMine && !isGroupedWithNext && (
                             <div className="flex items-center justify-end gap-1 mt-1 pr-1 text-[10px] text-slate-400">
                               <span>{timeStr}</span>
@@ -2180,9 +2721,7 @@ export function ChatContainer({
             <div ref={messagesEndRef} />
           </div>
 
-          {/* ====================================================================
-           * RIGHT DRAWER: PINNED MESSAGES PANEL
-           * ==================================================================== */}
+          {/* RIGHT DRAWER: PINNED MESSAGES PANEL */}
           {showPinnedDrawer && (
             <div className="w-72 border-l border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 flex flex-col shrink-0">
               <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
@@ -2340,7 +2879,6 @@ export function ChatContainer({
           )}
 
           <div className="flex items-end gap-2">
-            {/* Hidden file input */}
             <input
               type="file"
               ref={fileInputRef}
@@ -2348,7 +2886,6 @@ export function ChatContainer({
               className="hidden"
             />
 
-            {/* Attachment Button */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -2359,7 +2896,6 @@ export function ChatContainer({
               <Paperclip className="h-4 w-4" />
             </button>
 
-            {/* Mention Textarea */}
             <div className="flex-1 min-w-0">
               <MentionTextarea
                 profiles={allProfiles}
@@ -2375,7 +2911,9 @@ export function ChatContainer({
                     ? "Nhập nội dung chỉnh sửa... (Enter để lưu, Esc để hủy)"
                     : activeTab === "direct"
                       ? `Gửi tin nhắn cho ${activeUser?.full_name || "đồng nghiệp"}... (@ nhắc tên, Ctrl+V dán ảnh)`
-                      : `Nhắn vào kênh ${activeDept?.name || "phòng ban"}... (@ nhắc tên, Ctrl+V dán ảnh)`
+                      : activeTab === "channel"
+                        ? `Nhắn vào kênh ${activeDept?.name || "phòng ban"}... (@ nhắc tên, Ctrl+V dán ảnh)`
+                        : `Nhắn vào dự án ${activeProject?.name || ""}... (@ nhắc tên, Ctrl+V dán ảnh)`
                 }
                 rows={1}
                 onKeyDown={(e) => {
@@ -2395,7 +2933,6 @@ export function ChatContainer({
               />
             </div>
 
-            {/* Send / Save Edit Button */}
             <button
               type="button"
               onClick={handleSendMessage}
@@ -2419,9 +2956,7 @@ export function ChatContainer({
         </div>
       </div>
 
-      {/* ====================================================================
-       * MODAL: CONVERT CHAT MESSAGE TO PROJECT TASK
-       * ==================================================================== */}
+      {/* MODAL: CONVERT CHAT MESSAGE TO PROJECT TASK */}
       <ConvertMessageToTaskModal
         message={convertModalMessage}
         currentUser={currentUser}

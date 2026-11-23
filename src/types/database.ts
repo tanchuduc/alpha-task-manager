@@ -317,9 +317,31 @@ export interface ChannelMessage {
   author?: Profile;
 }
 
+export interface ProjectMessage {
+  id: string;
+  project_id: string;
+  author_id: string;
+  content: string;
+  attachment_url: string | null;
+  attachment_name: string | null;
+  reply_to_id?: string | null;
+  is_pinned?: boolean;
+  is_deleted?: boolean;
+  edited_at?: string | null;
+  reactions?: Record<string, string[]>;
+  created_at: string;
+  author?: Profile;
+}
+
 export interface ChannelReadState {
   user_id: string;
   department_id: string;
+  last_read_at: string;
+}
+
+export interface ProjectChatReadState {
+  user_id: string;
+  project_id: string;
   last_read_at: string;
 }
 
