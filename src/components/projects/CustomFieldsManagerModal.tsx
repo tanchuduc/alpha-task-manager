@@ -12,6 +12,7 @@ import {
   Calendar,
   Loader2,
   Sparkles,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -55,11 +56,19 @@ const FIELD_TYPE_OPTIONS: Array<{
     icon: Calendar,
     hint: "Ngày nộp bản thảo, Ngày xin giấy phép, Ngày phát hành...",
   },
+  {
+    type: "people",
+    label: "Nhân sự nội bộ (People)",
+    icon: Users,
+    hint: "Biên tập viên chịu trách nhiệm, Họa sĩ vẽ bìa, Người hiệu đính...",
+  },
 ];
 
 // Gợi ý trường chuẩn ngành xuất bản sách Alpha Books
 const SUGGESTED_PRESETS = [
   { name: "Tác giả / Dịch giả", type: "text" as CustomFieldType, options: [] },
+  { name: "Biên tập viên chính", type: "people" as CustomFieldType, options: [] },
+  { name: "Họa sĩ vẽ bìa", type: "people" as CustomFieldType, options: [] },
   { name: "Số trang dự kiến", type: "number" as CustomFieldType, options: [] },
   {
     name: "Khổ sách",
@@ -74,6 +83,7 @@ const SUGGESTED_PRESETS = [
     options: ["Kinh doanh & Quản trị", "Tâm lý kỹ năng", "Khoa học công nghệ", "Thiếu nhi", "Bìa cứng giới hạn"],
   },
   { name: "Hạn nộp bản dịch cuối", type: "date" as CustomFieldType, options: [] },
+  { name: "Mã số ISBN / CXB", type: "text" as CustomFieldType, options: [] },
 ];
 
 export default function CustomFieldsManagerModal({

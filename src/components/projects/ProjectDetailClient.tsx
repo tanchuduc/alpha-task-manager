@@ -38,6 +38,7 @@ import {
   MessageSquare,
   Sliders,
   Settings,
+  Columns3,
   ShieldCheck,
   Lock,
   Layers,
@@ -65,6 +66,7 @@ import type {
   Department,
   Profile,
   Project,
+  ProjectCustomField,
   ProjectMember,
   ProjectPhase,
   ProjectStatus,
@@ -325,6 +327,126 @@ function DroppableKanbanColumn({
 }
 
 /* ============================================================================
+ * Task Custom Columns Helpers
+ * ========================================================================== */
+
+function TaskCustomCells({
+  task,
+  customFields,
+  customValuesMap,
+  profilesMap,
+  onOpenDrawer,
+}: {
+  task: Task;
+  customFields: ProjectCustomField[];
+  customValuesMap: Record<string, Record<string, string>>;
+  profilesMap: Map<string, Profile>;
+  onOpenDrawer: (taskId: string) => void;
+}) {
+  return (
+    <>
+      {customFields.map((field) => {
+        const val = customValuesMap[task.id]?.[field.id] || "";
+        const isPeople = field.field_type === "people";
+        const peopleProfile = isPeople && val ? profilesMap.get(val) : null;
+
+        return (
+          <div
+            key={field.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenDrawer(task.id);
+            }}
+            className="hidden lg:flex min-w-[120px] max-w-[170px] shrink-0 items-center text-xs text-slate-700 dark:text-slate-300 px-2 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/70 rounded py-0.5 transition"
+            title={`${field.name}: ${val || "Chưa có"}`}
+          >
+            {isPeople ? (
+              peopleProfile ? (
+                <span className="inline-flex items-center gap-1.5 truncate">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[10px] font-bold text-brand dark:bg-brand/20">
+                    {getInitials(peopleProfile.full_name)}
+                  </span>
+                  <span className="truncate">{peopleProfile.full_name}</span>
+                </span>
+              ) : (
+                <span className="text-slate-300 dark:text-slate-600 italic">
+                  —
+                </span>
+              )
+            ) : field.field_type === "dropdown" ? (
+              val ? (
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 truncate">
+                  {val}
+                </span>
+              ) : (
+                <span className="text-slate-300 dark:text-slate-600 italic">
+                  —
+                </span>
+              )
+            ) : field.field_type === "date" ? (
+              val ? (
+                <span className="text-slate-600 dark:text-slate-300">
+                  {formatDateVi(val)}
+                </span>
+              ) : (
+                <span className="text-slate-300 dark:text-slate-600 italic">
+                  —
+                </span>
+              )
+            ) : val ? (
+              <span className="truncate font-mono text-[11px] text-slate-700 dark:text-slate-200">
+                {val}
+              </span>
+            ) : (
+              <span className="text-slate-300 dark:text-slate-600 italic">
+                —
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function TaskListTableHeader({
+  visibleCustomFields,
+  visibleStdColumns,
+}: {
+  visibleCustomFields: ProjectCustomField[];
+  visibleStdColumns: {
+    priority: boolean;
+    due_date: boolean;
+    assignees: boolean;
+  };
+}) {
+  return (
+    <div className="hidden sm:flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:bg-slate-800/30">
+      <div className="flex-1 min-w-[200px]">Công việc</div>
+      <div className="flex items-center gap-3">
+        {visibleCustomFields.map((f) => (
+          <div
+            key={f.id}
+            className="hidden lg:block min-w-[120px] max-w-[170px] px-2 truncate"
+          >
+            {f.name}
+          </div>
+        ))}
+        {visibleStdColumns.priority && (
+          <div className="w-20 text-center">Ưu tiên</div>
+        )}
+        {visibleStdColumns.due_date && (
+          <div className="w-24 text-right">Hạn chót</div>
+        )}
+        {visibleStdColumns.assignees && (
+          <div className="w-16 text-right">Phân công</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
  * Main ProjectDetailClient
  * ========================================================================== */
 
@@ -380,6 +502,21 @@ export default function ProjectDetailClient({
     Record<string, boolean>
   >({});
   const [phaseQuickAdd, setPhaseQuickAdd] = useState<Record<string, string>>({});
+
+  // Custom Fields & Dynamic Columns State
+  const [customFields, setCustomFields] = useState<ProjectCustomField[]>([]);
+  const [customValuesMap, setCustomValuesMap] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [visibleColumnIds, setVisibleColumnIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [visibleStdColumns, setVisibleStdColumns] = useState({
+    priority: true,
+    due_date: true,
+    assignees: true,
+  });
 
   // Quick-add per status in List view
   const [listQuickAdd, setListQuickAdd] = useState<Record<string, string>>({});
@@ -592,6 +729,54 @@ export default function ProjectDetailClient({
       supabase.removeChannel(channel);
     };
   }, [supabase, project.id, fetchPhases]);
+
+  // Refetch custom fields and their values
+  const fetchCustomFieldsAndValues = useCallback(async () => {
+    const [{ data: fieldsData }, { data: valuesData }] = await Promise.all([
+      supabase
+        .from("project_custom_fields")
+        .select("*")
+        .eq("project_id", project.id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("task_custom_field_values")
+        .select("task_id, field_id, value"),
+    ]);
+
+    if (fieldsData) {
+      const fList = fieldsData as ProjectCustomField[];
+      setCustomFields(fList);
+      setVisibleColumnIds((prev) => {
+        if (prev.size === 0) {
+          return new Set(fList.map((f) => f.id));
+        }
+        return prev;
+      });
+    }
+
+    if (valuesData) {
+      const map: Record<string, Record<string, string>> = {};
+      for (const row of valuesData as {
+        task_id: string;
+        field_id: string;
+        value: string;
+      }[]) {
+        if (!map[row.task_id]) map[row.task_id] = {};
+        map[row.task_id][row.field_id] = row.value;
+      }
+      setCustomValuesMap(map);
+    }
+  }, [supabase, project.id]);
+
+  useEffect(() => {
+    fetchCustomFieldsAndValues();
+  }, [fetchCustomFieldsAndValues]);
+
+  const visibleCustomFields = useMemo(
+    () => customFields.filter((f) => visibleColumnIds.has(f.id)),
+    [customFields, visibleColumnIds]
+  );
 
   async function handleQuickAddTaskToPhase(
     phaseId: string | null,
@@ -1262,6 +1447,145 @@ export default function ProjectDetailClient({
               <option value="medium">Trung bình</option>
               <option value="low">Thấp</option>
             </select>
+
+            {/* Column Visibility Selector (Only in List View) */}
+            {viewMode === "list" && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowColumnPicker((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                  title="Tùy chỉnh ẩn/hiện cột tùy biến"
+                >
+                  <Columns3 className="h-3.5 w-3.5 text-slate-500" />
+                  <span>
+                    Cột (
+                    {visibleCustomFields.length +
+                      (visibleStdColumns.priority ? 1 : 0) +
+                      (visibleStdColumns.due_date ? 1 : 0) +
+                      (visibleStdColumns.assignees ? 1 : 0)}
+                    )
+                  </span>
+                </button>
+
+                {showColumnPicker && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-30"
+                      onClick={() => setShowColumnPicker(false)}
+                    />
+                    <div className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                        <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                          Tùy chọn hiển thị cột
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowColumnPicker(false);
+                            setShowCustomFieldsModal(true);
+                          }}
+                          className="text-[11px] font-semibold text-brand hover:underline cursor-pointer"
+                        >
+                          + Thêm cột mới
+                        </button>
+                      </div>
+
+                      {/* Cột tiêu chuẩn */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Cột mặc định
+                        </span>
+                        <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded">
+                          <input
+                            type="checkbox"
+                            checked={visibleStdColumns.priority}
+                            onChange={(e) =>
+                              setVisibleStdColumns((prev) => ({
+                                ...prev,
+                                priority: e.target.checked,
+                              }))
+                            }
+                            className="rounded border-slate-300 text-brand focus:ring-brand accent-brand"
+                          />
+                          <span>Mức ưu tiên</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded">
+                          <input
+                            type="checkbox"
+                            checked={visibleStdColumns.due_date}
+                            onChange={(e) =>
+                              setVisibleStdColumns((prev) => ({
+                                ...prev,
+                                due_date: e.target.checked,
+                              }))
+                            }
+                            className="rounded border-slate-300 text-brand focus:ring-brand accent-brand"
+                          />
+                          <span>Hạn chót (Deadline)</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded">
+                          <input
+                            type="checkbox"
+                            checked={visibleStdColumns.assignees}
+                            onChange={(e) =>
+                              setVisibleStdColumns((prev) => ({
+                                ...prev,
+                                assignees: e.target.checked,
+                              }))
+                            }
+                            className="rounded border-slate-300 text-brand focus:ring-brand accent-brand"
+                          />
+                          <span>Người thực hiện</span>
+                        </label>
+                      </div>
+
+                      {/* Cột tùy biến xuất bản */}
+                      <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Trường tùy biến ({customFields.length})
+                        </span>
+                        {customFields.length === 0 ? (
+                          <p className="text-[11px] text-slate-400 italic">
+                            Chưa có trường tùy biến nào.
+                          </p>
+                        ) : (
+                          <div className="max-h-48 overflow-y-auto space-y-1">
+                            {customFields.map((f) => {
+                              const isChecked = visibleColumnIds.has(f.id);
+                              return (
+                                <label
+                                  key={f.id}
+                                  className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded"
+                                >
+                                  <span className="flex items-center gap-2 truncate">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        const next = new Set(visibleColumnIds);
+                                        if (e.target.checked) next.add(f.id);
+                                        else next.delete(f.id);
+                                        setVisibleColumnIds(next);
+                                      }}
+                                      className="rounded border-slate-300 text-brand focus:ring-brand accent-brand"
+                                    />
+                                    <span className="truncate">{f.name}</span>
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 uppercase ml-1">
+                                    {f.field_type}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1358,6 +1682,12 @@ export default function ProjectDetailClient({
 
                     {!collapsed && (
                       <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {groupTasks.length > 0 && (
+                          <TaskListTableHeader
+                            visibleCustomFields={visibleCustomFields}
+                            visibleStdColumns={visibleStdColumns}
+                          />
+                        )}
                         {groupTasks.map((task) => {
                           const isDone =
                             Boolean(task.completed_at) ||
@@ -1452,53 +1782,67 @@ export default function ProjectDetailClient({
                               </div>
 
                               <div className="flex items-center gap-3">
-                                <span
-                                  className={cn(
-                                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                                    pCfg.bg,
-                                    pCfg.color
-                                  )}
-                                >
+                                <TaskCustomCells
+                                  task={task}
+                                  customFields={visibleCustomFields}
+                                  customValuesMap={customValuesMap}
+                                  profilesMap={profilesMap}
+                                  onOpenDrawer={openTaskDrawer}
+                                />
+
+                                {visibleStdColumns.priority && (
                                   <span
                                     className={cn(
-                                      "h-1.5 w-1.5 rounded-full",
-                                      pCfg.dot
+                                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                      pCfg.bg,
+                                      pCfg.color
                                     )}
-                                  />
-                                  {pCfg.label}
-                                </span>
+                                  >
+                                    <span
+                                      className={cn(
+                                        "h-1.5 w-1.5 rounded-full",
+                                        pCfg.dot
+                                      )}
+                                    />
+                                    {pCfg.label}
+                                  </span>
+                                )}
 
-                                <span
-                                  className={cn(
-                                    "w-24 text-right text-xs",
-                                    overdue
-                                      ? "font-semibold text-red-600 dark:text-red-400"
-                                      : "text-slate-500 dark:text-slate-400"
-                                  )}
-                                >
-                                  {task.due_date
-                                    ? formatDateVi(task.due_date)
-                                    : "—"}
-                                </span>
+                                {visibleStdColumns.due_date && (
+                                  <span
+                                    className={cn(
+                                      "w-24 text-right text-xs",
+                                      overdue
+                                        ? "font-semibold text-red-600 dark:text-red-400"
+                                        : "text-slate-500 dark:text-slate-400"
+                                    )}
+                                  >
+                                    {task.due_date
+                                      ? formatDateVi(task.due_date)
+                                      : "—"}
+                                  </span>
+                                )}
 
-                                <div className="flex w-16 justify-end -space-x-1.5">
-                                  {task.assignees &&
-                                  task.assignees.length > 0 ? (
-                                    task.assignees.slice(0, 3).map((a) => (
-                                      <span
-                                        key={a.id}
-                                        title={a.full_name}
-                                        className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
-                                      >
-                                        {getInitials(a.full_name)}
+                                {visibleStdColumns.assignees && (
+                                  <div className="flex w-16 justify-end -space-x-1.5">
+                                    {task.assignees &&
+                                    task.assignees.length > 0 ? (
+                                      task.assignees.slice(0, 3).map((a) => (
+                                        <span
+                                          key={a.id}
+                                          title={a.full_name}
+                                          className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
+                                        >
+                                          {getInitials(a.full_name)}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[11px] text-slate-300 dark:text-slate-600">
+                                        —
                                       </span>
-                                    ))
-                                  ) : (
-                                    <span className="text-[11px] text-slate-300 dark:text-slate-600">
-                                      —
-                                    </span>
-                                  )}
-                                </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -1615,6 +1959,12 @@ export default function ProjectDetailClient({
 
                     {!collapsed && (
                       <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {unassigned.length > 0 && (
+                          <TaskListTableHeader
+                            visibleCustomFields={visibleCustomFields}
+                            visibleStdColumns={visibleStdColumns}
+                          />
+                        )}
                         {unassigned.map((task) => {
                           const isDone =
                             Boolean(task.completed_at) ||
@@ -1693,37 +2043,78 @@ export default function ProjectDetailClient({
                                     {st.name}
                                   </span>
                                 )}
+
+                                {(task.subtasks_count ?? 0) > 0 && (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                    <CheckSquare className="h-3 w-3" />
+                                    {task.subtasks_done ?? 0}/
+                                    {task.subtasks_count}
+                                  </span>
+                                )}
                               </div>
 
                               <div className="flex items-center gap-3">
-                                <span
-                                  className={cn(
-                                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                                    pCfg.bg,
-                                    pCfg.color
-                                  )}
-                                >
+                                <TaskCustomCells
+                                  task={task}
+                                  customFields={visibleCustomFields}
+                                  customValuesMap={customValuesMap}
+                                  profilesMap={profilesMap}
+                                  onOpenDrawer={openTaskDrawer}
+                                />
+
+                                {visibleStdColumns.priority && (
                                   <span
                                     className={cn(
-                                      "h-1.5 w-1.5 rounded-full",
-                                      pCfg.dot
+                                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                      pCfg.bg,
+                                      pCfg.color
                                     )}
-                                  />
-                                  {pCfg.label}
-                                </span>
+                                  >
+                                    <span
+                                      className={cn(
+                                        "h-1.5 w-1.5 rounded-full",
+                                        pCfg.dot
+                                      )}
+                                    />
+                                    {pCfg.label}
+                                  </span>
+                                )}
 
-                                <span
-                                  className={cn(
-                                    "w-24 text-right text-xs",
-                                    overdue
-                                      ? "font-semibold text-red-600 dark:text-red-400"
-                                      : "text-slate-500 dark:text-slate-400"
-                                  )}
-                                >
-                                  {task.due_date
-                                    ? formatDateVi(task.due_date)
-                                    : "—"}
-                                </span>
+                                {visibleStdColumns.due_date && (
+                                  <span
+                                    className={cn(
+                                      "w-24 text-right text-xs",
+                                      overdue
+                                        ? "font-semibold text-red-600 dark:text-red-400"
+                                        : "text-slate-500 dark:text-slate-400"
+                                    )}
+                                  >
+                                    {task.due_date
+                                      ? formatDateVi(task.due_date)
+                                      : "—"}
+                                  </span>
+                                )}
+
+                                {visibleStdColumns.assignees && (
+                                  <div className="flex w-16 justify-end -space-x-1.5">
+                                    {task.assignees &&
+                                    task.assignees.length > 0 ? (
+                                      task.assignees.slice(0, 3).map((a) => (
+                                        <span
+                                          key={a.id}
+                                          title={a.full_name}
+                                          className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
+                                        >
+                                          {getInitials(a.full_name)}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[11px] text-slate-300 dark:text-slate-600">
+                                        —
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -1845,6 +2236,12 @@ export default function ProjectDetailClient({
 
                 {!collapsed && (
                   <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {groupTasks.length > 0 && (
+                      <TaskListTableHeader
+                        visibleCustomFields={visibleCustomFields}
+                        visibleStdColumns={visibleStdColumns}
+                      />
+                    )}
                     {groupTasks.map((task) => {
                       const isDone =
                         Boolean(task.completed_at) || st.category === "done";
@@ -1921,53 +2318,64 @@ export default function ProjectDetailClient({
                           </div>
 
                           <div className="flex items-center gap-3">
-                            {/* Priority */}
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                                pCfg.bg,
-                                pCfg.color
-                              )}
-                            >
+                            <TaskCustomCells
+                              task={task}
+                              customFields={visibleCustomFields}
+                              customValuesMap={customValuesMap}
+                              profilesMap={profilesMap}
+                              onOpenDrawer={openTaskDrawer}
+                            />
+
+                            {visibleStdColumns.priority && (
                               <span
                                 className={cn(
-                                  "h-1.5 w-1.5 rounded-full",
-                                  pCfg.dot
+                                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                  pCfg.bg,
+                                  pCfg.color
                                 )}
-                              />
-                              {pCfg.label}
-                            </span>
+                              >
+                                <span
+                                  className={cn(
+                                    "h-1.5 w-1.5 rounded-full",
+                                    pCfg.dot
+                                  )}
+                                />
+                                {pCfg.label}
+                              </span>
+                            )}
 
-                            {/* Due date */}
-                            <span
-                              className={cn(
-                                "w-24 text-right text-xs",
-                                overdue
-                                  ? "font-semibold text-red-600 dark:text-red-400"
-                                  : "text-slate-500 dark:text-slate-400"
-                              )}
-                            >
-                              {task.due_date ? formatDateVi(task.due_date) : "—"}
-                            </span>
+                            {visibleStdColumns.due_date && (
+                              <span
+                                className={cn(
+                                  "w-24 text-right text-xs",
+                                  overdue
+                                    ? "font-semibold text-red-600 dark:text-red-400"
+                                    : "text-slate-500 dark:text-slate-400"
+                                )}
+                              >
+                                {task.due_date ? formatDateVi(task.due_date) : "—"}
+                              </span>
+                            )}
 
-                            {/* Assignees */}
-                            <div className="flex w-16 justify-end -space-x-1.5">
-                              {task.assignees && task.assignees.length > 0 ? (
-                                task.assignees.slice(0, 3).map((a) => (
-                                  <span
-                                    key={a.id}
-                                    title={a.full_name}
-                                    className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
-                                  >
-                                    {getInitials(a.full_name)}
+                            {visibleStdColumns.assignees && (
+                              <div className="flex w-16 justify-end -space-x-1.5">
+                                {task.assignees && task.assignees.length > 0 ? (
+                                  task.assignees.slice(0, 3).map((a) => (
+                                    <span
+                                      key={a.id}
+                                      title={a.full_name}
+                                      className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand-soft text-[10px] font-bold text-brand dark:border-slate-900 dark:bg-brand/25"
+                                    >
+                                      {getInitials(a.full_name)}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[11px] text-slate-300 dark:text-slate-600">
+                                    —
                                   </span>
-                                ))
-                              ) : (
-                                <span className="text-[11px] text-slate-300 dark:text-slate-600">
-                                  —
-                                </span>
-                              )}
-                            </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

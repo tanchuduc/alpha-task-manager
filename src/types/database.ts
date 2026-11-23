@@ -12,7 +12,7 @@ export type NotificationType =
   | "project_update_posted"
   | "direct_message";
 export type WebhookProvider = "telegram" | "lark";
-export type CustomFieldType = "text" | "number" | "dropdown" | "date";
+export type CustomFieldType = "text" | "number" | "dropdown" | "date" | "people";
 export type DependencyType = "blocked_by" | "blocking" | "relates_to";
 export type PhaseStatus = "pending" | "in_progress" | "completed";
 export type DeliveryConfidence = "on_track" | "at_risk" | "off_track";

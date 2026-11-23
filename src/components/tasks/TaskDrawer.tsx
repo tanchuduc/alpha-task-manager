@@ -1234,6 +1234,21 @@ export default function TaskDrawer({
                             }
                             className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                           />
+                        ) : field.field_type === "people" ? (
+                          <select
+                            value={currentVal}
+                            onChange={(e) =>
+                              handleSaveCustomFieldValue(field, e.target.value)
+                            }
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          >
+                            <option value="">— Chưa chỉ định —</option>
+                            {(allProfiles && allProfiles.length > 0 ? allProfiles : members).map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.full_name} {p.job_title ? `(${p.job_title})` : ""}
+                              </option>
+                            ))}
+                          </select>
                         ) : field.field_type === "number" ? (
                           <input
                             type="number"
