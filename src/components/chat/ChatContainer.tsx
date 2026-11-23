@@ -58,6 +58,8 @@ export function ChatContainer({
     toggleMuteConversation,
     broadcastTyping,
     createGroup,
+    addMembersToGroup,
+    leaveGroup,
   } = useUnifiedChat({
     currentUser,
     allProfiles,
@@ -167,20 +169,52 @@ export function ChatContainer({
        * CỘT 3: COLLAPSIBLE CONTEXT PANEL (BÊN PHẢI)
        * ==================================================================== */}
       {showContextPanel && activeConversation && (
-        <ChatContextPanel
-          conversation={activeConversation}
-          currentUser={currentUser}
-          allProfiles={allProfiles}
-          messages={messages}
-          onClose={() => setShowContextPanel(false)}
-          onScrollToMessage={(msgId) => {
-            const el = document.getElementById(`unified-msg-${msgId}`);
-            el?.scrollIntoView({ behavior: "smooth", block: "center" });
-          }}
-          onTogglePinConversation={togglePinConversation}
-          onToggleMuteConversation={toggleMuteConversation}
-          className="hidden lg:flex"
-        />
+        <>
+          {/* Desktop: side column */}
+          <ChatContextPanel
+            conversation={activeConversation}
+            currentUser={currentUser}
+            allProfiles={allProfiles}
+            messages={messages}
+            onClose={() => setShowContextPanel(false)}
+            onScrollToMessage={(msgId) => {
+              const el = document.getElementById(`unified-msg-${msgId}`);
+              el?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+            onTogglePinConversation={togglePinConversation}
+            onToggleMuteConversation={toggleMuteConversation}
+            onAddMembers={addMembersToGroup}
+            onLeaveGroup={leaveGroup}
+            className="hidden lg:flex"
+          />
+
+          {/* Mobile & Tablet (< 1024px): Overlay Drawer */}
+          <div className="fixed inset-0 z-40 lg:hidden flex justify-end">
+            <div
+              className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+              onClick={() => setShowContextPanel(false)}
+            />
+            <div className="relative z-10 w-full sm:w-88 max-w-full h-full bg-white dark:bg-slate-900 shadow-2xl animate-in slide-in-from-right duration-200">
+              <ChatContextPanel
+                conversation={activeConversation}
+                currentUser={currentUser}
+                allProfiles={allProfiles}
+                messages={messages}
+                onClose={() => setShowContextPanel(false)}
+                onScrollToMessage={(msgId) => {
+                  setShowContextPanel(false);
+                  const el = document.getElementById(`unified-msg-${msgId}`);
+                  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }}
+                onTogglePinConversation={togglePinConversation}
+                onToggleMuteConversation={toggleMuteConversation}
+                onAddMembers={addMembersToGroup}
+                onLeaveGroup={leaveGroup}
+                className="w-full h-full border-l-0"
+              />
+            </div>
+          </div>
+        </>
       )}
 
       {/* ====================================================================

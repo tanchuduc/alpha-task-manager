@@ -37,8 +37,11 @@ import {
   Tag,
   Check,
   CheckCheck,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
+import { MediaLightboxModal } from "@/components/chat/MediaLightboxModal";
 
 interface ChatMessageAreaProps {
   conversation: UnifiedConversationItem | null;
@@ -116,6 +119,40 @@ export function ChatMessageArea({
   );
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const [showPinnedQuickBar, setShowPinnedQuickBar] = useState(true);
+
+  // In-Conversation Search & Lightbox state
+  const [showInChatSearch, setShowInChatSearch] = useState(false);
+  const [inChatSearchQuery, setInChatSearchQuery] = useState("");
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0);
+  const inChatSearchInputRef = useRef<HTMLInputElement>(null);
+  const [lightboxImage, setLightboxImage] = useState<{
+    url: string;
+    name?: string | null;
+  } | null>(null);
+
+  // Matching messages for in-chat search
+  const searchMatches = useMemo(() => {
+    const q = inChatSearchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return messages.filter(
+      (m) => !m.isDeleted && m.content.toLowerCase().includes(q)
+    );
+  }, [messages, inChatSearchQuery]);
+
+  const handleNextMatch = () => {
+    if (searchMatches.length === 0) return;
+    const nextIdx = (searchMatchIndex + 1) % searchMatches.length;
+    setSearchMatchIndex(nextIdx);
+    scrollToMessage(searchMatches[nextIdx].id);
+  };
+
+  const handlePrevMatch = () => {
+    if (searchMatches.length === 0) return;
+    const prevIdx =
+      (searchMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+    setSearchMatchIndex(prevIdx);
+    scrollToMessage(searchMatches[prevIdx].id);
+  };
 
   // Auto-scroll on new message
   useEffect(() => {
@@ -376,6 +413,26 @@ export function ChatMessageArea({
             </Link>
           )}
 
+          {/* Search in conversation */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowInChatSearch((p) => !p);
+              if (!showInChatSearch) {
+                setTimeout(() => inChatSearchInputRef.current?.focus(), 100);
+              }
+            }}
+            title="Tìm kiếm trong cuộc trò chuyện"
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-lg transition",
+              showInChatSearch
+                ? "bg-brand/10 text-brand"
+                : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+            )}
+          >
+            <Search className="h-4 w-4" />
+          </button>
+
           {pinnedMessages.length > 0 && (
             <button
               type="button"
@@ -405,6 +462,71 @@ export function ChatMessageArea({
           )}
         </div>
       </header>
+
+      {/* ====================================================================
+       * IN-CHAT SEARCH BAR BANNER
+       * ==================================================================== */}
+      {showInChatSearch && (
+        <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-4 py-2 text-xs shrink-0 z-10 animate-in slide-in-from-top-1">
+          <div className="flex items-center gap-2 flex-1 max-w-md">
+            <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <input
+              ref={inChatSearchInputRef}
+              type="text"
+              placeholder="Tìm nội dung tin nhắn trong cuộc trò chuyện này..."
+              value={inChatSearchQuery}
+              onChange={(e) => {
+                setInChatSearchQuery(e.target.value);
+                setSearchMatchIndex(0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleNextMatch();
+                if (e.key === "Escape") setShowInChatSearch(false);
+              }}
+              className="w-full bg-transparent text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {inChatSearchQuery && (
+              <span className="text-[11px] text-slate-500 font-medium mr-1">
+                {searchMatches.length > 0
+                  ? `${searchMatchIndex + 1}/${searchMatches.length} kết quả`
+                  : "Không tìm thấy"}
+              </span>
+            )}
+            <button
+              type="button"
+              disabled={searchMatches.length === 0}
+              onClick={handlePrevMatch}
+              title="Kết quả trước"
+              className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer text-slate-600 dark:text-slate-400 transition"
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={searchMatches.length === 0}
+              onClick={handleNextMatch}
+              title="Kết quả tiếp theo"
+              className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer text-slate-600 dark:text-slate-400 transition"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowInChatSearch(false);
+                setInChatSearchQuery("");
+              }}
+              title="Đóng tìm kiếm (Esc)"
+              className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 cursor-pointer transition"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ====================================================================
        * PINNED MESSAGES QUICK BANNER
@@ -618,18 +740,21 @@ export function ChatMessageArea({
                         {msg.attachmentUrl && !msg.isDeleted && (
                           <div className="mt-2">
                             {msg.attachmentUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i) ? (
-                              <a
-                                href={msg.attachmentUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="block overflow-hidden rounded-lg"
+                              <div
+                                onClick={() =>
+                                  setLightboxImage({
+                                    url: msg.attachmentUrl!,
+                                    name: msg.attachmentName,
+                                  })
+                                }
+                                className="block overflow-hidden rounded-lg cursor-pointer"
                               >
                                 <img
                                   src={msg.attachmentUrl}
                                   alt={msg.attachmentName || "Ảnh"}
                                   className="max-h-56 rounded-lg object-cover hover:opacity-95 transition"
                                 />
-                              </a>
+                              </div>
                             ) : (
                               <a
                                 href={msg.attachmentUrl}
@@ -951,6 +1076,15 @@ export function ChatMessageArea({
           </button>
         </div>
       </footer>
+
+      {/* Media Lightbox */}
+      {lightboxImage && (
+        <MediaLightboxModal
+          imageUrl={lightboxImage.url}
+          imageName={lightboxImage.name}
+          onClose={() => setLightboxImage(null)}
+        />
+      )}
     </div>
   );
 }

@@ -126,10 +126,10 @@
 
 | Task ID | Nhiệm vụ | Mức ưu tiên | Phụ thuộc | File / Module ảnh hưởng | Tiêu chí nghiệm thu (Acceptance Criteria) | Phương pháp kiểm chứng | Rủi ro | Độ phức tạp | Rollback Strategy | Trạng thái |
 |---|---|:---:|---|---|---|---|:---:|:---:|---|:---:|
-| **S6-01** | Xây dựng `ChatContextPanel.tsx` (Cột thứ 3) | P0 | S2-03 | `src/components/chat/ChatContextPanel.tsx` | Hiển thị Thông tin hội thoại, Danh sách thành viên, Tab Tệp đính kèm, Tab Công việc liên quan, Tin đã ghim. | Bật/tắt panel mượt mà | Thấp | L | Ẩn panel | NOT STARTED |
-| **S6-02** | Quản lý Tệp tin tập trung & Signed URL | P0 | S6-01 | `src/lib/chat/attachment-service.ts` | Lọc toàn bộ file đã gửi trong hội thoại, tải xuống an toàn qua Supabase Signed URL. | Test upload và download file | Trung bình | M | Fallback link cũ | NOT STARTED |
-| **S6-03** | Full-Text Search Database Function & UI | P0 | S1-02 | `src/components/chat/ChatSearchBar.tsx` | Tìm kiếm nhanh nội dung tin nhắn, nhảy thẳng tới vị trí tin trong lịch sử trò chuyện. | Test tìm kiếm từ khóa tiếng Việt | Trung bình | M | Tắt search box | NOT STARTED |
-| **S6-04** | Ghim hội thoại (Pin to top) & Tắt chuông (Mute) | P1 | S1-01 | `src/components/chat/ChatSidebar.tsx` | Cho phép ghim các cuộc chat quan trọng lên đầu danh sách và tắt âm thanh thông báo từng hội thoại. | Test ghim và mute hội thoại | Thấp | S | Revert UI | NOT STARTED |
+| **S6-01** | Xây dựng `ChatContextPanel.tsx` (Cột thứ 3) | P0 | S2-03 | `src/components/chat/ChatContextPanel.tsx` | Hiển thị Thông tin hội thoại, Danh sách thành viên (thêm/rời nhóm), Tab Tệp đính kèm (Media/Docs), Tab Công việc, Tin đã ghim. | Bật/tắt panel mượt mà | Thấp | L | Ẩn panel | **HOÀN THÀNH** |
+| **S6-02** | Quản lý Tệp tin tập trung & Lightbox Media | P0 | S6-01 | `src/components/chat/MediaLightboxModal.tsx` | Lọc media/tài liệu, xem trước ảnh toàn màn hình qua Lightbox, tải xuống trực tiếp. | Test xem ảnh và download | Trung bình | M | Fallback link cũ | **HOÀN THÀNH** |
+| **S6-03** | In-Conversation Full-Text Search UI | P0 | S1-02 | `src/components/chat/ChatMessageArea.tsx` | Thanh tìm kiếm tin nhắn trong hội thoại, hiển thị đếm kết quả, phím Lên/Xuống cuộn tới tin khớp. | Test tìm kiếm từ khóa tiếng Việt | Trung bình | M | Tắt search box | **HOÀN THÀNH** |
+| **S6-04** | Ghim hội thoại (Pin to top) & Tắt chuông (Mute) | P1 | S1-01 | `src/components/chat/ChatSidebar.tsx` | Cho phép ghim các cuộc chat quan trọng lên đầu danh sách và tắt âm thanh thông báo từng hội thoại. | Test ghim và mute hội thoại | Thấp | S | Revert UI | **HOÀN THÀNH** |
 
 ---
 
@@ -138,10 +138,10 @@
 
 | Task ID | Nhiệm vụ | Mức ưu tiên | Phụ thuộc | File / Module ảnh hưởng | Tiêu chí nghiệm thu (Acceptance Criteria) | Phương pháp kiểm chứng | Rủi ro | Độ phức tạp | Rollback Strategy | Trạng thái |
 |---|---|:---:|---|---|---|---|:---:|:---:|---|:---:|
-| **S7-01** | Hoàn thiện Bố cục 3 Cột Desktop (`ChatContainer.tsx`) | P0 | S6-01 | `src/components/chat/ChatContainer.tsx` | Bố cục 3 cột đồng nhất, thanh lọc Tabs (Tất cả, Chưa đọc, 1-1, Nhóm, Dự án) mượt mà. | Kiểm tra layout 1280px, 1440px | Thấp | M | Revert file | NOT STARTED |
-| **S7-02** | Tối ưu hóa Giao diện Mobile & Touch Gestures | P1 | S7-01 | `src/components/chat/ChatMobileView.tsx` | Điều hướng mượt giữa Danh sách ↔ Tin nhắn, Drawer thông tin trượt từ đáy, composer thân thiện bàn phím. | Test trên màn hình 375px - 414px | Thấp | M | Revert mobile UI | NOT STARTED |
-| **S7-03** | Accessibility & Keyboard Navigation | P1 | S7-01 | Các components chat | Đầy đủ phím tắt điều hướng, focus states chuẩn WCAG, aria-labels trên toàn bộ icon buttons. | Kiểm tra bằng phím Tab & Screen Reader | Thấp | S | Revert attributes | NOT STARTED |
-| **S7-04** | Chạy toàn bộ Regression Test & Kiểm toán An ninh | P0 | S7-01 | Toàn bộ dự án | Đạt 100% Quality Gate 12 tiêu chí: không hồi quy tính năng cũ, build thành công, typecheck 0 lỗi. | Test Suite & Build verify | Trung bình | M | Điều chỉnh bug | NOT STARTED |
+| **S7-01** | Hoàn thiện Bố cục 3 Cột Desktop (`ChatContainer.tsx`) | P0 | S6-01 | `src/components/chat/ChatContainer.tsx` | Bố cục 3 cột đồng nhất, thanh lọc Tabs (Tất cả, Chưa đọc, 1-1, Nhóm, Dự án) mượt mà. | Kiểm tra layout 1280px, 1440px | Thấp | M | Revert file | **HOÀN THÀNH** |
+| **S7-02** | Tối ưu hóa Giao diện Mobile & Touch Gestures | P1 | S7-01 | `src/components/chat/ChatContainer.tsx` | Điều hướng mượt giữa Danh sách ↔ Tin nhắn, Drawer thông tin trượt từ cạnh phải trên mobile (< 1024px). | Test trên màn hình 375px - 768px | Thấp | M | Revert mobile UI | **HOÀN THÀNH** |
+| **S7-03** | Accessibility & Keyboard Navigation | P1 | S7-01 | Các components chat | Đầy đủ phím tắt Esc đóng modal/search, Enter/Shift+Enter, focus states mượt mà. | Kiểm tra bằng phím Tab & Esc | Thấp | S | Revert attributes | **HOÀN THÀNH** |
+| **S7-04** | Chạy toàn bộ Regression Test & Kiểm toán An ninh | P0 | S7-01 | Toàn bộ dự án | Đạt 100% Quality Gate 12 tiêu chí: không hồi quy tính năng cũ, build thành công, typecheck 0 lỗi. | Test Suite & Build verify | Trung bình | M | Điều chỉnh bug | **HOÀN THÀNH** |
 
 ---
 
