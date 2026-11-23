@@ -388,6 +388,14 @@ export interface ProjectUpdateReaction {
   user?: Profile;
 }
 
+export interface ProjectUpdateAttachment {
+  id: string;
+  name: string;
+  url: string;
+  size?: number;
+  type?: string;
+}
+
 export interface ProjectUpdate {
   id: string;
   project_id: string;
@@ -395,6 +403,8 @@ export interface ProjectUpdate {
   title: string;
   content: string;
   pinned: boolean;
+  category?: "announcement" | "progress" | "blocker" | "general";
+  attachments?: ProjectUpdateAttachment[];
   created_at: string;
   updated_at: string;
   author?: Profile;

@@ -2231,7 +2231,7 @@ export default function ProjectDetailClient({
               { key: "phases", label: "Giai đoạn", icon: Layers, count: phases.length },
               { key: "calendar", label: "Lịch", icon: CalendarIcon },
               { key: "files", label: "Tài liệu & Tệp", icon: FolderArchive },
-              { key: "updates", label: "Thảo luận", icon: MessageSquare },
+              { key: "updates", label: "Bản tin & Thảo luận", icon: MessageSquare },
             ] as const
           ).map((tab) => {
             const Icon = tab.icon;
@@ -3148,7 +3148,7 @@ export default function ProjectDetailClient({
                 value={memberSearch}
                 onChange={(e) => setMemberSearch(e.target.value)}
                 placeholder="Tìm nhân sự theo tên hoặc email..."
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 focus:border-brand focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 focus:border-brand focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-800"
               />
             </div>
 
@@ -3258,25 +3258,31 @@ export default function ProjectDetailClient({
       {/* ================================================================
        * TASK DETAIL SLIDE-OVER DRAWER
        * ============================================================== */}
-      {selectedTaskId && (
-        <TaskDrawer
-          taskId={selectedTaskId}
-          projectId={project.id}
-          project={project}
-          currentMember={currentMember}
-          permissions={permissionsMap}
-          statuses={statuses}
-          members={assignableProfiles}
-          allProfiles={allProfiles}
-          currentUser={currentUser}
-          onClose={closeTaskDrawer}
-          onOpenTask={openTaskDrawer}
-          onUpdated={fetchTasks}
-          onDeleted={(deletedId) => {
-            setTasks((prev) => prev.filter((t) => t.id !== deletedId));
-          }}
-        />
-      )}
+      {selectedTaskId && (() => {
+        const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
+        return (
+          <TaskDrawer
+            taskId={selectedTaskId}
+            projectId={project.id}
+            project={project}
+            initialTask={selectedTask}
+            projectPhases={phases}
+            projectCustomFields={customFields}
+            currentMember={currentMember}
+            permissions={permissionsMap}
+            statuses={statuses}
+            members={assignableProfiles}
+            allProfiles={allProfiles}
+            currentUser={currentUser}
+            onClose={closeTaskDrawer}
+            onOpenTask={openTaskDrawer}
+            onUpdated={fetchTasks}
+            onDeleted={(deletedId) => {
+              setTasks((prev) => prev.filter((t) => t.id !== deletedId));
+            }}
+          />
+        );
+      })()}
 
       {/* ================================================================
        * BULK ACTION BAR

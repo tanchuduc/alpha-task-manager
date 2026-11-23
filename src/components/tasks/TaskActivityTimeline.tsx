@@ -158,7 +158,7 @@ export default function TaskActivityTimeline({ taskId }: TaskActivityTimelinePro
             </div>
 
             {/* Content card */}
-            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 transition group-hover:border-slate-200 group-hover:bg-slate-50 dark:border-slate-800/80 dark:bg-slate-800/40 dark:group-hover:border-slate-700">
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 transition group-hover:border-slate-200 group-hover:bg-slate-50 dark:border-slate-800/80 dark:bg-slate-800/40 dark:group-hover:border-slate-700 dark:group-hover:bg-slate-800/80">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[10px] font-bold text-brand dark:bg-brand/20">

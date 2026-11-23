@@ -72,6 +72,9 @@ export interface TaskDrawerProps {
   taskId: string;
   projectId: string;
   project?: Project;
+  initialTask?: Task | null;
+  projectPhases?: ProjectPhase[];
+  projectCustomFields?: ProjectCustomField[];
   currentMember?: ProjectMember;
   permissions?: ProjectPermissionsMap;
   statuses: TaskStatus[];
@@ -157,6 +160,9 @@ export default function TaskDrawer({
   taskId,
   projectId,
   project,
+  initialTask,
+  projectPhases,
+  projectCustomFields,
   currentMember,
   permissions,
   statuses,
@@ -180,14 +186,15 @@ export default function TaskDrawer({
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  const [loading, setLoading] = useState(true);
-  const [task, setTask] = useState<Task | null>(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const hasInitial = Boolean(initialTask && initialTask.id === taskId);
+  const [loading, setLoading] = useState(!hasInitial);
+  const [task, setTask] = useState<Task | null>(hasInitial ? initialTask! : null);
+  const [title, setTitle] = useState(hasInitial ? initialTask!.title : "");
+  const [description, setDescription] = useState(hasInitial ? (initialTask!.description ?? "") : "");
   const [savingDesc, setSavingDesc] = useState(false);
 
   // Phases
-  const [phases, setPhases] = useState<ProjectPhase[]>([]);
+  const [phases, setPhases] = useState<ProjectPhase[]>(projectPhases ?? []);
 
   // Dependency Blockers warning state
   const [hasUnresolvedBlockers, setHasUnresolvedBlockers] = useState(false);
@@ -198,7 +205,18 @@ export default function TaskDrawer({
   // Recurring Task Rule state
   const [recurringRule, setRecurringRule] = useState<TaskRecurringRule | null>(null);
 
-  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [assigneeIds, setAssigneeIds] = useState<string[]>(() => {
+    if (hasInitial && initialTask) {
+      const anyTask = initialTask as unknown as { assignees?: Profile[]; task_assignees?: { user_id: string }[] };
+      if (anyTask.assignees && Array.isArray(anyTask.assignees)) {
+        return anyTask.assignees.map((a) => a.id);
+      }
+      if (anyTask.task_assignees && Array.isArray(anyTask.task_assignees)) {
+        return anyTask.task_assignees.map((a) => a.user_id);
+      }
+    }
+    return [];
+  });
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const assigneeContainerRef = useRef<HTMLDivElement | null>(null);
@@ -355,10 +373,29 @@ export default function TaskDrawer({
 
   const loadTaskDetails = useCallback(
     async (isInitial = false) => {
-      if (isInitial) {
+      if (isInitial && !task) {
         setLoading(true);
       }
       try {
+        const fetchPhasesPromise =
+          projectPhases && projectPhases.length > 0
+            ? Promise.resolve({ data: projectPhases })
+            : supabase
+                .from("project_phases")
+                .select("*")
+                .eq("project_id", projectId)
+                .order("position", { ascending: true });
+
+        const fetchCustomFieldsPromise =
+          projectCustomFields && projectCustomFields.length > 0
+            ? Promise.resolve({ data: projectCustomFields })
+            : supabase
+                .from("project_custom_fields")
+                .select("*")
+                .eq("project_id", projectId)
+                .order("position", { ascending: true })
+                .order("created_at", { ascending: true });
+
         const [
           { data: taskData, error: taskErr },
           { data: assigneesData },
@@ -391,21 +428,12 @@ export default function TaskDrawer({
             .select("*, author:profiles(id, full_name, email, avatar_url, role)")
             .eq("task_id", taskId)
             .order("created_at", { ascending: true }),
-          supabase
-            .from("project_custom_fields")
-            .select("*")
-            .eq("project_id", projectId)
-            .order("position", { ascending: true })
-            .order("created_at", { ascending: true }),
+          fetchCustomFieldsPromise,
           supabase
             .from("task_custom_field_values")
             .select("*")
             .eq("task_id", taskId),
-          supabase
-            .from("project_phases")
-            .select("*")
-            .eq("project_id", projectId)
-            .order("position", { ascending: true }),
+          fetchPhasesPromise,
           supabase
             .from("task_recurring_rules")
             .select("*")
@@ -444,12 +472,37 @@ export default function TaskDrawer({
         setLoading(false);
       }
     },
-    [supabase, taskId, projectId]
+    [supabase, taskId, projectId, projectPhases, projectCustomFields, task]
   );
 
   useEffect(() => {
-    loadTaskDetails(true);
-  }, [taskId]);
+    if (initialTask && initialTask.id === taskId) {
+      setTask(initialTask);
+      setTitle(initialTask.title);
+      setDescription(initialTask.description ?? "");
+      const anyTask = initialTask as unknown as { assignees?: Profile[]; task_assignees?: { user_id: string }[] };
+      const initAssignees = anyTask.assignees && Array.isArray(anyTask.assignees)
+        ? anyTask.assignees.map((a) => a.id)
+        : anyTask.task_assignees?.map((a) => a.user_id) ?? [];
+      setAssigneeIds(initAssignees);
+      setLoading(false);
+      loadTaskDetails(false);
+    } else {
+      loadTaskDetails(true);
+    }
+  }, [taskId, initialTask]);
+
+  useEffect(() => {
+    if (projectPhases && projectPhases.length > 0) {
+      setPhases(projectPhases);
+    }
+  }, [projectPhases]);
+
+  useEffect(() => {
+    if (projectCustomFields && projectCustomFields.length > 0) {
+      setCustomFields(projectCustomFields);
+    }
+  }, [projectCustomFields]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -1371,9 +1424,14 @@ export default function TaskDrawer({
 
 
         {/* Body */}
-        {loading || !task ? (
-          <div className="flex flex-1 items-center justify-center">
+        {loading && !task ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
             <Loader2 className="h-6 w-6 animate-spin text-brand" />
+            <p className="text-xs text-slate-400">Đang tải chi tiết công việc...</p>
+          </div>
+        ) : !task ? (
+          <div className="flex flex-1 items-center justify-center p-8 text-center text-xs text-slate-400">
+            Không tìm thấy công việc này
           </div>
         ) : (
           <>

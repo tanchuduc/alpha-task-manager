@@ -1610,11 +1610,13 @@ export function HomeDashboard({
        * IN-PLACE TASK DRAWER (Matches legacy HomeLayout TaskDrawer Portal)
        * ==================================================================== */}
       {activeDrawerTask && (() => {
+        const currentTask = tasks.find((t) => t.id === activeDrawerTask.taskId) ?? null;
         const currentTaskIdx = filteredTasks.findIndex((t) => t.id === activeDrawerTask.taskId);
         return (
           <TaskDrawer
             taskId={activeDrawerTask.taskId}
             projectId={activeDrawerTask.projectId}
+            initialTask={currentTask}
             statuses={drawerProjectStatuses}
             members={allProfiles}
             allProfiles={allProfiles}

@@ -11,6 +11,7 @@
 }
 
 :root {
+  color-scheme: light;
   --bg-page: #F5F5F5;
   --bg-surface: #FFFFFF;
   --bg-rail: #FFFFFF;
@@ -21,6 +22,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --bg-page: #141414;
   --bg-surface: #1F1F1F;
   --bg-rail: #141414;
@@ -28,6 +30,16 @@
   --text-primary: rgba(255, 255, 255, 0.85);
   --text-secondary: rgba(255, 255, 255, 0.65);
   --nav-rail-color-primary: #F47830;
+}
+
+/* Prevent browser autofill from turning inputs white in dark mode */
+.dark input:-webkit-autofill,
+.dark textarea:-webkit-autofill,
+.dark select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0px 1000px #1a1a1a inset !important;
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.88) !important;
+  caret-color: #F47830 !important;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
 body {

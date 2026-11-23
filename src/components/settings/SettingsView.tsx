@@ -679,7 +679,7 @@ export function SettingsView({
               value={navSearch}
               onChange={(e) => setNavSearch(e.target.value)}
               placeholder="Tìm cài đặt..."
-              className="w-full rounded-[6px] border border-[#d9d9d9] bg-[#fafafa] py-1.5 pl-8 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand focus:bg-white focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
+              className="w-full rounded-[6px] border border-[#d9d9d9] bg-[#fafafa] py-1.5 pl-8 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand focus:bg-white focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100 dark:focus:bg-[#1f1f1f]"
             />
           </div>
 
