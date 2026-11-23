@@ -28,6 +28,7 @@ import ProjectPhasesManagerModal, {
 import type {
   PhaseStatus,
   Profile,
+  Project,
   ProjectPhase,
   Task,
   TaskPriority,
@@ -37,14 +38,18 @@ import type {
 interface ProjectPhasesTabProps {
   projectId: string;
   projectName: string;
+  project?: Project;
   phases: ProjectPhase[];
   tasks: Task[];
   statuses: TaskStatus[];
   members: Profile[];
   currentUser: Profile;
+  canManagePhases?: boolean;
+  canCreateTasks?: boolean;
   onSelectTask: (taskId: string) => void;
   onPhasesUpdated: () => void;
   onTasksUpdated: () => void;
+  onProjectUpdated?: (updated: Project) => void;
 }
 
 const STATUS_CONFIG: Record<
@@ -73,14 +78,18 @@ const STATUS_CONFIG: Record<
 export default function ProjectPhasesTab({
   projectId,
   projectName,
+  project,
   phases,
   tasks,
   statuses,
   members,
   currentUser,
+  canManagePhases = true,
+  canCreateTasks = true,
   onSelectTask,
   onPhasesUpdated,
   onTasksUpdated,
+  onProjectUpdated,
 }: ProjectPhasesTabProps) {
   const supabase = createClient();
   const [showManagerModal, setShowManagerModal] = useState(false);
@@ -142,6 +151,10 @@ export default function ProjectPhasesTab({
   }, [phases, tasks, doneStatus]);
 
   async function handleSeedStandardPhases() {
+    if (!canManagePhases) {
+      toast.error("Bạn không có quyền quản lý giai đoạn trong dự án này.");
+      return;
+    }
     setSeeding(true);
     try {
       const rows = ALPHA_STANDARD_PHASES.map((p, idx) => ({
@@ -170,6 +183,10 @@ export default function ProjectPhasesTab({
   }
 
   async function handleUpdatePhaseStatus(phaseId: string, newStatus: PhaseStatus) {
+    if (!canManagePhases) {
+      toast.error("Bạn không có quyền cập nhật trạng thái giai đoạn.");
+      return;
+    }
     const { error } = await supabase
       .from("project_phases")
       .update({ status: newStatus })
@@ -183,7 +200,32 @@ export default function ProjectPhasesTab({
     onPhasesUpdated();
   }
 
+  async function handleUpdatePhaseAssignee(
+    phaseId: string,
+    assigneeId: string | null
+  ) {
+    if (!canManagePhases) {
+      toast.error("Bạn không có quyền gán người phụ trách giai đoạn.");
+      return;
+    }
+    const { error } = await supabase
+      .from("project_phases")
+      .update({ assignee_id: assigneeId || null })
+      .eq("id", phaseId);
+
+    if (error) {
+      toast.error("Không thể gán người phụ trách giai đoạn");
+      return;
+    }
+    toast.success("Đã cập nhật người phụ trách giai đoạn!");
+    onPhasesUpdated();
+  }
+
   async function handleQuickAddTaskToPhase(phaseId: string) {
+    if (!canCreateTasks) {
+      toast.error("Bạn không có quyền tạo công việc mới.");
+      return;
+    }
     const title = quickAddTitles[phaseId]?.trim();
     if (!title) return;
 
@@ -244,32 +286,34 @@ export default function ProjectPhasesTab({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {phases.length === 0 ? (
-              <button
-                type="button"
-                onClick={handleSeedStandardPhases}
-                disabled={seeding}
-                className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-brand-hover transition cursor-pointer"
-              >
-                {seeding ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                Khởi tạo 5 giai đoạn Alpha Books
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowManagerModal(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-800 shadow-xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
-              >
-                <Settings2 className="h-4 w-4 text-brand" />
-                Cài đặt & Quản lý Giai đoạn
-              </button>
-            )}
-          </div>
+          { canManagePhases && (
+            <div className="flex flex-wrap items-center gap-3">
+              {phases.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={handleSeedStandardPhases}
+                  disabled={seeding}
+                  className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-brand-hover transition cursor-pointer"
+                >
+                  {seeding ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  Khởi tạo 5 giai đoạn Alpha Books
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowManagerModal(true)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-800 shadow-xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                >
+                  <Settings2 className="h-4 w-4 text-brand" />
+                  Cài đặt & Quản lý Giai đoạn
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Metric Cards */}
@@ -351,19 +395,21 @@ export default function ProjectPhasesTab({
             Chuẩn hóa quy trình làm sách theo 5 chặng kinh điển của Alpha Books giúp giám sát
             tiến độ bản quyền, biên tập, thiết kế, xin phép in ấn và ra mắt thị trường.
           </p>
-          <button
-            type="button"
-            onClick={handleSeedStandardPhases}
-            disabled={seeding}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-brand-hover cursor-pointer"
-          >
-            {seeding ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4" />
-            )}
-            Khởi tạo 5 giai đoạn ngay
-          </button>
+          {canManagePhases && (
+            <button
+              type="button"
+              onClick={handleSeedStandardPhases}
+              disabled={seeding}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-brand-hover cursor-pointer"
+            >
+              {seeding ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              Khởi tạo 5 giai đoạn ngay
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -403,6 +449,7 @@ export default function ProjectPhasesTab({
 
                           {/* Quick Status Dropdown */}
                           <select
+                            disabled={!canManagePhases}
                             value={phase.status}
                             onChange={(e) =>
                               handleUpdatePhaseStatus(
@@ -412,7 +459,8 @@ export default function ProjectPhasesTab({
                             }
                             aria-label="Cập nhật trạng thái giai đoạn"
                             className={cn(
-                              "rounded-lg px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer",
+                              "rounded-lg px-2.5 py-1 text-xs font-semibold outline-none disabled:cursor-default",
+                              canManagePhases && "cursor-pointer",
                               STATUS_CONFIG[phase.status]?.badge
                             )}
                           >
@@ -420,6 +468,39 @@ export default function ProjectPhasesTab({
                             <option value="in_progress">Đang diễn ra</option>
                             <option value="completed">Đã hoàn thành</option>
                           </select>
+
+                          {/* Phase Assignee Dropdown */}
+                          <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs dark:border-slate-700 dark:bg-slate-800/80">
+                            {phase.assignee_id ? (
+                              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand text-[9px] font-bold text-white">
+                                {getInitials(
+                                  members.find((m) => m.id === phase.assignee_id)
+                                    ?.full_name || "A"
+                                )}
+                              </span>
+                            ) : (
+                              <User className="h-3.5 w-3.5 text-slate-400" />
+                            )}
+                            <select
+                              disabled={!canManagePhases}
+                              value={phase.assignee_id || ""}
+                              onChange={(e) =>
+                                handleUpdatePhaseAssignee(
+                                  phase.id,
+                                  e.target.value || null
+                                )
+                              }
+                              aria-label="Gán người phụ trách giai đoạn"
+                              className="bg-transparent font-medium text-slate-700 outline-none dark:text-slate-200 disabled:cursor-default cursor-pointer"
+                            >
+                              <option value="">+ Gán người phụ trách...</option>
+                              {members.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  Phụ trách: {m.full_name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
 
                         {phase.description && (
@@ -576,38 +657,40 @@ export default function ProjectPhasesTab({
                       )}
 
                       {/* Quick Add Form in Phase */}
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          handleQuickAddTaskToPhase(phase.id);
-                        }}
-                        className="mt-2 flex gap-2"
-                      >
-                        <input
-                          type="text"
-                          value={quickTitle}
-                          onChange={(e) =>
-                            setQuickAddTitles((prev) => ({
-                              ...prev,
-                              [phase.id]: e.target.value,
-                            }))
-                          }
-                          placeholder={`+ Thêm công việc vào "${phase.name}"...`}
-                          className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                        />
-                        <button
-                          type="submit"
-                          disabled={isAdding || !quickTitle.trim()}
-                          className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-40 dark:bg-slate-700 dark:hover:bg-slate-600 cursor-pointer"
+                      {canCreateTasks && (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleQuickAddTaskToPhase(phase.id);
+                          }}
+                          className="mt-2 flex gap-2"
                         >
-                          {isAdding ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Plus className="h-3.5 w-3.5" />
-                          )}
-                          Thêm
-                        </button>
-                      </form>
+                          <input
+                            type="text"
+                            value={quickTitle}
+                            onChange={(e) =>
+                              setQuickAddTitles((prev) => ({
+                                ...prev,
+                                [phase.id]: e.target.value,
+                              }))
+                            }
+                            placeholder={`+ Thêm công việc vào "${phase.name}"...`}
+                            className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isAdding || !quickTitle.trim()}
+                            className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-40 dark:bg-slate-700 dark:hover:bg-slate-600 cursor-pointer"
+                          >
+                            {isAdding ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Plus className="h-3.5 w-3.5" />
+                            )}
+                            Thêm
+                          </button>
+                        </form>
+                      )}
                     </div>
                   </div>
                 )}
@@ -676,7 +759,10 @@ export default function ProjectPhasesTab({
         isOpen={showManagerModal}
         onClose={() => setShowManagerModal(false)}
         phases={phases}
+        members={members}
+        project={project}
         onPhasesUpdated={onPhasesUpdated}
+        onProjectUpdated={onProjectUpdated}
       />
     </div>
   );

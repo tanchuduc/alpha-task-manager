@@ -23,6 +23,7 @@ export interface MentionAutocompleteProps {
   disabled?: boolean;
   autoFocus?: boolean;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onPaste?: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   onBlur?: (e: React.FocusEvent<HTMLTextAreaElement>) => void;
   id?: string;
   name?: string;
@@ -54,6 +55,7 @@ export const MentionTextarea = forwardRef<
     disabled = false,
     autoFocus = false,
     onKeyDown,
+    onPaste,
     onBlur,
     id,
     name,
@@ -218,6 +220,7 @@ export const MentionTextarea = forwardRef<
         value={value}
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
+        onPaste={onPaste}
         onBlur={onBlur}
         placeholder={placeholder}
         rows={rows}
@@ -288,11 +291,53 @@ export const MentionTextarea = forwardRef<
 });
 
 /**
- * Helper to render message/comment body with styled @mention pills
+ * Helper to auto-link URLs inside a plain text segment
+ */
+function renderTextWithLinks(
+  text: string,
+  keyPrefix: string,
+  options?: { isInverse?: boolean }
+): React.ReactNode {
+  if (!text) return null;
+  const urlRegex = /(https?:\/\/[^\s<>"]+)/gi;
+  const parts = text.split(urlRegex);
+  if (parts.length === 1) return text;
+
+  return parts.map((part, idx) => {
+    if (/^https?:\/\//i.test(part)) {
+      // Strip trailing punctuation like .,;:!?)
+      const cleanUrl = part.replace(/[.,;:!?)]+$/, "");
+      const trailing = part.slice(cleanUrl.length);
+      return (
+        <React.Fragment key={`${keyPrefix}-link-${idx}`}>
+          <a
+            href={cleanUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className={
+              options?.isInverse
+                ? "underline decoration-white/70 underline-offset-2 font-medium text-white hover:decoration-white break-all"
+                : "underline decoration-brand/60 underline-offset-2 font-medium text-brand hover:decoration-brand break-all"
+            }
+          >
+            {cleanUrl}
+          </a>
+          {trailing}
+        </React.Fragment>
+      );
+    }
+    return <React.Fragment key={`${keyPrefix}-txt-${idx}`}>{part}</React.Fragment>;
+  });
+}
+
+/**
+ * Helper to render message/comment body with styled @mention pills and clickable URLs
  */
 export function renderContentWithMentions(
   content: string,
-  profiles?: Profile[]
+  profiles?: Profile[],
+  options?: { isInverse?: boolean }
 ): React.ReactNode {
   if (!content) return null;
 
@@ -323,15 +368,29 @@ export function renderContentWithMentions(
           return (
             <span
               key={i}
-              className="inline-flex items-center gap-0.5 rounded-md bg-brand-soft px-1.5 py-0.5 text-xs font-semibold text-brand transition hover:bg-brand/15 dark:bg-brand-soft-dark cursor-pointer"
+              className={
+                options?.isInverse
+                  ? "inline-flex items-center gap-0.5 rounded-md bg-white/20 px-1.5 py-0.5 text-xs font-semibold text-white transition hover:bg-white/30 cursor-pointer"
+                  : "inline-flex items-center gap-0.5 rounded-md bg-brand-soft px-1.5 py-0.5 text-xs font-semibold text-brand transition hover:bg-brand/15 dark:bg-brand-soft-dark cursor-pointer"
+              }
               title={matchedProfile ? `${matchedProfile.full_name} (${matchedProfile.email})` : part}
             >
-              <AtSign className="h-3 w-3 inline text-brand shrink-0" />
+              <AtSign
+                className={
+                  options?.isInverse
+                    ? "h-3 w-3 inline text-white shrink-0"
+                    : "h-3 w-3 inline text-brand shrink-0"
+                }
+              />
               {nameOnly}
             </span>
           );
         }
-        return <span key={i}>{part}</span>;
+        return (
+          <span key={i}>
+            {renderTextWithLinks(part, `m-${i}`, options)}
+          </span>
+        );
       });
     }
   }
@@ -344,13 +403,21 @@ export function renderContentWithMentions(
       return (
         <span
           key={i}
-          className="inline-flex items-center gap-0.5 rounded-md bg-brand-soft px-1.5 py-0.5 text-xs font-semibold text-brand dark:bg-brand-soft-dark"
+          className={
+            options?.isInverse
+              ? "inline-flex items-center gap-0.5 rounded-md bg-white/20 px-1.5 py-0.5 text-xs font-semibold text-white"
+              : "inline-flex items-center gap-0.5 rounded-md bg-brand-soft px-1.5 py-0.5 text-xs font-semibold text-brand dark:bg-brand-soft-dark"
+          }
         >
           {part}
         </span>
       );
     }
-    return <span key={i}>{part}</span>;
+    return (
+      <span key={i}>
+        {renderTextWithLinks(part, `fb-${i}`, options)}
+      </span>
+    );
   });
 }
 

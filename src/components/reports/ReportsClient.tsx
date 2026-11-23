@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -106,7 +107,16 @@ export function ReportsClient({
   tasks,
   taskAssignees,
 }: ReportsClientProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<ReportTab>("executive");
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab") as ReportTab | null;
+    if (tabParam && ["executive", "team", "explorer"].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   // Tab 1 state
   const [projectStatusFilter, setProjectStatusFilter] = useState<
@@ -550,16 +560,19 @@ export function ReportsClient({
         </button>
       </div>
 
-      {/* 3-Tab Navigation */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3 dark:border-slate-800">
+      {/* 3-Tab Underline Navigation (synced with Left NavRail) */}
+      <div className="flex flex-wrap gap-1 border-b border-[#e8e8e8] dark:border-[#303030]">
         <button
           type="button"
-          onClick={() => setActiveTab("executive")}
+          onClick={() => {
+            setActiveTab("executive");
+            router.push("/reports?tab=executive");
+          }}
           className={cn(
-            "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition",
+            "inline-flex items-center gap-2 border-b-2 px-4 py-2 text-[13px] font-medium transition cursor-pointer",
             activeTab === "executive"
-              ? "bg-brand text-white shadow-sm"
-              : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800"
+              ? "border-brand text-brand font-semibold"
+              : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
           )}
         >
           <FolderKanban className="h-4 w-4" />
@@ -568,12 +581,15 @@ export function ReportsClient({
 
         <button
           type="button"
-          onClick={() => setActiveTab("team")}
+          onClick={() => {
+            setActiveTab("team");
+            router.push("/reports?tab=team");
+          }}
           className={cn(
-            "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition",
+            "inline-flex items-center gap-2 border-b-2 px-4 py-2 text-[13px] font-medium transition cursor-pointer",
             activeTab === "team"
-              ? "bg-brand text-white shadow-sm"
-              : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800"
+              ? "border-brand text-brand font-semibold"
+              : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
           )}
         >
           <Users className="h-4 w-4" />
@@ -582,12 +598,15 @@ export function ReportsClient({
 
         <button
           type="button"
-          onClick={() => setActiveTab("explorer")}
+          onClick={() => {
+            setActiveTab("explorer");
+            router.push("/reports?tab=explorer");
+          }}
           className={cn(
-            "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition",
+            "inline-flex items-center gap-2 border-b-2 px-4 py-2 text-[13px] font-medium transition cursor-pointer",
             activeTab === "explorer"
-              ? "bg-brand text-white shadow-sm"
-              : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800"
+              ? "border-brand text-brand font-semibold"
+              : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
           )}
         >
           <Download className="h-4 w-4" />

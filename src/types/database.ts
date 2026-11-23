@@ -38,6 +38,17 @@ export interface SystemRole {
   created_at: string;
 }
 
+export interface NotificationPreferences {
+  email_notifications: boolean;
+  daily_digest: boolean;
+  popup_notifications: boolean;
+  show_unread_count: boolean;
+  daily_reminder_enabled: boolean;
+  daily_reminder_time: string;
+  weekly_start_summary: boolean;
+  weekly_end_summary: boolean;
+}
+
 export interface Profile {
   id: string;
   email: string;
@@ -49,6 +60,7 @@ export interface Profile {
   manager_id?: string | null;
   custom_role_id?: string | null;
   telegram_chat_id: string | null;
+  notification_prefs?: NotificationPreferences | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -75,10 +87,12 @@ export interface ProjectPhase {
   description: string | null;
   color: string;
   status: PhaseStatus;
+  assignee_id?: string | null;
   start_date: string | null;
   due_date: string | null;
   position: number;
   created_at: string;
+  assignee?: Pick<Profile, "id" | "full_name" | "email" | "avatar_url" | "job_title"> | null;
 }
 
 export interface Project {
@@ -96,6 +110,12 @@ export interface Project {
   project_manager_id?: string | null;
   progress_mode?: ProgressMode;
   manual_progress?: number;
+  enable_phase_assignees?: boolean;
+  auto_assign_subtask_phase?: boolean;
+  assign_tasks_to_creator?: boolean;
+  restrict_task_assignment?: boolean;
+  restrict_tasks_to_assignee?: boolean;
+  is_private?: boolean;
   start_date: string | null;
   due_date: string | null;
   created_by: string | null;
@@ -191,14 +211,26 @@ export interface TaskAttachment {
   created_at: string;
 }
 
+export type PersonalTodoCategory =
+  | "work"
+  | "followup"
+  | "meeting"
+  | "idea"
+  | "personal";
+
 export interface PersonalTodo {
   id: string;
   user_id: string;
   title: string;
+  notes?: string | null;
+  priority?: TaskPriority;
+  category?: PersonalTodoCategory | string;
   is_done: boolean;
   due_date: string | null;
+  promoted_task_id?: string | null;
   position: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Notification {
@@ -259,6 +291,11 @@ export interface DirectMessage {
   attachment_url: string | null;
   attachment_name: string | null;
   is_read: boolean;
+  reply_to_id?: string | null;
+  is_pinned?: boolean;
+  is_deleted?: boolean;
+  edited_at?: string | null;
+  reactions?: Record<string, string[]>;
   created_at: string;
   sender?: Profile;
   receiver?: Profile;
@@ -272,8 +309,18 @@ export interface ChannelMessage {
   attachment_url: string | null;
   attachment_name: string | null;
   parent_id: string | null;
+  is_pinned?: boolean;
+  is_deleted?: boolean;
+  edited_at?: string | null;
+  reactions?: Record<string, string[]>;
   created_at: string;
   author?: Profile;
+}
+
+export interface ChannelReadState {
+  user_id: string;
+  department_id: string;
+  last_read_at: string;
 }
 
 export interface ProjectUpdateComment {

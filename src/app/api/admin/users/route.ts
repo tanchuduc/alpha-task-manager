@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import type { UserRole } from "@/types/database";
+import { hasSystemPermission, SYSTEM_PERMISSIONS } from "@/lib/permissions";
+import type { Profile, UserRole } from "@/types/database";
 
 const VALID_ROLES: UserRole[] = ["admin", "manager", "member"];
 
-async function verifyAdmin() {
+async function verifyManageUsersAccess() {
   const supabase = await createServerSupabaseClient();
   const {
     data: { user },
@@ -18,30 +19,36 @@ async function verifyAdmin() {
         { status: 401 }
       ),
       user: null,
+      requester: null,
     };
   }
 
   const { data: requester } = await supabase
     .from("profiles")
-    .select("id, role")
+    .select("*, custom_role:roles(*)")
     .eq("id", user.id)
     .single();
 
-  if (!requester || requester.role !== "admin") {
+  const requesterProfile = requester as Profile | null;
+  if (
+    !requesterProfile ||
+    !hasSystemPermission(requesterProfile, SYSTEM_PERMISSIONS.MANAGE_USERS)
+  ) {
     return {
       error: NextResponse.json(
-        { error: "Chỉ Quản trị viên (Admin) mới có quyền thực hiện thao tác này." },
+        { error: "Bạn không có quyền quản lý tài khoản nhân sự (manage_users)." },
         { status: 403 }
       ),
       user: null,
+      requester: null,
     };
   }
 
-  return { error: null, user };
+  return { error: null, user, requester: requesterProfile };
 }
 
 export async function POST(request: Request) {
-  const { error: authError } = await verifyAdmin();
+  const { error: authError } = await verifyManageUsersAccess();
   if (authError) return authError;
 
   try {
@@ -137,8 +144,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const { error: authError, user } = await verifyAdmin();
-  if (authError || !user) return authError!;
+  const { error: authError, user, requester } = await verifyManageUsersAccess();
+  if (authError || !user || !requester) return authError!;
 
   try {
     const body = (await request.json()) as {
@@ -174,6 +181,12 @@ export async function PATCH(request: Request) {
         return NextResponse.json(
           { error: "Vai trò không hợp lệ." },
           { status: 400 }
+        );
+      }
+      if (body.role === "admin" && requester.role !== "admin") {
+        return NextResponse.json(
+          { error: "Chỉ Quản trị viên gốc (Admin) mới có thể cấp quyền Admin." },
+          { status: 403 }
         );
       }
       updates.role = body.role;

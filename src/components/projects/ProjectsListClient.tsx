@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
   Search,
@@ -15,13 +15,16 @@ import {
   Sparkles,
   Loader2,
   Settings,
-  ShieldAlert,
-  Tag,
   User,
-  Sliders,
+  List,
+  LayoutGrid,
+  ChevronDown,
+  ChevronRight,
+  ArrowUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { hasSystemPermission, SYSTEM_PERMISSIONS } from "@/lib/permissions";
 import {
   cn,
   formatDateVi,
@@ -56,8 +59,12 @@ interface ProjectsListClientProps {
   profiles?: Profile[];
 }
 
+type DisplayMode = "table" | "group" | "grid";
+type GroupByField = "category" | "department" | "confidence" | "status";
+type SortField = "name" | "due_date" | "progress" | "created_at";
+
 const PROJECT_COLORS = [
-  "#F26522",
+  "#F47830",
   "#2563EB",
   "#10B981",
   "#8B5CF6",
@@ -110,14 +117,40 @@ export default function ProjectsListClient({
   profiles = [],
 }: ProjectsListClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
 
   const [projects, setProjects] = useState<ProjectWithStats[]>(initialProjects);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | ProjectStatus>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | ProjectStatus>(
+    "active"
+  );
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
+
+  // Display mode synced with Left NavRail (?view=all | grouped | archived)
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("table");
+  const [groupBy, setGroupBy] = useState<GroupByField>("category");
+  const [collapsedGroups, setCollapsedGroups] = useState<
+    Record<string, boolean>
+  >({});
+  const [sortField, setSortField] = useState<SortField>("created_at");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  useEffect(() => {
+    const viewParam = searchParams.get("view");
+    if (viewParam === "grouped") {
+      setDisplayMode("group");
+      if (statusFilter === "archived") setStatusFilter("all");
+    } else if (viewParam === "archived") {
+      setStatusFilter("archived");
+      setDisplayMode("table");
+    } else if (viewParam === "all") {
+      if (statusFilter === "archived") setStatusFilter("active");
+      setDisplayMode("table");
+    }
+  }, [searchParams]);
 
   // Modal create state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -130,7 +163,7 @@ export default function ProjectsListClient({
   const [deliveryConfidence, setDeliveryConfidence] =
     useState<DeliveryConfidence>("on_track");
   const [description, setDescription] = useState("");
-  const [color, setColor] = useState("#F26522");
+  const [color, setColor] = useState("#F47830");
   const [departmentId, setDepartmentId] = useState<string>(
     currentUser.department_id ?? ""
   );
@@ -143,18 +176,41 @@ export default function ProjectsListClient({
   // Modal settings state
   const [editingProject, setEditingProject] = useState<Project | null>(null);
 
+  const canCreateProjects = useMemo(
+    () =>
+      hasSystemPermission(currentUser, SYSTEM_PERMISSIONS.CREATE_PROJECTS),
+    [currentUser]
+  );
+
+  function canEditProjectSettings(proj: Project): boolean {
+    if (currentUser.role === "admin") return true;
+    if (proj.created_by === currentUser.id) return true;
+    if (proj.project_manager_id === currentUser.id) return true;
+    return hasSystemPermission(currentUser, SYSTEM_PERMISSIONS.MANAGE_SETTINGS);
+  }
+
   const selectedTemplate = useMemo(
     () => templates.find((t) => t.id === selectedTemplateId) ?? null,
     [templates, selectedTemplateId]
   );
 
+  function getProjectProgress(p: ProjectWithStats): number {
+    if (p.progress_mode === "manual") return p.manual_progress ?? 0;
+    return p.total_tasks > 0
+      ? Math.round((p.completed_tasks / p.total_tasks) * 100)
+      : 0;
+  }
+
   const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return projects.filter((p) => {
+    const list = projects.filter((p) => {
       if (statusFilter !== "all" && p.status !== statusFilter) return false;
       if (departmentFilter !== "all" && p.department_id !== departmentFilter)
         return false;
-      if (categoryFilter !== "all" && (p.category || "Dự án Chung") !== categoryFilter)
+      if (
+        categoryFilter !== "all" &&
+        (p.category || "Dự án Chung") !== categoryFilter
+      )
         return false;
       if (
         confidenceFilter !== "all" &&
@@ -170,7 +226,74 @@ export default function ProjectsListClient({
       }
       return true;
     });
-  }, [projects, search, statusFilter, departmentFilter, categoryFilter, confidenceFilter]);
+
+    return [...list].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === "name") {
+        cmp = a.name.localeCompare(b.name, "vi");
+      } else if (sortField === "due_date") {
+        const da = a.due_date || "9999-12-31";
+        const db = b.due_date || "9999-12-31";
+        cmp = da.localeCompare(db);
+      } else if (sortField === "progress") {
+        cmp = getProjectProgress(a) - getProjectProgress(b);
+      } else {
+        cmp = (a.created_at || "").localeCompare(b.created_at || "");
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [
+    projects,
+    search,
+    statusFilter,
+    departmentFilter,
+    categoryFilter,
+    confidenceFilter,
+    sortField,
+    sortAsc,
+  ]);
+
+  const groupedProjects = useMemo(() => {
+    const map = new Map<
+      string,
+      { key: string; label: string; items: ProjectWithStats[] }
+    >();
+
+    for (const p of filteredProjects) {
+      let key = "default";
+      let label = "Chưa phân nhóm";
+
+      if (groupBy === "category") {
+        key = p.category || "Dự án Chung";
+        label = p.category || "Dự án Chung";
+      } else if (groupBy === "department") {
+        key = p.department?.id || "unassigned";
+        label = p.department?.name || "Liên phòng ban / Chung";
+      } else if (groupBy === "confidence") {
+        const cKey = p.delivery_confidence || "on_track";
+        key = cKey;
+        label = CONFIDENCE_CONFIG[cKey]?.label || "Đúng tiến độ";
+      } else if (groupBy === "status") {
+        key = p.status;
+        label = STATUS_META[p.status]?.label || p.status;
+      }
+
+      const existing = map.get(key) ?? { key, label, items: [] };
+      existing.items.push(p);
+      map.set(key, existing);
+    }
+
+    return Array.from(map.values());
+  }, [filteredProjects, groupBy]);
+
+  function handleSort(field: SortField) {
+    if (sortField === field) {
+      setSortAsc((prev) => !prev);
+    } else {
+      setSortField(field);
+      setSortAsc(true);
+    }
+  }
 
   function resetForm() {
     setSelectedTemplateId("");
@@ -181,7 +304,7 @@ export default function ProjectsListClient({
     setClientName("");
     setDeliveryConfidence("on_track");
     setDescription("");
-    setColor("#F26522");
+    setColor("#F47830");
     setDepartmentId(currentUser.department_id ?? "");
     setStartDate(new Date().toISOString().slice(0, 10));
     setDueDate("");
@@ -198,7 +321,7 @@ export default function ProjectsListClient({
     setSelectedTemplateId(tplId);
     const tpl = templates.find((t) => t.id === tplId);
     if (tpl) {
-      setColor(tpl.color || "#F26522");
+      setColor(tpl.color || "#F47830");
       if (!description && tpl.description) {
         setDescription(tpl.description);
       }
@@ -210,8 +333,14 @@ export default function ProjectsListClient({
 
   async function handleCreateProject(e: React.FormEvent) {
     e.preventDefault();
+    if (!canCreateProjects) {
+      toast.error("Tài khoản của bạn không có quyền tạo dự án mới.");
+      return;
+    }
     const trimmedName = name.trim();
-    const trimmedCode = (code.trim() || generateProjectCode(trimmedName)).toUpperCase();
+    const trimmedCode = (
+      code.trim() || generateProjectCode(trimmedName)
+    ).toUpperCase();
 
     if (!trimmedName) {
       toast.error("Vui lòng nhập tên dự án");
@@ -243,7 +372,6 @@ export default function ProjectsListClient({
         throw new Error(projError?.message || "Không thể tạo dự án");
       }
 
-      // Ensure creator is added as owner
       await supabase.from("project_members").upsert(
         {
           project_id: newProject.id,
@@ -255,8 +383,11 @@ export default function ProjectsListClient({
 
       let createdTaskCount = 0;
 
-      // If a template is selected, bulk-insert template tasks
-      if (selectedTemplate && selectedTemplate.tasks && selectedTemplate.tasks.length > 0) {
+      if (
+        selectedTemplate &&
+        selectedTemplate.tasks &&
+        selectedTemplate.tasks.length > 0
+      ) {
         const { data: statusesData } = await supabase
           .from("task_statuses")
           .select("*")
@@ -320,7 +451,8 @@ export default function ProjectsListClient({
       router.push(`/projects/${newProject.id}`);
       router.refresh();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Đã xảy ra lỗi khi tạo dự án";
+      const msg =
+        err instanceof Error ? err.message : "Đã xảy ra lỗi khi tạo dự án";
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -342,297 +474,565 @@ export default function ProjectsListClient({
     );
   }
 
+  // Render a single high-density project table row (Worklenz project-list.tsx)
+  function renderProjectRow(project: ProjectWithStats) {
+    const pct = getProjectProgress(project);
+    const statusInfo = STATUS_META[project.status] ?? STATUS_META.active;
+    const conf =
+      CONFIDENCE_CONFIG[project.delivery_confidence || "on_track"] ??
+      CONFIDENCE_CONFIG.on_track;
+    const overdue =
+      project.status === "active" && isOverdue(project.due_date, null);
+
+    return (
+      <tr
+        key={project.id}
+        onClick={() => router.push(`/projects/${project.id}`)}
+        className="group border-b border-[#f0f0f0] dark:border-[#262626] hover:bg-[#f8f9fa] dark:hover:bg-[#242424] transition cursor-pointer"
+      >
+        {/* Col 1: Color Dot + Code + Project Name */}
+        <td className="px-3.5 py-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: project.color || "#F47830" }}
+            />
+            <span className="shrink-0 rounded-[4px] bg-slate-100 dark:bg-[#2a2a2a] px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              {project.code}
+            </span>
+            <span className="truncate text-[13.5px] font-semibold text-slate-900 dark:text-slate-100 group-hover:text-brand">
+              {project.name}
+            </span>
+          </div>
+        </td>
+
+        {/* Col 2: Category */}
+        <td className="px-3 py-2.5">
+          <span className="inline-flex items-center rounded-[4px] bg-orange-50/80 dark:bg-orange-950/40 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300 truncate max-w-[180px]">
+            {project.category || "Dự án Chung"}
+          </span>
+        </td>
+
+        {/* Col 3: Health / Delivery Confidence */}
+        <td className="px-3 py-2.5">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-[4px] border px-2 py-0.5 text-[11px] font-medium",
+              conf.badgeClass
+            )}
+            title={project.confidence_note || conf.desc}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", conf.dotClass)} />
+            {conf.label.split(" (")[0]}
+          </span>
+        </td>
+
+        {/* Col 4: Progress Bar + Tasks Ratio */}
+        <td className="px-3 py-2.5 min-w-[160px]">
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-[#2c2c2c]">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${pct}%`,
+                  backgroundColor: project.color || "#F47830",
+                }}
+              />
+            </div>
+            <span className="shrink-0 font-mono text-[11px] font-semibold text-slate-700 dark:text-slate-200 w-16 text-right">
+              {pct}% ({project.completed_tasks}/{project.total_tasks})
+            </span>
+          </div>
+        </td>
+
+        {/* Col 5: Client / Author */}
+        <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
+          {project.client_name ? (
+            <span className="truncate block max-w-[150px]">
+              {project.client_name}
+            </span>
+          ) : (
+            <span className="text-slate-300 dark:text-slate-600">—</span>
+          )}
+        </td>
+
+        {/* Col 6: Department */}
+        <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
+          {project.department?.name || "Chung"}
+        </td>
+
+        {/* Col 7: Status */}
+        <td className="px-3 py-2.5">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[11px] font-medium",
+              statusInfo.badgeClass
+            )}
+          >
+            {statusInfo.label}
+          </span>
+        </td>
+
+        {/* Col 8: Due Date */}
+        <td className="px-3 py-2.5 text-right font-mono text-xs">
+          <span
+            className={cn(
+              overdue
+                ? "font-semibold text-red-600 dark:text-red-400"
+                : "text-slate-600 dark:text-slate-400"
+            )}
+          >
+            {project.due_date ? formatDateVi(project.due_date) : "—"}
+          </span>
+        </td>
+
+        {/* Col 9: Actions */}
+        <td
+          className="px-3 py-2.5 text-right"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {canEditProjectSettings(project) && (
+            <button
+              type="button"
+              onClick={() => setEditingProject(project)}
+              className="rounded-[4px] p-1 text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 dark:hover:bg-[#333333] dark:hover:text-slate-200 transition cursor-pointer"
+              title="Cài đặt dự án"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </td>
+      </tr>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+    <div className="space-y-4">
+      {/* Compact Header Row */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#e8e8e8] dark:border-[#303030] pb-3">
+        <div className="flex items-baseline gap-2.5">
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Dự án & Xuất bản ({filteredProjects.length})
           </h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Theo dõi tiến độ, sức khỏe dự án và danh mục xuất bản của Alpha Books.
-          </p>
+          <span className="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline">
+            Danh mục đầu sách, tiến độ và sức khỏe dự án Alpha Books
+          </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Link
-            href="/projects/templates"
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-xs transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            <Layers className="h-4 w-4 text-brand" />
-            Mẫu quy trình
-          </Link>
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-xs transition hover:bg-brand-hover cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            Tạo dự án mới
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canCreateProjects && (
+            <>
+              <Link
+                href="/projects/templates"
+                className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-brand dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200"
+              >
+                <Layers className="h-3.5 w-3.5 text-brand" />
+                <span>Mẫu quy trình</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-[6px] bg-brand px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-brand-hover cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Tạo dự án</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Filters Bar */}
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      {/* Worklenz Single-Line ProjectListToolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818] px-3.5 py-2">
+        {/* Left: Status Segment Pills (Active | All | Completed | Archived) */}
+        <div className="flex flex-wrap items-center gap-1">
+          {(
+            [
+              { key: "active", label: "Đang hoạt động" },
+              { key: "all", label: "Tất cả" },
+              { key: "completed", label: "Hoàn thành" },
+              { key: "archived", label: "Lưu trữ" },
+            ] as const
+          ).map((seg) => (
+            <button
+              key={seg.key}
+              type="button"
+              onClick={() => setStatusFilter(seg.key)}
+              className={cn(
+                "rounded-[6px] px-2.5 py-1 text-xs font-medium transition cursor-pointer",
+                statusFilter === seg.key
+                  ? "bg-brand text-white font-semibold"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-[#2a2a2a]"
+              )}
+            >
+              {seg.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Right: Filters + View Mode Switcher (Table | Group | Grid) */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Group By selector when in Group mode */}
+          {displayMode === "group" && (
+            <div className="inline-flex items-center gap-1 text-xs text-slate-500">
+              <span>Nhóm theo:</span>
+              <select
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value as GroupByField)}
+                className="rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] px-2 py-1 text-xs font-medium text-brand focus:border-brand focus:outline-none cursor-pointer"
+              >
+                <option value="category">Danh mục sách</option>
+                <option value="department">Phòng ban</option>
+                <option value="confidence">Sức khỏe dự án</option>
+                <option value="status">Trạng thái</option>
+              </select>
+            </div>
+          )}
+
+          {/* Confidence Filter */}
+          <select
+            value={confidenceFilter}
+            onChange={(e) => setConfidenceFilter(e.target.value)}
+            aria-label="Lọc theo sức khỏe"
+            className="rounded-[6px] border border-[#d9d9d9] bg-white px-2.5 py-1 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200 cursor-pointer"
+          >
+            <option value="all">Mọi sức khỏe</option>
+            <option value="on_track">🟢 Đúng tiến độ</option>
+            <option value="at_risk">🟡 Có rủi ro</option>
+            <option value="off_track">🔴 Trễ hạn</option>
+          </select>
+
+          {/* Category Filter */}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            aria-label="Lọc theo danh mục"
+            className="max-w-[155px] rounded-[6px] border border-[#d9d9d9] bg-white px-2.5 py-1 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200 cursor-pointer"
+          >
+            <option value="all">Mọi danh mục</option>
+            {PROJECT_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+
+          {/* Department Filter */}
+          <select
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            aria-label="Lọc theo phòng ban"
+            className="max-w-[150px] rounded-[6px] border border-[#d9d9d9] bg-white px-2.5 py-1 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200 cursor-pointer"
+          >
+            <option value="all">Mọi phòng ban</option>
+            {departments.map((dept) => (
+              <option key={dept.id} value={dept.id}>
+                {getDepartmentDisplayName(dept, departments)}
+              </option>
+            ))}
+          </select>
+
+          {/* Search input */}
+          <div className="relative w-48 sm:w-56">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm theo tên sách, mã dự án hoặc tác giả..."
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100"
+              placeholder="Tìm tên sách, mã, tác giả..."
+              className="w-full rounded-[6px] border border-[#d9d9d9] bg-white py-1 pl-8 pr-6 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-100"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as "all" | ProjectStatus)
-              }
-              aria-label="Lọc theo trạng thái"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+          {/* Mode Toggle: Table (List) | Group | Grid */}
+          <div className="inline-flex rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] p-0.5">
+            <button
+              type="button"
+              onClick={() => setDisplayMode("table")}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-[4px] px-2 py-1 text-xs font-medium transition cursor-pointer",
+                displayMode === "table"
+                  ? "bg-brand text-white"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+              )}
+              title="Chế độ Bảng dữ liệu (Table)"
             >
-              <option value="all">Tất cả trạng thái</option>
-              <option value="active">Đang hoạt động</option>
-              <option value="completed">Hoàn thành</option>
-              <option value="archived">Lưu trữ</option>
-            </select>
-
-            {/* Confidence Filter */}
-            <select
-              value={confidenceFilter}
-              onChange={(e) => setConfidenceFilter(e.target.value)}
-              aria-label="Lọc theo sức khỏe"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+              <List className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Bảng</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayMode("group")}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-[4px] px-2 py-1 text-xs font-medium transition cursor-pointer",
+                displayMode === "group"
+                  ? "bg-brand text-white"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+              )}
+              title="Chế độ Gom nhóm (Group)"
             >
-              <option value="all">Tất cả sức khỏe</option>
-              <option value="on_track">🟢 Đúng tiến độ (On track)</option>
-              <option value="at_risk">🟡 Có rủi ro (At risk)</option>
-              <option value="off_track">🔴 Trễ hạn (Off track)</option>
-            </select>
-
-            {/* Category Filter */}
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              aria-label="Lọc theo phân loại"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer max-w-[170px]"
+              <FolderKanban className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Nhóm</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayMode("grid")}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-[4px] px-2 py-1 text-xs font-medium transition cursor-pointer",
+                displayMode === "grid"
+                  ? "bg-brand text-white"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+              )}
+              title="Chế độ Lưới thẻ (Cards)"
             >
-              <option value="all">Tất cả danh mục</option>
-              {PROJECT_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-
-            {/* Department Filter */}
-            <select
-              value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-              aria-label="Lọc theo phòng ban"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
-            >
-              <option value="all">Tất cả phòng ban</option>
-              {departments.map((dept) => (
-                <option key={dept.id} value={dept.id}>
-                  {getDepartmentDisplayName(dept, departments)}
-                </option>
-              ))}
-            </select>
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Projects Grid */}
+      {/* Empty State */}
       {filteredProjects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center dark:border-slate-700 dark:bg-slate-900/60">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-soft text-brand dark:bg-brand/15">
-            <FolderKanban className="h-6 w-6" />
-          </div>
-          <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-slate-100">
-            Chưa có dự án nào phù hợp
+        <div className="flex flex-col items-center justify-center rounded-[8px] border border-dashed border-[#d9d9d9] bg-white px-6 py-14 text-center dark:border-[#303030] dark:bg-[#1f1f1f]">
+          <FolderKanban className="h-8 w-8 text-brand" />
+          <h3 className="mt-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            Không tìm thấy dự án nào phù hợp
           </h3>
-          <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-            {projects.length === 0
-              ? "Hãy tạo dự án đầu tiên hoặc áp dụng Mẫu quy trình có sẵn để bắt đầu ngay."
-              : "Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc trạng thái, danh mục, sức khỏe."}
+          <p className="mt-1 max-w-sm text-xs text-slate-500 dark:text-slate-400">
+            Thử đổi bộ lọc trạng thái sang &ldquo;Tất cả&rdquo; hoặc tạo dự án mới.
           </p>
-          {projects.length === 0 && (
-            <button
-              type="button"
-              onClick={() => setShowCreateModal(true)}
-              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-hover cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              Tạo dự án mới
-            </button>
-          )}
+        </div>
+      ) : displayMode === "table" ? (
+        /* ==================================================================
+         * VIEW 1: WORKLENZ HIGH-DENSITY DATA TABLE (DEFAULT)
+         * ================================================================ */
+        <div className="overflow-x-auto rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f]">
+          <table className="w-full min-w-[960px] text-left border-collapse">
+            <thead>
+              <tr className="border-b border-[#e8e8e8] dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818] text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <th className="px-3.5 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSort("name")}
+                    className="inline-flex items-center gap-1 hover:text-brand cursor-pointer"
+                  >
+                    <span>Mã & Tên dự án</span>
+                    <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
+                <th className="px-3 py-2.5">Danh mục</th>
+                <th className="px-3 py-2.5">Sức khỏe</th>
+                <th className="px-3 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSort("progress")}
+                    className="inline-flex items-center gap-1 hover:text-brand cursor-pointer"
+                  >
+                    <span>Tiến độ</span>
+                    <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
+                <th className="px-3 py-2.5">Tác giả / Đối tác</th>
+                <th className="px-3 py-2.5">Phòng ban</th>
+                <th className="px-3 py-2.5">Trạng thái</th>
+                <th className="px-3 py-2.5 text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSort("due_date")}
+                    className="inline-flex items-center gap-1 hover:text-brand cursor-pointer ml-auto"
+                  >
+                    <span>Hạn chót</span>
+                    <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
+                <th className="px-3 py-2.5 w-10" />
+              </tr>
+            </thead>
+            <tbody>{filteredProjects.map(renderProjectRow)}</tbody>
+          </table>
+        </div>
+      ) : displayMode === "group" ? (
+        /* ==================================================================
+         * VIEW 2: WORKLENZ GROUPED PROJECTS VIEW (ProjectGroupList)
+         * ================================================================ */
+        <div className="space-y-3">
+          {groupedProjects.map((grp) => {
+            const isCollapsed = !!collapsedGroups[grp.key];
+            return (
+              <div
+                key={grp.key}
+                className="overflow-hidden rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f]"
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCollapsedGroups((prev) => ({
+                      ...prev,
+                      [grp.key]: !prev[grp.key],
+                    }))
+                  }
+                  className="flex w-full items-center justify-between bg-[#fafafa] dark:bg-[#181818] px-4 py-2 text-left hover:bg-slate-100/80 dark:hover:bg-[#222222] transition cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    {isCollapsed ? (
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-slate-400" />
+                    )}
+                    <span className="text-[13px] font-bold text-slate-800 dark:text-slate-100">
+                      {grp.label}
+                    </span>
+                    <span className="rounded bg-brand-soft dark:bg-brand-soft-dark px-2 py-0.5 text-[11px] font-bold text-brand">
+                      {grp.items.length} dự án
+                    </span>
+                  </div>
+                </button>
+
+                {!isCollapsed && (
+                  <div className="overflow-x-auto border-t border-[#e8e8e8] dark:border-[#303030]">
+                    <table className="w-full min-w-[960px] text-left border-collapse">
+                      <tbody>{grp.items.map(renderProjectRow)}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        /* ==================================================================
+         * VIEW 3: COMPACT GRID CARDS
+         * ================================================================ */
+        <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
           {filteredProjects.map((project) => {
-            const isManual = project.progress_mode === "manual";
-            const autoPct =
-              project.total_tasks > 0
-                ? Math.round((project.completed_tasks / project.total_tasks) * 100)
-                : 0;
-            const pct = isManual ? (project.manual_progress ?? 0) : autoPct;
-
-            const statusInfo = STATUS_META[project.status] ?? STATUS_META.active;
+            const pct = getProjectProgress(project);
+            const statusInfo =
+              STATUS_META[project.status] ?? STATUS_META.active;
             const conf =
               CONFIDENCE_CONFIG[project.delivery_confidence || "on_track"] ??
               CONFIDENCE_CONFIG.on_track;
-
             const overdue =
               project.status === "active" && isOverdue(project.due_date, null);
 
             return (
               <div
                 key={project.id}
-                className="group relative flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs transition hover:-translate-y-0.5 hover:border-brand/50 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand/50"
+                className="group relative flex flex-col overflow-hidden rounded-[8px] border border-[#e8e8e8] bg-white transition hover:border-brand/60 hover:shadow-sm dark:border-[#303030] dark:bg-[#1f1f1f]"
               >
-                {/* Top color bar */}
                 <div
-                  className="h-1.5 w-full"
-                  style={{ backgroundColor: project.color || "#F26522" }}
+                  className="h-1 w-full"
+                  style={{ backgroundColor: project.color || "#F47830" }}
                 />
 
-                <div className="flex flex-1 flex-col p-5">
-                  {/* Top Badges Row */}
+                <div className="flex flex-1 flex-col p-4">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      <span className="inline-flex items-center rounded-[4px] bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700 dark:bg-[#2a2a2a] dark:text-slate-300">
                         {project.code}
                       </span>
                       {project.category && (
-                        <span className="truncate rounded-md bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">
+                        <span className="truncate rounded-[4px] bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">
                           {project.category}
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
                       <span
                         className={cn(
-                          "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                          "inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[10px] font-medium",
                           statusInfo.badgeClass
                         )}
                       >
                         {statusInfo.label}
                       </span>
-
-                      {/* Settings cog button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setEditingProject(project);
-                        }}
-                        className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition cursor-pointer"
-                        title="Cài đặt dự án"
-                      >
-                        <Settings className="h-4 w-4" />
-                      </button>
+                      {canEditProjectSettings(project) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setEditingProject(project);
+                          }}
+                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 cursor-pointer"
+                          title="Cài đặt dự án"
+                        >
+                          <Settings className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {/* Project Title */}
                   <Link
                     href={`/projects/${project.id}`}
-                    className="mt-3 block group-hover:text-brand"
+                    className="mt-2.5 block group-hover:text-brand"
                   >
-                    <h2 className="line-clamp-1 text-base font-bold text-slate-900 transition dark:text-slate-100">
+                    <h2 className="line-clamp-1 text-sm font-bold text-slate-900 transition dark:text-slate-100">
                       {project.name}
                     </h2>
                   </Link>
 
-                  {/* Client / Author & Delivery Confidence */}
-                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                    {/* Delivery confidence badge */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span
                       className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                        "inline-flex items-center gap-1 rounded-[4px] border px-2 py-0.5 text-[11px] font-medium",
                         conf.badgeClass
                       )}
-                      title={project.confidence_note || conf.desc}
                     >
-                      <span className={cn("h-1.5 w-1.5 rounded-full", conf.dotClass)} />
+                      <span
+                        className={cn("h-1.5 w-1.5 rounded-full", conf.dotClass)}
+                      />
                       {conf.label.split(" (")[0]}
                     </span>
 
-                    {/* Client / Author */}
                     {project.client_name && (
-                      <span className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400 font-medium">
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
                         <User className="h-3 w-3 text-slate-400" />
                         {project.client_name}
                       </span>
                     )}
                   </div>
 
-                  {/* Confidence note preview if available */}
-                  {project.confidence_note && (
-                    <p className="mt-2 text-[11px] italic text-slate-500 dark:text-slate-400 line-clamp-1 bg-slate-50 dark:bg-slate-800/40 px-2 py-1 rounded">
-                      &quot;{project.confidence_note}&quot;
-                    </p>
-                  )}
-
-                  {/* Description */}
-                  {project.description ? (
-                    <p className="mt-2 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
-                      {project.description}
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-xs italic text-slate-400 dark:text-slate-500">
-                      Chưa có mô tả dự án
-                    </p>
-                  )}
-
-                  {/* Metadata: Department & Deadline */}
-                  <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 dark:text-slate-400">
-                    <span className="inline-flex items-center gap-1.5">
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="inline-flex items-center gap-1">
                       <Building2 className="h-3.5 w-3.5 text-slate-400" />
                       {project.department?.name || "Chung"}
                     </span>
                     <span
                       className={cn(
-                        "inline-flex items-center gap-1.5",
-                        overdue && "font-medium text-red-600 dark:text-red-400"
+                        "inline-flex items-center gap-1 font-mono",
+                        overdue && "font-semibold text-red-600 dark:text-red-400"
                       )}
                     >
                       <Calendar className="h-3.5 w-3.5" />
                       {project.due_date
-                        ? `Hạn: ${formatDateVi(project.due_date)}`
+                        ? formatDateVi(project.due_date)
                         : "Chưa đặt hạn"}
                     </span>
                   </div>
 
-                  {/* Progress bar */}
-                  <div className="mt-auto pt-4">
-                    <div className="mb-1.5 flex items-center justify-between text-xs">
-                      <span className="inline-flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                        Tiến độ {isManual ? "(Thủ công)" : "công việc"}
-                      </span>
-                      <span className="font-semibold text-slate-700 dark:text-slate-200">
-                        {isManual
-                          ? `${pct}%`
-                          : `${project.completed_tasks}/${project.total_tasks} (${pct}%)`}
+                  <div className="mt-auto pt-3">
+                    <div className="mb-1 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">Tiến độ</span>
+                      <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">
+                        {project.completed_tasks}/{project.total_tasks} ({pct}%)
                       </span>
                     </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                       <div
-                        className="h-full rounded-full transition-all duration-300"
+                        className="h-full rounded-full transition-all"
                         style={{
                           width: `${pct}%`,
-                          backgroundColor: project.color || "#F26522",
+                          backgroundColor: project.color || "#F47830",
                         }}
                       />
                     </div>
@@ -647,37 +1047,36 @@ export default function ProjectsListClient({
       {/* Create Project Modal */}
       {showCreateModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
           onClick={() => !submitting && setShowCreateModal(false)}
         >
           <div
-            className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+            className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[8px] border border-[#e8e8e8] bg-white p-5 shadow-xl dark:border-[#303030] dark:bg-[#1f1f1f]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+            <div className="flex items-center justify-between border-b border-[#e8e8e8] dark:border-[#303030] pb-3">
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
                 Tạo dự án mới
               </h2>
               <button
                 type="button"
                 onClick={() => setShowCreateModal(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 cursor-pointer"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateProject} className="mt-5 space-y-4">
-              {/* Template selector */}
+            <form onSubmit={handleCreateProject} className="mt-4 space-y-3.5">
               <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">
-                  <Sparkles className="h-4 w-4 text-brand" />
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <Sparkles className="h-3.5 w-3.5 text-brand" />
                   Chọn mẫu quy trình (tùy chọn)
                 </label>
                 <select
                   value={selectedTemplateId}
                   onChange={(e) => handleTemplateChange(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                 >
                   <option value="">— Dự án trống (không dùng mẫu) —</option>
                   {templates.map((tpl) => (
@@ -687,7 +1086,7 @@ export default function ProjectsListClient({
                   ))}
                 </select>
                 {selectedTemplate && (
-                  <p className="mt-1.5 rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand dark:bg-brand/15">
+                  <p className="mt-1.5 rounded-[6px] bg-brand-soft px-3 py-1.5 text-xs text-brand dark:bg-brand/15">
                     Sẽ tự động tạo{" "}
                     <strong>{selectedTemplate.tasks?.length ?? 0} công việc</strong>{" "}
                     mẫu với hạn hoàn thành tính từ ngày bắt đầu dự án.
@@ -695,10 +1094,9 @@ export default function ProjectsListClient({
                 )}
               </div>
 
-              {/* Name & Code */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="sm:col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Tên dự án / Đầu sách <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -707,11 +1105,11 @@ export default function ProjectsListClient({
                     value={name}
                     onChange={(e) => handleNameChange(e.target.value)}
                     placeholder="VD: Ra mắt sách Tư Duy Nhanh & Chậm"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Mã dự án
                   </label>
                   <input
@@ -723,12 +1121,11 @@ export default function ProjectsListClient({
                     }}
                     maxLength={12}
                     placeholder="VD: TDNC"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm uppercase text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs uppercase text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                   />
                 </div>
               </div>
 
-              {/* Category & Client */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -737,7 +1134,7 @@ export default function ProjectsListClient({
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                   >
                     {PROJECT_CATEGORIES.map((c) => (
                       <option key={c} value={c}>
@@ -756,18 +1153,19 @@ export default function ProjectsListClient({
                     value={clientName}
                     onChange={(e) => setClientName(e.target.value)}
                     placeholder="VD: Daniel Kahneman"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                   />
                 </div>
               </div>
 
-              {/* Delivery Confidence */}
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Sức khỏe dự án ban đầu
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {(["on_track", "at_risk", "off_track"] as DeliveryConfidence[]).map((key) => {
+                  {(
+                    ["on_track", "at_risk", "off_track"] as DeliveryConfidence[]
+                  ).map((key) => {
                     const cfg = CONFIDENCE_CONFIG[key];
                     const selected = deliveryConfidence === key;
                     return (
@@ -776,13 +1174,18 @@ export default function ProjectsListClient({
                         type="button"
                         onClick={() => setDeliveryConfidence(key)}
                         className={cn(
-                          "rounded-lg border p-2 text-left text-xs font-medium transition cursor-pointer",
+                          "rounded-[6px] border p-2 text-left text-xs font-medium transition cursor-pointer",
                           selected
                             ? "border-brand bg-brand-soft/30 text-brand ring-1 ring-brand font-semibold"
-                            : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                            : "border-slate-200 dark:border-[#3a3a3a] bg-white dark:bg-[#141414] text-slate-600 dark:text-slate-300"
                         )}
                       >
-                        <span className={cn("inline-block h-2 w-2 rounded-full mr-1.5", cfg.dotClass)} />
+                        <span
+                          className={cn(
+                            "inline-block h-2 w-2 rounded-full mr-1.5",
+                            cfg.dotClass
+                          )}
+                        />
                         {cfg.label.split(" (")[0]}
                       </button>
                     );
@@ -790,9 +1193,8 @@ export default function ProjectsListClient({
                 </div>
               </div>
 
-              {/* Description */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Mô tả ngắn
                 </label>
                 <textarea
@@ -800,20 +1202,19 @@ export default function ProjectsListClient({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Mục tiêu, phạm vi hoặc ghi chú quan trọng..."
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                 />
               </div>
 
-              {/* Department & Color */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Phòng ban phụ trách
                   </label>
                   <select
                     value={departmentId}
                     onChange={(e) => setDepartmentId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                   >
                     <option value="">Chung / Liên phòng ban</option>
                     {departments.map((d) => (
@@ -825,20 +1226,19 @@ export default function ProjectsListClient({
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Màu nhận diện
                   </label>
-                  <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     {PROJECT_COLORS.map((c) => (
                       <button
                         key={c}
                         type="button"
                         onClick={() => setColor(c)}
-                        aria-label={`Chọn màu ${c}`}
                         className={cn(
-                          "h-6 w-6 rounded-full transition cursor-pointer",
+                          "h-5 w-5 rounded-full transition cursor-pointer",
                           color === c
-                            ? "ring-2 ring-slate-900 ring-offset-2 dark:ring-white dark:ring-offset-slate-900"
+                            ? "ring-2 ring-slate-900 ring-offset-2 dark:ring-white"
                             : "hover:scale-110"
                         )}
                         style={{ backgroundColor: c }}
@@ -848,48 +1248,46 @@ export default function ProjectsListClient({
                 </div>
               </div>
 
-              {/* Dates */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Ngày bắt đầu
                   </label>
                   <input
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Hạn hoàn thành
                   </label>
                   <input
                     type="date"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                   />
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="flex items-center justify-end gap-2.5 border-t border-slate-100 pt-4 dark:border-slate-800">
+              <div className="flex items-center justify-end gap-2 border-t border-[#e8e8e8] pt-3 dark:border-[#303030]">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
                   disabled={submitting}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+                  className="rounded-[6px] border border-slate-200 px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-[#3a3a3a] dark:text-slate-300 cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-60 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-[6px] bg-brand px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-hover disabled:opacity-60 cursor-pointer"
                 >
-                  {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   {submitting ? "Đang tạo..." : "Tạo dự án"}
                 </button>
               </div>

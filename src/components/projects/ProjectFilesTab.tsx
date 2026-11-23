@@ -41,6 +41,7 @@ interface ProjectFilesTabProps {
   projectName: string;
   tasks: Task[];
   currentUser: Profile;
+  canManageFiles?: boolean;
   onOpenTask?: (taskId: string) => void;
 }
 
@@ -97,6 +98,7 @@ export default function ProjectFilesTab({
   projectName,
   tasks,
   currentUser,
+  canManageFiles = true,
   onOpenTask,
 }: ProjectFilesTabProps) {
   const supabase = useMemo(() => createClient(), []);
@@ -205,6 +207,10 @@ export default function ProjectFilesTab({
 
   // Handle Upload Project File
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!canManageFiles) {
+      toast.error("Bạn không có quyền tải tệp lên dự án này.");
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -260,6 +266,10 @@ export default function ProjectFilesTab({
 
   // Handle Delete Project File
   async function handleDeleteFile(file: ProjectFile) {
+    if (!canManageFiles) {
+      toast.error("Bạn không có quyền xóa tệp của dự án này.");
+      return;
+    }
     if (!confirm(`Bạn có chắc muốn xóa tệp "${file.name}" khỏi dự án không?`)) {
       return;
     }
@@ -284,6 +294,10 @@ export default function ProjectFilesTab({
   // Handle Add Project Link
   async function handleAddLink(e: React.FormEvent) {
     e.preventDefault();
+    if (!canManageFiles) {
+      toast.error("Bạn không có quyền thêm liên kết tài liệu cho dự án này.");
+      return;
+    }
     const title = newLinkTitle.trim();
     let url = newLinkUrl.trim();
     if (!title || !url) {
@@ -325,6 +339,10 @@ export default function ProjectFilesTab({
 
   // Handle Delete Project Link
   async function handleDeleteLink(link: ProjectLink) {
+    if (!canManageFiles) {
+      toast.error("Bạn không có quyền xóa liên kết tài liệu của dự án này.");
+      return;
+    }
     if (!confirm(`Bạn có chắc muốn gỡ bỏ liên kết "${link.title}"?`)) return;
 
     try {
@@ -423,7 +441,7 @@ export default function ProjectFilesTab({
         </div>
 
         {/* Section Action Trigger */}
-        {activeSection === "files" && (
+        {activeSection === "files" && canManageFiles && (
           <div className="flex items-center gap-2">
             <select
               value={uploadCategory}
@@ -463,7 +481,7 @@ export default function ProjectFilesTab({
           </div>
         )}
 
-        {activeSection === "links" && (
+        {activeSection === "links" && canManageFiles && (
           <button
             type="button"
             onClick={() => setShowAddLinkForm((v) => !v)}
@@ -606,14 +624,16 @@ export default function ProjectFilesTab({
                         </a>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFile(file)}
-                        title="Xóa tệp"
-                        className="rounded-lg p-1.5 text-slate-400 opacity-60 transition group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 cursor-pointer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {canManageFiles && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFile(file)}
+                          title="Xóa tệp"
+                          className="rounded-lg p-1.5 text-slate-400 opacity-60 transition group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -775,14 +795,16 @@ export default function ProjectFilesTab({
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteLink(link)}
-                      title="Gỡ bỏ liên kết"
-                      className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 transition cursor-pointer"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {canManageFiles && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteLink(link)}
+                        title="Gỡ bỏ liên kết"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 transition cursor-pointer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 );
               })}

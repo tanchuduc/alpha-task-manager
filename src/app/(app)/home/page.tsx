@@ -1,7 +1,17 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { HomeDashboard } from "@/components/home/HomeDashboard";
-import type { PersonalTodo, Profile, Task } from "@/types/database";
+import { canUserViewProject } from "@/lib/permissions";
+import type {
+  PersonalTodo,
+  Profile,
+  Project,
+  Task,
+  TaskStatus,
+} from "@/types/database";
+
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const supabase = await createServerSupabaseClient();
@@ -16,12 +26,25 @@ export default async function HomePage() {
   const [
     { data: profileData },
     { data: assigneeRows },
+    { data: delegatedRows },
     { data: createdRows },
     { data: todosData },
     { data: projectsData },
+    { data: myMembershipsData },
+    { data: allProfilesData },
+    { data: allStatusesData },
   ] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    supabase
+      .from("profiles")
+      .select("*, custom_role:roles(*)")
+      .eq("id", user.id)
+      .single(),
     supabase.from("task_assignees").select("task_id").eq("user_id", user.id),
+    supabase
+      .from("task_assignees")
+      .select("task_id, user_id")
+      .eq("assigned_by", user.id)
+      .neq("user_id", user.id),
     supabase.from("tasks").select("id").eq("created_by", user.id),
     supabase
       .from("personal_todos")
@@ -31,13 +54,59 @@ export default async function HomePage() {
       .order("created_at", { ascending: false }),
     supabase
       .from("projects")
-      .select("id, name, code, color")
+      .select("id, name, code, color, created_by, project_manager_id, is_private, status")
       .order("name", { ascending: true }),
+    supabase
+      .from("project_members")
+      .select("project_id")
+      .eq("user_id", user.id),
+    supabase
+      .from("profiles")
+      .select("*")
+      .eq("is_active", true)
+      .order("full_name", { ascending: true }),
+    supabase
+      .from("task_statuses")
+      .select("*")
+      .order("position", { ascending: true }),
   ]);
 
+  const profile: Profile = (profileData as Profile | null) ?? {
+    id: user.id,
+    email: user.email ?? "",
+    full_name:
+      (user.user_metadata?.full_name as string | undefined) ??
+      user.email?.split("@")[0] ??
+      "Nhân viên Alpha",
+    avatar_url: null,
+    role: "member",
+    job_title: null,
+    department_id: null,
+    telegram_chat_id: null,
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const myProjectIds = new Set(
+    (myMembershipsData ?? []).map((m) => m.project_id as string)
+  );
+  const visibleProjects = ((projectsData ?? []) as Project[]).filter((p) =>
+    canUserViewProject(profile, p, myProjectIds.has(p.id))
+  );
+
   const assignedTaskIds = (assigneeRows ?? []).map((r) => r.task_id as string);
+  const explicitlyDelegatedTaskIds = (delegatedRows ?? []).map(
+    (r) => r.task_id as string
+  );
   const createdTaskIds = (createdRows ?? []).map((r) => r.id as string);
-  const allTaskIds = Array.from(new Set([...assignedTaskIds, ...createdTaskIds]));
+  const allTaskIds = Array.from(
+    new Set([
+      ...assignedTaskIds,
+      ...explicitlyDelegatedTaskIds,
+      ...createdTaskIds,
+    ])
+  );
 
   let tasks: Task[] = [];
   if (allTaskIds.length > 0) {
@@ -49,7 +118,8 @@ export default async function HomePage() {
         project:projects(id, name, code, color),
         task_assignees(
           user_id,
-          profile:profiles(id, full_name, email, avatar_url, job_title)
+          assigned_by,
+          profile:profiles!task_assignees_user_id_fkey(id, full_name, email, avatar_url, job_title)
         )
       `)
       .in("id", allTaskIds)
@@ -61,6 +131,7 @@ export default async function HomePage() {
       project: Task["project"] | Array<NonNullable<Task["project"]>>;
       task_assignees?: Array<{
         user_id: string;
+        assigned_by?: string | null;
         profile?: Profile | Profile[];
       }>;
     };
@@ -81,29 +152,17 @@ export default async function HomePage() {
     });
   }
 
-  const profile: Profile = (profileData as Profile | null) ?? {
-    id: user.id,
-    email: user.email ?? "",
-    full_name:
-      (user.user_metadata?.full_name as string | undefined) ??
-      user.email?.split("@")[0] ??
-      "Nhân viên Alpha",
-    avatar_url: null,
-    role: "member",
-    job_title: null,
-    department_id: null,
-    telegram_chat_id: null,
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
   return (
-    <HomeDashboard
-      profile={profile}
-      initialTasks={tasks}
-      initialTodos={(todosData as PersonalTodo[]) ?? []}
-      projects={projectsData ?? []}
-    />
+    <Suspense fallback={null}>
+      <HomeDashboard
+        profile={profile}
+        initialTasks={tasks}
+        explicitlyDelegatedTaskIds={explicitlyDelegatedTaskIds}
+        initialTodos={(todosData as PersonalTodo[]) ?? []}
+        projects={visibleProjects}
+        allProfiles={(allProfilesData as Profile[]) ?? []}
+        allStatuses={(allStatusesData as TaskStatus[]) ?? []}
+      />
+    </Suspense>
   );
 }

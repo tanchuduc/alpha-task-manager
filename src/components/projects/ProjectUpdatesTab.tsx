@@ -39,6 +39,7 @@ interface ProjectUpdatesTabProps {
   project: Project;
   currentUser: Profile;
   allProfiles: Profile[];
+  canPostUpdates?: boolean;
 }
 
 const AVAILABLE_EMOJIS = [
@@ -53,6 +54,7 @@ export function ProjectUpdatesTab({
   project,
   currentUser,
   allProfiles,
+  canPostUpdates = true,
 }: ProjectUpdatesTabProps) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -156,6 +158,10 @@ export function ProjectUpdatesTab({
   // Handle Create Update
   const handleCreateUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canPostUpdates) {
+      toast.error("Bạn không có quyền đăng bài thảo luận trong dự án này.");
+      return;
+    }
     const titleTrimmed = newTitle.trim();
     const contentTrimmed = newContent.trim();
 
@@ -314,6 +320,10 @@ export function ProjectUpdatesTab({
 
   // Handle Post Comment
   const handlePostComment = async (updateId: string) => {
+    if (!canPostUpdates) {
+      toast.error("Bạn không có quyền gửi bình luận trong dự án này.");
+      return;
+    }
     const draft = commentDrafts[updateId]?.trim();
     if (!draft) return;
 
@@ -389,14 +399,16 @@ export function ProjectUpdatesTab({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:bg-brand-hover cursor-pointer"
-        >
-          <Plus className="h-4 w-4" />
-          <span>+ Đăng bài thảo luận mới</span>
-        </button>
+        {canPostUpdates && (
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:bg-brand-hover cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            <span>+ Đăng bài thảo luận mới</span>
+          </button>
+        )}
       </div>
 
       {/* List of Updates */}
@@ -415,14 +427,16 @@ export function ProjectUpdatesTab({
           <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto dark:text-slate-400">
             Hãy đăng cập nhật tiến độ, chia sẻ thông báo mới hoặc đặt câu hỏi để toàn bộ thành viên dự án cùng theo dõi.
           </p>
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-semibold text-white transition hover:bg-brand-hover cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            Đăng cập nhật đầu tiên
-          </button>
+          {canPostUpdates && (
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-semibold text-white transition hover:bg-brand-hover cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              Đăng cập nhật đầu tiên
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -595,43 +609,45 @@ export function ProjectUpdatesTab({
                     )}
 
                     {/* Reply Input Box */}
-                    <div className="pt-2">
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <MentionTextarea
-                            profiles={allProfiles}
-                            value={commentDrafts[update.id] || ""}
-                            onChange={(val) =>
-                              setCommentDrafts((prev) => ({
-                                ...prev,
-                                [update.id]: val,
-                              }))
-                            }
-                            placeholder="Viết câu trả lời... (@ để nhắc tên)"
-                            rows={1}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && !e.shiftKey) {
-                                e.preventDefault();
-                                handlePostComment(update.id);
+                    {canPostUpdates && (
+                      <div className="pt-2">
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <MentionTextarea
+                              profiles={allProfiles}
+                              value={commentDrafts[update.id] || ""}
+                              onChange={(val) =>
+                                setCommentDrafts((prev) => ({
+                                  ...prev,
+                                  [update.id]: val,
+                                }))
                               }
-                            }}
-                            className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          />
+                              placeholder="Viết câu trả lời... (@ để nhắc tên)"
+                              rows={1}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handlePostComment(update.id);
+                                }
+                              }}
+                              className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handlePostComment(update.id)}
+                            disabled={
+                              submittingComment[update.id] ||
+                              !commentDrafts[update.id]?.trim()
+                            }
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand text-white shadow-xs transition hover:bg-brand-hover cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Gửi phản hồi"
+                          >
+                            <Send className="h-4 w-4" />
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handlePostComment(update.id)}
-                          disabled={
-                            submittingComment[update.id] ||
-                            !commentDrafts[update.id]?.trim()
-                          }
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand text-white shadow-xs transition hover:bg-brand-hover cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Gửi phản hồi"
-                        >
-                          <Send className="h-4 w-4" />
-                        </button>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import ProjectsListClient, {
   type ProjectWithStats,
 } from "@/components/projects/ProjectsListClient";
+import { canUserViewProject } from "@/lib/permissions";
 import type {
   Department,
   Profile,
@@ -29,8 +31,13 @@ export default async function ProjectsPage() {
     { data: departmentsData },
     { data: templatesData },
     { data: profilesData },
+    { data: myMembershipsData },
   ] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    supabase
+      .from("profiles")
+      .select("*, custom_role:roles(*)")
+      .eq("id", user.id)
+      .single(),
     supabase
       .from("projects")
       .select("*, department:departments(id, name, code)")
@@ -49,6 +56,10 @@ export default async function ProjectsPage() {
       .select("*")
       .eq("is_active", true)
       .order("full_name", { ascending: true }),
+    supabase
+      .from("project_members")
+      .select("project_id")
+      .eq("user_id", user.id),
   ]);
 
   const currentUser: Profile = (profileData as Profile | null) ?? {
@@ -64,6 +75,15 @@ export default async function ProjectsPage() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+
+  const myProjectIds = new Set(
+    (myMembershipsData ?? []).map((m) => m.project_id as string)
+  );
+
+  // Filter projects according to visibility & RBAC rules
+  const visibleProjects = ((projectsData ?? []) as Project[]).filter((proj) =>
+    canUserViewProject(currentUser, proj, myProjectIds.has(proj.id))
+  );
 
   // Aggregate task stats per project
   const statsMap = new Map<string, { total: number; completed: number }>();
@@ -83,24 +103,24 @@ export default async function ProjectsPage() {
     statsMap.set(t.project_id, entry);
   }
 
-  const projectsWithStats: ProjectWithStats[] = ((projectsData ?? []) as Project[]).map(
-    (proj) => {
-      const st = statsMap.get(proj.id) ?? { total: 0, completed: 0 };
-      return {
-        ...proj,
-        total_tasks: st.total,
-        completed_tasks: st.completed,
-      };
-    }
-  );
+  const projectsWithStats: ProjectWithStats[] = visibleProjects.map((proj) => {
+    const st = statsMap.get(proj.id) ?? { total: 0, completed: 0 };
+    return {
+      ...proj,
+      total_tasks: st.total,
+      completed_tasks: st.completed,
+    };
+  });
 
   return (
-    <ProjectsListClient
-      initialProjects={projectsWithStats}
-      departments={(departmentsData ?? []) as Department[]}
-      templates={(templatesData ?? []) as ProjectTemplate[]}
-      currentUser={currentUser}
-      profiles={(profilesData ?? []) as Profile[]}
-    />
+    <Suspense fallback={null}>
+      <ProjectsListClient
+        initialProjects={projectsWithStats}
+        departments={(departmentsData ?? []) as Department[]}
+        templates={(templatesData ?? []) as ProjectTemplate[]}
+        currentUser={currentUser}
+        profiles={(profilesData ?? []) as Profile[]}
+      />
+    </Suspense>
   );
 }

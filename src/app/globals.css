@@ -3,34 +3,94 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --color-brand: #F26522;
-  --color-brand-hover: #D95314;
-  --color-brand-soft: #FFF3ED;
-  --color-brand-soft-dark: #3B1E10;
+  --color-brand: #F47830;
+  --color-brand-hover: #D9631D;
+  --color-brand-soft: #FFF4ED;
+  --color-brand-soft-dark: #381D0F;
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 :root {
-  --bg-page: #F8FAFC;
+  --bg-page: #F5F5F5;
   --bg-surface: #FFFFFF;
-  --border-subtle: #E2E8F0;
-  --text-primary: #0F172A;
-  --text-secondary: #475569;
+  --bg-rail: #FFFFFF;
+  --border-subtle: #E8E8E8;
+  --text-primary: rgba(0, 0, 0, 0.88);
+  --text-secondary: rgba(0, 0, 0, 0.65);
+  --nav-rail-color-primary: #F47830;
 }
 
 .dark {
-  --bg-page: #0B1120;
-  --bg-surface: #111827;
-  --border-subtle: #1F2937;
-  --text-primary: #F8FAFC;
-  --text-secondary: #94A3B8;
+  --bg-page: #141414;
+  --bg-surface: #1F1F1F;
+  --bg-rail: #141414;
+  --border-subtle: #303030;
+  --text-primary: rgba(255, 255, 255, 0.85);
+  --text-secondary: rgba(255, 255, 255, 0.65);
+  --nav-rail-color-primary: #F47830;
 }
 
 body {
   background-color: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Worklenz Left NavRail Transitions & Icon Glow */
+.nav-rail-width-transition {
+  transition: width 0.18s ease, min-width 0.18s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-rail-width-transition {
+    transition: none;
+  }
+}
+
+.nav-rail-item-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.18s ease, filter 0.18s ease;
+  overflow: visible;
+  filter: none;
+}
+
+.nav-rail-item-label {
+  font-size: 11px;
+  text-align: center;
+  line-height: 1.18;
+  white-space: pre-line;
+  transition: color 0.18s ease;
+}
+
+.nav-rail-item-wrapper:hover .nav-rail-item-icon,
+.nav-rail-item-wrapper:focus-within .nav-rail-item-icon {
+  color: var(--nav-rail-color-primary, #F47830) !important;
+  filter: drop-shadow(0 0 3px rgba(244, 120, 48, 0.45));
+}
+
+.nav-rail-item-wrapper:hover .nav-rail-item-label,
+.nav-rail-item-wrapper:focus-within .nav-rail-item-label {
+  color: var(--nav-rail-color-primary, #F47830) !important;
+}
+
+.nav-rail-pin-affordance {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.nav-rail-item-wrapper:hover .nav-rail-pin-affordance,
+.nav-rail-item-wrapper:focus-within .nav-rail-pin-affordance,
+.nav-rail-pin-affordance.nav-rail-pin-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Custom sleek scrollbar */

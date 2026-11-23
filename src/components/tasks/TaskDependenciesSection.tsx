@@ -26,7 +26,7 @@ import type {
 
 export interface ResolvedDependency {
   id: string; // dependency row id
-  relation: "blocked_by" | "blocking";
+  relation: "blocked_by" | "blocking" | "relates_to";
   targetTaskId: string;
   targetTask: Task | null;
   createdAt: string;
@@ -37,6 +37,7 @@ interface TaskDependenciesSectionProps {
   projectId: string;
   currentUser: Profile;
   statuses: TaskStatus[];
+  canEditTask?: boolean;
   onOpenTask?: (taskId: string) => void;
   onBlockersChange?: (hasBlockers: boolean, blockerTasks: Task[]) => void;
 }
@@ -45,6 +46,7 @@ export default function TaskDependenciesSection({
   taskId,
   projectId,
   statuses,
+  canEditTask = true,
   onOpenTask,
   onBlockersChange,
 }: TaskDependenciesSectionProps) {
@@ -54,7 +56,9 @@ export default function TaskDependenciesSection({
   const [dependencies, setDependencies] = useState<ResolvedDependency[]>([]);
   const [projectTasks, setProjectTasks] = useState<Task[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [selectedRelType, setSelectedRelType] = useState<"blocked_by" | "blocking">("blocked_by");
+  const [selectedRelType, setSelectedRelType] = useState<
+    "blocked_by" | "blocking" | "relates_to"
+  >("blocked_by");
   const [selectedTargetTaskId, setSelectedTargetTaskId] = useState<string>("");
   const [savingDep, setSavingDep] = useState(false);
 
@@ -119,6 +123,14 @@ export default function TaskDependenciesSection({
             targetTask: target,
             createdAt: row.created_at,
           });
+        } else if (row.dependency_type === "relates_to") {
+          resolved.push({
+            id: row.id,
+            relation: "relates_to",
+            targetTaskId: row.depends_on_task_id,
+            targetTask: target,
+            createdAt: row.created_at,
+          });
         }
       }
 
@@ -139,6 +151,14 @@ export default function TaskDependenciesSection({
           resolved.push({
             id: row.id,
             relation: "blocked_by",
+            targetTaskId: row.task_id,
+            targetTask: source,
+            createdAt: row.created_at,
+          });
+        } else if (row.dependency_type === "relates_to") {
+          resolved.push({
+            id: row.id,
+            relation: "relates_to",
             targetTaskId: row.task_id,
             targetTask: source,
             createdAt: row.created_at,
@@ -181,15 +201,22 @@ export default function TaskDependenciesSection({
   // Add a new dependency
   async function handleAddDependency(e: React.FormEvent) {
     e.preventDefault();
+    if (!canEditTask) {
+      toast.error("Bạn không có quyền chỉnh sửa công việc này.");
+      return;
+    }
     if (!selectedTargetTaskId) {
       toast.error("Vui lòng chọn công việc liên kết");
+      return;
+    }
+    if (connectedTaskIds.has(selectedTargetTaskId)) {
+      toast.error("Công việc này đã được liên kết phụ thuộc với việc hiện tại.");
       return;
     }
 
     setSavingDep(true);
     try {
-      const depType: DependencyType =
-        selectedRelType === "blocked_by" ? "blocked_by" : "blocking";
+      const depType: DependencyType = selectedRelType;
 
       const { error } = await supabase.from("task_dependencies").insert({
         task_id: taskId,
@@ -221,6 +248,10 @@ export default function TaskDependenciesSection({
 
   // Delete a dependency
   async function handleDeleteDependency(depId: string) {
+    if (!canEditTask) {
+      toast.error("Bạn không có quyền gỡ bỏ quan hệ phụ thuộc này.");
+      return;
+    }
     try {
       const { error } = await supabase
         .from("task_dependencies")
@@ -247,6 +278,7 @@ export default function TaskDependenciesSection({
 
   const blockedByList = dependencies.filter((d) => d.relation === "blocked_by");
   const blockingList = dependencies.filter((d) => d.relation === "blocking");
+  const relatesToList = dependencies.filter((d) => d.relation === "relates_to");
 
   return (
     <div className="space-y-3.5">
@@ -290,23 +322,25 @@ export default function TaskDependenciesSection({
           Công việc phụ thuộc ({dependencies.length})
         </span>
 
-        <button
-          type="button"
-          onClick={() => setShowAddForm((v) => !v)}
-          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold text-brand hover:bg-brand-soft dark:hover:bg-brand/15 cursor-pointer"
-        >
-          {showAddForm ? (
-            <>
-              <X className="h-3.5 w-3.5" />
-              Đóng
-            </>
-          ) : (
-            <>
-              <Plus className="h-3.5 w-3.5" />
-              Thêm phụ thuộc
-            </>
-          )}
-        </button>
+        {canEditTask && (
+          <button
+            type="button"
+            onClick={() => setShowAddForm((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold text-brand hover:bg-brand-soft dark:hover:bg-brand/15 cursor-pointer"
+          >
+            {showAddForm ? (
+              <>
+                <X className="h-3.5 w-3.5" />
+                Đóng
+              </>
+            ) : (
+              <>
+                <Plus className="h-3.5 w-3.5" />
+                Thêm phụ thuộc
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Add Dependency Form */}
@@ -327,12 +361,15 @@ export default function TaskDependenciesSection({
               <select
                 value={selectedRelType}
                 onChange={(e) =>
-                  setSelectedRelType(e.target.value as "blocked_by" | "blocking")
+                  setSelectedRelType(
+                    e.target.value as "blocked_by" | "blocking" | "relates_to"
+                  )
                 }
                 className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
               >
                 <option value="blocked_by">Bị chặn bởi (Blocked by)</option>
                 <option value="blocking">Chặn công việc (Blocking)</option>
+                <option value="relates_to">Liên quan tới (Relates to)</option>
               </select>
             </div>
 
@@ -439,14 +476,16 @@ export default function TaskDependenciesSection({
                         )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteDependency(dep.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition cursor-pointer"
-                        title="Xóa liên kết phụ thuộc"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {canEditTask && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDependency(dep.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition cursor-pointer"
+                          title="Xóa liên kết phụ thuộc"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -499,14 +538,82 @@ export default function TaskDependenciesSection({
                         )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteDependency(dep.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition cursor-pointer"
-                        title="Xóa liên kết phụ thuộc"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {canEditTask && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDependency(dep.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition cursor-pointer"
+                          title="Xóa liên kết phụ thuộc"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Group 3: Liên quan tới (Relates to) */}
+          {relatesToList.length > 0 && (
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                🔗 Liên quan tới ({relatesToList.length})
+              </span>
+              <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+                {relatesToList.map((dep) => {
+                  const target = dep.targetTask;
+                  const isDone =
+                    target?.completed_at ||
+                    (target?.status_id &&
+                      statusesMap.get(target.status_id)?.category === "done");
+                  const st = target?.status_id
+                    ? statusesMap.get(target.status_id)
+                    : null;
+
+                  return (
+                    <div
+                      key={dep.id}
+                      className="group flex items-center justify-between gap-2.5 px-3.5 py-2 text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Link2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <button
+                          type="button"
+                          onClick={() => onOpenTask?.(dep.targetTaskId)}
+                          className={cn(
+                            "truncate text-left font-medium hover:text-brand cursor-pointer",
+                            isDone
+                              ? "text-slate-400 line-through"
+                              : "text-slate-800 dark:text-slate-200"
+                          )}
+                        >
+                          {target?.title || "(Công việc không tồn tại)"}
+                        </button>
+                        {st && (
+                          <span
+                            className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                            style={{
+                              backgroundColor: `${st.color || "#94A3B8"}20`,
+                              color: st.color || "#64748B",
+                            }}
+                          >
+                            {st.name}
+                          </span>
+                        )}
+                      </div>
+
+                      {canEditTask && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDependency(dep.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition cursor-pointer"
+                          title="Xóa liên kết phụ thuộc"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   );
                 })}

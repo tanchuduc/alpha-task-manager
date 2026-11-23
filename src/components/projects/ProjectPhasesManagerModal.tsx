@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   X,
   Plus,
@@ -13,11 +13,13 @@ import {
   Layers,
   ArrowUp,
   ArrowDown,
+  UserCheck,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
-import type { PhaseStatus, ProjectPhase } from "@/types/database";
+import { cn, getInitials } from "@/lib/utils";
+import type { PhaseStatus, Profile, Project, ProjectPhase } from "@/types/database";
 
 interface ProjectPhasesManagerModalProps {
   projectId: string;
@@ -25,7 +27,10 @@ interface ProjectPhasesManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   phases: ProjectPhase[];
+  members?: Profile[];
+  project?: Project;
   onPhasesUpdated: () => void;
+  onProjectUpdated?: (updated: Project) => void;
 }
 
 export const ALPHA_STANDARD_PHASES = [
@@ -93,18 +98,37 @@ export default function ProjectPhasesManagerModal({
   isOpen,
   onClose,
   phases,
+  members = [],
+  project,
   onPhasesUpdated,
+  onProjectUpdated,
 }: ProjectPhasesManagerModalProps) {
   const supabase = createClient();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingPhaseId, setEditingPhaseId] = useState<string | null>(null);
 
+  // Project-level Phase Pipeline toggles
+  const [enablePhaseAssignees, setEnablePhaseAssignees] = useState<boolean>(
+    Boolean(project?.enable_phase_assignees)
+  );
+  const [autoAssignSubtaskPhase, setAutoAssignSubtaskPhase] = useState<boolean>(
+    project?.auto_assign_subtask_phase !== false
+  );
+
+  useEffect(() => {
+    if (project) {
+      setEnablePhaseAssignees(Boolean(project.enable_phase_assignees));
+      setAutoAssignSubtaskPhase(project.auto_assign_subtask_phase !== false);
+    }
+  }, [project]);
+
   // Form State
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formColor, setFormColor] = useState("#F26522");
   const [formStatus, setFormStatus] = useState<PhaseStatus>("pending");
+  const [formAssigneeId, setFormAssigneeId] = useState<string>("");
   const [formStartDate, setFormStartDate] = useState("");
   const [formDueDate, setFormDueDate] = useState("");
 
@@ -116,6 +140,7 @@ export default function ProjectPhasesManagerModal({
     setFormDescription("");
     setFormColor("#F26522");
     setFormStatus("pending");
+    setFormAssigneeId("");
     setFormStartDate("");
     setFormDueDate("");
   }
@@ -126,8 +151,57 @@ export default function ProjectPhasesManagerModal({
     setFormDescription(phase.description || "");
     setFormColor(phase.color || "#F26522");
     setFormStatus(phase.status || "pending");
+    setFormAssigneeId(phase.assignee_id || "");
     setFormStartDate(phase.start_date || "");
     setFormDueDate(phase.due_date || "");
+  }
+
+  async function handleTogglePipelineSetting(
+    field: "enable_phase_assignees" | "auto_assign_subtask_phase",
+    nextVal: boolean
+  ) {
+    if (field === "enable_phase_assignees") {
+      setEnablePhaseAssignees(nextVal);
+    } else {
+      setAutoAssignSubtaskPhase(nextVal);
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("projects")
+        .update({
+          [field]: nextVal,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", projectId)
+        .select("*, department:departments(id, name, code)")
+        .single();
+
+      if (error) throw error;
+      if (data && onProjectUpdated) {
+        onProjectUpdated(data as Project);
+      }
+      toast.success("Đã lưu cấu hình quy trình giai đoạn.");
+    } catch {
+      toast.error("Không thể cập nhật cấu hình giai đoạn.");
+    }
+  }
+
+  async function handleQuickAssignPhaseOwner(
+    phaseId: string,
+    assigneeId: string | null
+  ) {
+    try {
+      const { error } = await supabase
+        .from("project_phases")
+        .update({ assignee_id: assigneeId || null })
+        .eq("id", phaseId);
+      if (error) throw error;
+      toast.success("Đã cập nhật người phụ trách giai đoạn!");
+      onPhasesUpdated();
+    } catch {
+      toast.error("Không thể gán người phụ trách giai đoạn.");
+    }
   }
 
   async function handleSeedStandardPhases() {
@@ -188,6 +262,7 @@ export default function ProjectPhasesManagerModal({
             description: formDescription.trim() || null,
             color: formColor,
             status: formStatus,
+            assignee_id: formAssigneeId || null,
             start_date: formStartDate || null,
             due_date: formDueDate || null,
           })
@@ -208,6 +283,7 @@ export default function ProjectPhasesManagerModal({
           description: formDescription.trim() || null,
           color: formColor,
           status: formStatus,
+          assignee_id: formAssigneeId || null,
           start_date: formStartDate || null,
           due_date: formDueDate || null,
           position: maxPos,
@@ -328,10 +404,53 @@ export default function ProjectPhasesManagerModal({
           </div>
         </div>
 
+        {/* Pipeline Settings Banner (matching Worklenz Phases Settings) */}
+        <div className="grid grid-cols-1 gap-3 border-b border-slate-100 bg-slate-50/70 px-6 py-3.5 dark:border-slate-800 dark:bg-slate-800/40 sm:grid-cols-2">
+          <label className="flex items-start justify-between gap-3 rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs dark:border-slate-800 dark:bg-slate-900 cursor-pointer">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-100">
+                <ShieldCheck className="h-3.5 w-3.5 text-brand" />
+                <span>Người phụ trách giai đoạn (Phase Assignees)</span>
+              </div>
+              <p className="text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                Khi bật, chỉ người phụ trách giai đoạn (hoặc Quản trị viên / Trưởng dự án) mới được chuyển trạng thái công việc trong giai đoạn đó.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={enablePhaseAssignees}
+              onChange={(e) =>
+                handleTogglePipelineSetting("enable_phase_assignees", e.target.checked)
+              }
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand/40 cursor-pointer"
+            />
+          </label>
+
+          <label className="flex items-start justify-between gap-3 rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs dark:border-slate-800 dark:bg-slate-900 cursor-pointer">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-100">
+                <Layers className="h-3.5 w-3.5 text-brand" />
+                <span>Tự động gán giai đoạn cho việc con (Auto-assign Subtasks)</span>
+              </div>
+              <p className="text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                Các công việc phụ (subtasks) sẽ tự động kế thừa giai đoạn xuất bản từ công việc cha khi tạo mới hoặc khi việc cha chuyển giai đoạn.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={autoAssignSubtaskPhase}
+              onChange={(e) =>
+                handleTogglePipelineSetting("auto_assign_subtask_phase", e.target.checked)
+              }
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand/40 cursor-pointer"
+            />
+          </label>
+        </div>
+
         {/* Content Body: Two columns */}
         <div className="grid flex-1 grid-cols-1 overflow-hidden md:grid-cols-12">
           {/* Left Column: Form */}
-          <div className="border-b border-slate-100 p-6 dark:border-slate-800 md:col-span-5 md:border-b-0 md:border-r">
+          <div className="overflow-y-auto border-b border-slate-100 p-6 dark:border-slate-800 md:col-span-5 md:border-b-0 md:border-r">
             <form onSubmit={handleSubmitPhase} className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -372,6 +491,25 @@ export default function ProjectPhasesManagerModal({
                   placeholder="Ghi chú các đầu việc cốt lõi của giai đoạn này..."
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 />
+              </div>
+
+              <div>
+                <label className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <UserCheck className="h-3.5 w-3.5 text-brand" />
+                  Người phụ trách giai đoạn (Phase Assignee)
+                </label>
+                <select
+                  value={formAssigneeId}
+                  onChange={(e) => setFormAssigneeId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                >
+                  <option value="">— Chưa chỉ định người phụ trách —</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.full_name} {m.job_title ? `(${m.job_title})` : ""}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -498,6 +636,9 @@ export default function ProjectPhasesManagerModal({
                 {phases.map((phase, idx) => {
                   const isSelected = editingPhaseId === phase.id;
                   const stMeta = STATUS_LABELS[phase.status] || STATUS_LABELS.pending;
+                  const assignedMember = phase.assignee_id
+                    ? members.find((m) => m.id === phase.assignee_id)
+                    : null;
 
                   return (
                     <div
@@ -540,14 +681,44 @@ export default function ProjectPhasesManagerModal({
                             </p>
                           )}
 
-                          {(phase.start_date || phase.due_date) && (
-                            <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
-                              <Calendar className="h-3 w-3" />
-                              <span>
-                                {phase.start_date || "—"} đến {phase.due_date || "—"}
-                              </span>
+                          <div className="mt-2 flex flex-wrap items-center gap-3">
+                            {/* Phase Assignee inline selector */}
+                            <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50 px-2 py-1 text-[11px] dark:border-slate-700 dark:bg-slate-800/60">
+                              {assignedMember ? (
+                                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand text-[9px] font-bold text-white">
+                                  {getInitials(assignedMember.full_name)}
+                                </span>
+                              ) : (
+                                <UserCheck className="h-3 w-3 text-slate-400" />
+                              )}
+                              <select
+                                value={phase.assignee_id || ""}
+                                onChange={(e) =>
+                                  handleQuickAssignPhaseOwner(
+                                    phase.id,
+                                    e.target.value || null
+                                  )
+                                }
+                                className="bg-transparent font-medium text-slate-700 focus:outline-none dark:text-slate-200 cursor-pointer"
+                              >
+                                <option value="">+ Gán phụ trách giai đoạn</option>
+                                {members.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    Phụ trách: {m.full_name}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
-                          )}
+
+                            {(phase.start_date || phase.due_date) && (
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                                <Calendar className="h-3 w-3" />
+                                <span>
+                                  {phase.start_date || "—"} đến {phase.due_date || "—"}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
 

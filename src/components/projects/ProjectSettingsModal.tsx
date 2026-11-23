@@ -126,12 +126,30 @@ export default function ProjectSettingsModal({
   const [description, setDescription] = useState(project.description || "");
   const [status, setStatus] = useState<ProjectStatus>(project.status || "active");
 
-  // Advanced progress states
+  // Advanced progress & pipeline states
   const [progressMode, setProgressMode] = useState<ProgressMode>(
     project.progress_mode || "auto"
   );
   const [manualProgress, setManualProgress] = useState<number>(
     project.manual_progress ?? 0
+  );
+  const [enablePhaseAssignees, setEnablePhaseAssignees] = useState<boolean>(
+    Boolean(project.enable_phase_assignees)
+  );
+  const [autoAssignSubtaskPhase, setAutoAssignSubtaskPhase] = useState<boolean>(
+    project.auto_assign_subtask_phase !== false
+  );
+  const [assignTasksToCreator, setAssignTasksToCreator] = useState<boolean>(
+    Boolean(project.assign_tasks_to_creator)
+  );
+  const [restrictTaskAssignment, setRestrictTaskAssignment] = useState<boolean>(
+    Boolean(project.restrict_task_assignment)
+  );
+  const [restrictTasksToAssignee, setRestrictTasksToAssignee] = useState<boolean>(
+    Boolean(project.restrict_tasks_to_assignee)
+  );
+  const [isPrivate, setIsPrivate] = useState<boolean>(
+    Boolean(project.is_private)
   );
 
   useEffect(() => {
@@ -159,6 +177,12 @@ export default function ProjectSettingsModal({
       setStatus(project.status || "active");
       setProgressMode(project.progress_mode || "auto");
       setManualProgress(project.manual_progress ?? 0);
+      setEnablePhaseAssignees(Boolean(project.enable_phase_assignees));
+      setAutoAssignSubtaskPhase(project.auto_assign_subtask_phase !== false);
+      setAssignTasksToCreator(Boolean(project.assign_tasks_to_creator));
+      setRestrictTaskAssignment(Boolean(project.restrict_task_assignment));
+      setRestrictTasksToAssignee(Boolean(project.restrict_tasks_to_assignee));
+      setIsPrivate(Boolean(project.is_private));
     }
   }, [isOpen, project]);
 
@@ -194,6 +218,12 @@ export default function ProjectSettingsModal({
         status,
         progress_mode: progressMode,
         manual_progress: Math.min(100, Math.max(0, Number(manualProgress) || 0)),
+        enable_phase_assignees: enablePhaseAssignees,
+        auto_assign_subtask_phase: autoAssignSubtaskPhase,
+        assign_tasks_to_creator: assignTasksToCreator,
+        restrict_task_assignment: restrictTaskAssignment,
+        restrict_tasks_to_assignee: restrictTasksToAssignee,
+        is_private: isPrivate,
         updated_at: new Date().toISOString(),
       };
 
@@ -614,6 +644,136 @@ export default function ProjectSettingsModal({
                         </div>
                       )}
                     </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Phase Pipeline Settings */}
+              <div className="rounded-xl border border-slate-200 p-5 dark:border-slate-800 space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Cấu hình Quy trình Giai đoạn (Phases Pipeline)
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Kiểm soát phân công và kế thừa giai đoạn xuất bản sách giữa việc cha và việc con.
+                  </p>
+                </div>
+
+                <div className="space-y-3 divide-y divide-slate-100 dark:divide-slate-800">
+                  <label className="flex items-center justify-between gap-4 pt-1 cursor-pointer">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                        Bật Người phụ trách Giai đoạn (Enable Phase Assignees)
+                      </span>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        Khi bật, mỗi giai đoạn có thể gán 1 người chịu trách nhiệm chính. Chỉ người phụ trách giai đoạn đó (hoặc Quản trị viên / Trưởng dự án) mới được chuyển trạng thái công việc trong giai đoạn đó.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={enablePhaseAssignees}
+                      onChange={(e) => setEnablePhaseAssignees(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 cursor-pointer shrink-0"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4 pt-3 cursor-pointer">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                        Tự động gán giai đoạn của việc cha cho việc con (Auto-assign parent phase to subtasks)
+                      </span>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        Các công việc phụ (subtasks) sẽ tự động kế thừa giai đoạn xuất bản của công việc cha khi tạo mới hoặc khi việc cha chuyển giai đoạn.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={autoAssignSubtaskPhase}
+                      onChange={(e) => setAutoAssignSubtaskPhase(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 cursor-pointer shrink-0"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Task Settings & Access Control */}
+              <div className="rounded-xl border border-slate-200 p-5 dark:border-slate-800 space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Quy tắc Giao việc & Quyền riêng tư (Task & Access Control)
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Thiết lập hành vi mặc định khi tạo việc mới và phạm vi truy cập dự án.
+                  </p>
+                </div>
+
+                <div className="space-y-3 divide-y divide-slate-100 dark:divide-slate-800">
+                  <label className="flex items-center justify-between gap-4 pt-1 cursor-pointer">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                        Tự động giao việc cho người tạo (Assign Tasks to Creator)
+                      </span>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        Khi thêm nhanh công việc mới mà chưa chọn người thực hiện, hệ thống tự động gán cho chính người tạo.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={assignTasksToCreator}
+                      onChange={(e) => setAssignTasksToCreator(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 cursor-pointer shrink-0"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4 pt-3 cursor-pointer">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                        Giới hạn phân công việc cho Quản lý & Trưởng nhóm (Restrict Task Assignment)
+                      </span>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        Chỉ Quản trị viên, Trưởng phòng và Trưởng dự án mới được thay đổi người phụ trách công việc.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={restrictTaskAssignment}
+                      onChange={(e) => setRestrictTaskAssignment(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 cursor-pointer shrink-0"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4 pt-3 cursor-pointer">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                        Giới hạn Cộng tác viên / Thành viên chỉ xem việc được giao (Restrict Tasks to Assignee)
+                      </span>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        Khi bật, thành viên thường và CTV chỉ nhìn thấy các công việc họ được giao hoặc tự tạo (Quản trị viên, Trưởng phòng và Trưởng dự án vẫn thấy toàn bộ).
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={restrictTasksToAssignee}
+                      onChange={(e) => setRestrictTasksToAssignee(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 cursor-pointer shrink-0"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4 pt-3 cursor-pointer">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                        Dự án nội bộ riêng tư (Project Privacy)
+                      </span>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        Đánh dấu dự án ở chế độ riêng tư (chỉ thành viên được thêm vào dự án và Ban Giám đốc mới theo dõi chi tiết).
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={isPrivate}
+                      onChange={(e) => setIsPrivate(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/40 cursor-pointer shrink-0"
+                    />
                   </label>
                 </div>
               </div>

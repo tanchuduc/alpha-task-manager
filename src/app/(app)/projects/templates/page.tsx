@@ -17,7 +17,11 @@ export default async function ProjectTemplatesPage() {
 
   const [{ data: profileData }, { data: templatesData }, { data: departmentsData }] =
     await Promise.all([
-      supabase.from("profiles").select("*").eq("id", user.id).single(),
+      supabase
+        .from("profiles")
+        .select("*, custom_role:roles(*)")
+        .eq("id", user.id)
+        .single(),
       supabase
         .from("project_templates")
         .select("*, tasks:project_template_tasks(*)")

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { ChatContainer } from "@/components/chat/ChatContainer";
-import type { Profile, Department } from "@/types/database";
+import type { Profile, Department, Project } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -15,24 +15,33 @@ export default async function ChatPage() {
     redirect("/login");
   }
 
-  // Fetch current user profile, all profiles, and all departments in parallel
-  const [currentProfileRes, allProfilesRes, allDepartmentsRes] =
-    await Promise.all([
-      supabase
-        .from("profiles")
-        .select("*, department:departments(*)")
-        .eq("id", user.id)
-        .single(),
-      supabase
-        .from("profiles")
-        .select("*, department:departments(*)")
-        .eq("is_active", true)
-        .order("full_name", { ascending: true }),
-      supabase
-        .from("departments")
-        .select("*")
-        .order("name", { ascending: true }),
-    ]);
+  // Fetch current user profile, all profiles, all departments, and active projects in parallel
+  const [
+    currentProfileRes,
+    allProfilesRes,
+    allDepartmentsRes,
+    allProjectsRes,
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("*, department:departments(*)")
+      .eq("id", user.id)
+      .single(),
+    supabase
+      .from("profiles")
+      .select("*, department:departments(*)")
+      .eq("is_active", true)
+      .order("full_name", { ascending: true }),
+    supabase
+      .from("departments")
+      .select("*")
+      .order("name", { ascending: true }),
+    supabase
+      .from("projects")
+      .select("*")
+      .eq("status", "active")
+      .order("updated_at", { ascending: false }),
+  ]);
 
   const currentUser: Profile = (currentProfileRes.data as Profile | null) ?? {
     id: user.id,
@@ -57,6 +66,8 @@ export default async function ChatPage() {
   const allProfiles: Profile[] = (allProfilesRes.data as Profile[] | null) ?? [];
   const allDepartments: Department[] =
     (allDepartmentsRes.data as Department[] | null) ?? [];
+  const allProjects: Project[] =
+    (allProjectsRes.data as Project[] | null) ?? [];
 
   return (
     <div className="h-[calc(100vh-6rem)]">
@@ -64,6 +75,7 @@ export default async function ChatPage() {
         currentUser={currentUser}
         allProfiles={allProfiles}
         allDepartments={allDepartments}
+        allProjects={allProjects}
       />
     </div>
   );

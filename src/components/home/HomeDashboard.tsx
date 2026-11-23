@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   cn,
@@ -11,17 +11,30 @@ import {
   isOverdue,
   PRIORITY_CONFIG,
 } from "@/lib/utils";
-import type { PersonalTodo, Profile, Task, TaskPriority } from "@/types/database";
+import TaskDrawer from "@/components/tasks/TaskDrawer";
+import {
+  getTodoCategoryConfig,
+  PersonalTodoManager,
+} from "@/components/home/PersonalTodoManager";
+import type {
+  PersonalTodo,
+  Profile,
+  Task,
+  TaskPriority,
+  TaskStatus,
+} from "@/types/database";
 import {
   AlertTriangle,
   ArrowRight,
   Calendar as CalendarIcon,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Circle,
   Clock,
-  Filter,
+  ExternalLink,
   FolderKanban,
   ListTodo,
   Plus,
@@ -29,7 +42,6 @@ import {
   Send,
   Trash2,
   UserCheck,
-  Users,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -37,13 +49,22 @@ import { toast } from "sonner";
 interface HomeDashboardProps {
   profile: Profile;
   initialTasks: Task[];
+  explicitlyDelegatedTaskIds?: string[];
   initialTodos: PersonalTodo[];
   projects?: Array<{ id: string; name: string; code: string; color: string }>;
+  allProfiles?: Profile[];
+  allStatuses?: TaskStatus[];
 }
 
-type MainView = "list" | "calendar";
-type ScopeFilter = "assigned_to_me" | "assigned_by_me" | "all";
+export type HomeViewMode =
+  | "overview"
+  | "my-tasks"
+  | "delegated"
+  | "calendar"
+  | "todo";
+
 type TaskFilter = "all" | "open" | "overdue" | "today" | "completed";
+type GroupByMode = "none" | "project" | "status" | "priority";
 
 const WEEKDAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
@@ -80,17 +101,68 @@ function extractDateKey(dateStr: string | null | undefined): string | null {
 export function HomeDashboard({
   profile,
   initialTasks,
+  explicitlyDelegatedTaskIds = [],
   initialTodos,
   projects = [],
+  allProfiles = [],
+  allStatuses = [],
 }: HomeDashboardProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = useMemo(() => createClient(), []);
 
-  const [mainView, setMainView] = useState<MainView>("list");
-  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("assigned_to_me");
-  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
+  // Sync active mode from Left NavRail (?view=overview | my-tasks | delegated | calendar | todo)
+  const [activeView, setActiveView] = useState<HomeViewMode>("overview");
+
+  useEffect(() => {
+    const viewParam = searchParams.get("view") as HomeViewMode | null;
+    if (
+      viewParam &&
+      ["overview", "my-tasks", "delegated", "calendar", "todo"].includes(
+        viewParam
+      )
+    ) {
+      setActiveView(viewParam);
+    } else {
+      try {
+        const pins = JSON.parse(
+          localStorage.getItem("alpha_rail_pins") || "{}"
+        );
+        if (
+          pins.home &&
+          ["overview", "my-tasks", "delegated", "calendar", "todo"].includes(
+            pins.home
+          )
+        ) {
+          setActiveView(pins.home);
+        } else {
+          setActiveView("overview");
+        }
+      } catch {
+        setActiveView("overview");
+      }
+    }
+  }, [searchParams]);
+
+  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  useEffect(() => {
+    setTasks(initialTasks);
+  }, [initialTasks]);
+
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>("open");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [groupBy, setGroupBy] = useState<GroupByMode>("project");
+  const [collapsedGroups, setCollapsedGroups] = useState<
+    Record<string, boolean>
+  >({});
+
+  // In-place TaskDrawer state (so clicking any task opens the Drawer immediately on Home without navigating away!)
+  const [activeDrawerTask, setActiveDrawerTask] = useState<{
+    taskId: string;
+    projectId: string;
+  } | null>(null);
 
   // Calendar state
   const today = useMemo(() => new Date(), []);
@@ -106,40 +178,40 @@ export function HomeDashboard({
   const [newTodoTitle, setNewTodoTitle] = useState("");
   const [addingTodo, setAddingTodo] = useState(false);
 
-  // Group tasks by scope
+  // Split tasks into "Assigned to me" vs "Delegated by me"
   const { assignedToMeTasks, assignedByMeTasks } = useMemo(() => {
     const toMe: Task[] = [];
     const byMe: Task[] = [];
+    const delegatedSet = new Set(explicitlyDelegatedTaskIds);
 
-    for (const t of initialTasks) {
-      const isAssigned = (t.assignees ?? []).some((a) => a.id === profile.id);
-      const isCreated = t.created_by === profile.id;
+    for (const t of tasks) {
+      const assignees = t.assignees ?? [];
+      const isAssignedToMe = assignees.some((a) => a.id === profile.id);
+      const hasOtherAssignees = assignees.some((a) => a.id !== profile.id);
+      const isCreatedByMeForOthers =
+        t.created_by === profile.id && hasOtherAssignees;
+      const isDelegatedByMe = delegatedSet.has(t.id) && hasOtherAssignees;
 
-      if (isAssigned) toMe.push(t);
-      if (isCreated) byMe.push(t);
+      if (isAssignedToMe) toMe.push(t);
+      if (isDelegatedByMe || isCreatedByMeForOthers) byMe.push(t);
     }
 
     return { assignedToMeTasks: toMe, assignedByMeTasks: byMe };
-  }, [initialTasks, profile.id]);
+  }, [tasks, profile.id, explicitlyDelegatedTaskIds]);
 
-  // Tasks in current active scope
-  const scopedTasks = useMemo(() => {
-    if (scopeFilter === "assigned_to_me") return assignedToMeTasks;
-    if (scopeFilter === "assigned_by_me") return assignedByMeTasks;
-    return initialTasks;
-  }, [scopeFilter, assignedToMeTasks, assignedByMeTasks, initialTasks]);
+  const activeScopeTasks = useMemo(() => {
+    if (activeView === "delegated") return assignedByMeTasks;
+    return assignedToMeTasks;
+  }, [activeView, assignedToMeTasks, assignedByMeTasks]);
 
-  // KPI calculations based on current scope
+  // KPI calculations
   const stats = useMemo(() => {
-    const now = Date.now();
-    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-
     let inProgress = 0;
     let overdue = 0;
     let dueToday = 0;
-    let completedThisWeek = 0;
+    let completed = 0;
 
-    for (const t of scopedTasks) {
+    for (const t of activeScopeTasks) {
       const isDone = t.status?.category === "done" || Boolean(t.completed_at);
       const taskDateKey = extractDateKey(t.due_date);
 
@@ -152,10 +224,7 @@ export function HomeDashboard({
           dueToday += 1;
         }
       } else {
-        const doneRef = t.completed_at || t.updated_at;
-        if (doneRef && new Date(doneRef).getTime() >= sevenDaysAgo) {
-          completedThisWeek += 1;
-        }
+        completed += 1;
       }
     }
 
@@ -163,30 +232,32 @@ export function HomeDashboard({
       inProgress,
       overdue,
       dueToday,
-      completedThisWeek,
-      total: scopedTasks.length,
+      completed,
+      total: activeScopeTasks.length,
     };
-  }, [scopedTasks, todayKey]);
+  }, [activeScopeTasks, todayKey]);
 
-  // Filtered tasks for List view
+  // Filtered tasks
   const filteredTasks = useMemo(() => {
-    return scopedTasks.filter((t) => {
+    return activeScopeTasks.filter((t) => {
       const isDone = t.status?.category === "done" || Boolean(t.completed_at);
       const taskDateKey = extractDateKey(t.due_date);
 
-      // Status filter
       if (taskFilter === "open" && isDone) return false;
-      if (taskFilter === "overdue" && (isDone || !isOverdue(t.due_date, t.completed_at))) return false;
-      if (taskFilter === "today" && (isDone || taskDateKey !== todayKey)) return false;
+      if (
+        taskFilter === "overdue" &&
+        (isDone || !isOverdue(t.due_date, t.completed_at))
+      )
+        return false;
+      if (taskFilter === "today" && (isDone || taskDateKey !== todayKey))
+        return false;
       if (taskFilter === "completed" && !isDone) return false;
 
-      // Project filter
-      if (projectFilter !== "all" && t.project_id !== projectFilter) return false;
+      if (projectFilter !== "all" && t.project_id !== projectFilter)
+        return false;
+      if (priorityFilter !== "all" && t.priority !== priorityFilter)
+        return false;
 
-      // Priority filter
-      if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
-
-      // Search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = t.title.toLowerCase().includes(q);
@@ -199,12 +270,138 @@ export function HomeDashboard({
 
       return true;
     });
-  }, [scopedTasks, taskFilter, projectFilter, priorityFilter, searchQuery, todayKey]);
+  }, [
+    activeScopeTasks,
+    taskFilter,
+    projectFilter,
+    priorityFilter,
+    searchQuery,
+    todayKey,
+  ]);
+
+  // Grouped tasks for high-density Worklenz table
+  const groupedTasks = useMemo(() => {
+    if (groupBy === "none") {
+      return [
+        {
+          key: "all",
+          label: "Danh sách công việc",
+          color: "#F47830",
+          items: filteredTasks,
+        },
+      ];
+    }
+
+    const map = new Map<
+      string,
+      { key: string; label: string; color: string; items: Task[] }
+    >();
+
+    for (const t of filteredTasks) {
+      let key = "other";
+      let label = "Khác";
+      let color = "#94A3B8";
+
+      if (groupBy === "project") {
+        key = t.project_id;
+        label = t.project
+          ? `[${t.project.code}] ${t.project.name}`
+          : "Dự án chung";
+        color = t.project?.color || "#F47830";
+      } else if (groupBy === "status") {
+        key = t.status?.name || "Cần làm";
+        label = t.status?.name || "Cần làm";
+        color = t.status?.color || "#64748B";
+      } else if (groupBy === "priority") {
+        key = t.priority;
+        label = PRIORITY_CONFIG[t.priority]?.label || t.priority;
+        color =
+          t.priority === "urgent"
+            ? "#EF4444"
+            : t.priority === "high"
+            ? "#F97316"
+            : t.priority === "medium"
+            ? "#3B82F6"
+            : "#94A3B8";
+      }
+
+      const existing = map.get(key) ?? { key, label, color, items: [] };
+      existing.items.push(t);
+      map.set(key, existing);
+    }
+
+    return Array.from(map.values());
+  }, [filteredTasks, groupBy]);
+
+  // Inline Quick Status / Priority Toggle directly on Home Table Row
+  async function handleInlineToggleDone(task: Task, e: React.MouseEvent) {
+    e.stopPropagation();
+    const projectStatuses = allStatuses.filter(
+      (s) => s.project_id === task.project_id
+    );
+    const doneStatus = projectStatuses.find((s) => s.category === "done");
+    const todoStatus =
+      projectStatuses.find((s) => s.category === "todo") ?? projectStatuses[0];
+
+    const currentlyDone =
+      task.status?.category === "done" || Boolean(task.completed_at);
+    const targetStatus = currentlyDone ? todoStatus : doneStatus;
+    const completed_at = currentlyDone ? null : new Date().toISOString();
+
+    const patch: Partial<Task> = {
+      completed_at,
+      ...(targetStatus ? { status_id: targetStatus.id } : {}),
+    };
+
+    setTasks((prev) =>
+      prev.map((item) =>
+        item.id === task.id
+          ? {
+              ...item,
+              ...patch,
+              status: targetStatus ?? item.status,
+            }
+          : item
+      )
+    );
+
+    const { error } = await supabase
+      .from("tasks")
+      .update(patch)
+      .eq("id", task.id);
+
+    if (error) {
+      toast.error("Không thể cập nhật trạng thái công việc.");
+      router.refresh();
+    } else {
+      toast.success(
+        currentlyDone ? "Đã mở lại công việc" : "Đã hoàn thành công việc!"
+      );
+    }
+  }
+
+  async function handleInlinePriorityChange(
+    task: Task,
+    newPriority: TaskPriority
+  ) {
+    setTasks((prev) =>
+      prev.map((item) =>
+        item.id === task.id ? { ...item, priority: newPriority } : item
+      )
+    );
+    const { error } = await supabase
+      .from("tasks")
+      .update({ priority: newPriority })
+      .eq("id", task.id);
+    if (error) {
+      toast.error("Không thể đổi độ ưu tiên.");
+    }
+  }
 
   // Tasks grouped by YYYY-MM-DD for Calendar view
   const tasksByDate = useMemo(() => {
     const map = new Map<string, Task[]>();
-    for (const t of scopedTasks) {
+    for (const t of tasks) {
       const key = extractDateKey(t.due_date);
       if (!key) continue;
       const existing = map.get(key) ?? [];
@@ -212,7 +409,20 @@ export function HomeDashboard({
       map.set(key, existing);
     }
     return map;
-  }, [scopedTasks]);
+  }, [tasks]);
+
+  // Personal Todos grouped by YYYY-MM-DD for Calendar view
+  const todosByDate = useMemo(() => {
+    const map = new Map<string, PersonalTodo[]>();
+    for (const item of todos) {
+      const key = extractDateKey(item.due_date);
+      if (!key) continue;
+      const existing = map.get(key) ?? [];
+      existing.push(item);
+      map.set(key, existing);
+    }
+    return map;
+  }, [todos]);
 
   // Build calendar cells (Monday-first)
   const calendarDays = useMemo(() => {
@@ -226,7 +436,6 @@ export function HomeDashboard({
       inCurrentMonth: boolean;
     }> = [];
 
-    // Previous month trailing days
     const prevMonthDays = new Date(calYear, calMonth, 0).getDate();
     for (let i = startOffset - 1; i >= 0; i--) {
       const d = prevMonthDays - i;
@@ -239,7 +448,6 @@ export function HomeDashboard({
       });
     }
 
-    // Current month days
     for (let d = 1; d <= daysInMonth; d++) {
       cells.push({
         dateKey: toDateKey(calYear, calMonth, d),
@@ -248,7 +456,6 @@ export function HomeDashboard({
       });
     }
 
-    // Next month leading days
     const remaining = 42 - cells.length;
     for (let d = 1; d <= remaining; d++) {
       const m = calMonth === 11 ? 0 : calMonth + 1;
@@ -293,7 +500,6 @@ export function HomeDashboard({
 
     setAddingTodo(true);
     try {
-      const supabase = createClient();
       const { data, error } = await supabase
         .from("personal_todos")
         .insert({
@@ -324,7 +530,6 @@ export function HomeDashboard({
     );
 
     try {
-      const supabase = createClient();
       const { error } = await supabase
         .from("personal_todos")
         .update({ is_done: nextDone })
@@ -345,7 +550,6 @@ export function HomeDashboard({
     setTodos((prev) => prev.filter((item) => item.id !== todoId));
 
     try {
-      const supabase = createClient();
       const { error } = await supabase
         .from("personal_todos")
         .delete()
@@ -359,719 +563,889 @@ export function HomeDashboard({
 
   const completedTodosCount = todos.filter((t) => t.is_done).length;
 
-  return (
-    <div className="space-y-6">
-      {/* Greeting Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            {getGreeting()}, {profile.full_name}
-          </h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {getTodayDateVi()}
-            {profile.job_title ? ` • ${profile.job_title}` : ""}
-          </p>
+  // Statuses for the currently opened task in TaskDrawer
+  const drawerProjectStatuses = useMemo(() => {
+    if (!activeDrawerTask) return [];
+    const list = allStatuses.filter(
+      (s) => s.project_id === activeDrawerTask.projectId
+    );
+    return list;
+  }, [activeDrawerTask, allStatuses]);
+
+  // Shared High-Density Worklenz Task Table Renderer
+  function renderDenseTaskTable(showDelegatedAssignees = false) {
+    return (
+      <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] overflow-hidden">
+        {/* Compact 1-Line Filter Toolbar (50px height, matching legacy ImprovedTaskFilters) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e8e8e8] dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818] px-3.5 py-2">
+          {/* Left: Quick Status Tabs */}
+          <div className="flex flex-wrap items-center gap-1">
+            {(
+              [
+                { key: "open", label: "Đang mở", count: stats.inProgress },
+                { key: "overdue", label: "Quá hạn", count: stats.overdue },
+                { key: "today", label: "Hôm nay", count: stats.dueToday },
+                { key: "completed", label: "Hoàn thành", count: stats.completed },
+                { key: "all", label: "Tất cả", count: stats.total },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setTaskFilter(tab.key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-[6px] px-2.5 py-1 text-xs font-medium transition cursor-pointer",
+                  taskFilter === tab.key
+                    ? "bg-brand text-white font-semibold"
+                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-[#2a2a2a]"
+                )}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={cn(
+                    "rounded px-1 text-[10px]",
+                    taskFilter === tab.key
+                      ? "bg-white/20 text-white"
+                      : "bg-slate-200/80 dark:bg-[#2c2c2c] text-slate-600 dark:text-slate-400"
+                  )}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Right: Group By + Project + Priority + Search */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-1 text-xs text-slate-500">
+              <span>Nhóm:</span>
+              <select
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value as GroupByMode)}
+                className="rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-brand focus:outline-none cursor-pointer"
+              >
+                <option value="project">Theo Dự án</option>
+                <option value="status">Theo Trạng thái</option>
+                <option value="priority">Theo Độ ưu tiên</option>
+                <option value="none">Không nhóm</option>
+              </select>
+            </div>
+
+            {projects.length > 0 && (
+              <select
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                className="max-w-[160px] rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-brand focus:outline-none cursor-pointer"
+              >
+                <option value="all">Tất cả dự án</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    [{p.code}] {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              className="rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-brand focus:outline-none cursor-pointer"
+            >
+              <option value="all">Mọi ưu tiên</option>
+              <option value="urgent">Khẩn cấp</option>
+              <option value="high">Cao</option>
+              <option value="medium">Trung bình</option>
+              <option value="low">Thấp</option>
+            </select>
+
+            <div className="relative w-44 sm:w-52">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tìm tên việc..."
+                className="w-full rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] pl-7 pr-6 py-1 text-xs text-slate-900 dark:text-slate-100 focus:border-brand focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
-        <Link
-          href="/projects"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand hover:bg-brand-hover px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition shrink-0"
-        >
-          <FolderKanban className="h-4 w-4" />
-          <span>Đi tới Dự án</span>
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </div>
-
-      {/* 4 KPI Stat Cards (Interactive Filters) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: Đang mở */}
-        <button
-          type="button"
-          onClick={() => setTaskFilter((curr) => (curr === "open" ? "all" : "open"))}
-          className={cn(
-            "rounded-2xl border p-5 text-left transition cursor-pointer shadow-2xs hover:border-brand/40",
-            taskFilter === "open"
-              ? "border-brand bg-brand-soft/20 ring-2 ring-brand/30 dark:bg-brand-soft-dark/20"
-              : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Việc đang thực hiện
-            </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft dark:bg-brand-soft-dark text-brand">
-              <Clock className="h-4 w-4" />
-            </span>
+        {/* Table Column Headers */}
+        <div className="hidden md:grid md:grid-cols-12 items-center border-b border-[#e8e8e8] dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <div className="col-span-5">Công việc</div>
+          <div className="col-span-2">Dự án</div>
+          <div className="col-span-2">Trạng thái</div>
+          <div className="col-span-1 text-center">Ưu tiên</div>
+          <div className="col-span-2 text-right">
+            {showDelegatedAssignees ? "Người nhận & Hạn" : "Hạn hoàn thành"}
           </div>
-          <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-slate-100">
-            {stats.inProgress}
-          </p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>Đang mở cần xử lý</span>
-            {taskFilter === "open" && <span className="text-brand font-semibold text-[11px]">Đang lọc ●</span>}
-          </p>
-        </button>
+        </div>
 
-        {/* KPI 2: Quá hạn */}
-        <button
-          type="button"
-          onClick={() => setTaskFilter((curr) => (curr === "overdue" ? "all" : "overdue"))}
-          className={cn(
-            "rounded-2xl border p-5 text-left transition cursor-pointer shadow-2xs hover:border-red-400/50",
-            taskFilter === "overdue"
-              ? "border-red-500 bg-red-50/50 ring-2 ring-red-400/40 dark:bg-red-950/40"
-              : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Quá hạn
-            </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400">
-              <AlertTriangle className="h-4 w-4" />
-            </span>
+        {/* Table Rows Grouped */}
+        {filteredTasks.length === 0 ? (
+          <div className="py-14 px-6 text-center">
+            <CheckCircle2 className="mx-auto h-7 w-7 text-slate-300 dark:text-slate-600" />
+            <p className="mt-2 text-[13px] font-semibold text-slate-700 dark:text-slate-200">
+              Không có công việc nào trong danh sách này.
+            </p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Thử chuyển bộ lọc trạng thái hoặc tạo công việc mới từ nút{" "}
+              <strong>+ Tạo mới</strong> trên thanh công cụ.
+            </p>
           </div>
-          <p
-            className={cn(
-              "mt-3 text-3xl font-bold",
-              stats.overdue > 0
-                ? "text-red-600 dark:text-red-400"
-                : "text-slate-900 dark:text-slate-100"
-            )}
-          >
-            {stats.overdue}
-          </p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>Cần ưu tiên hoàn tất</span>
-            {taskFilter === "overdue" && <span className="text-red-600 font-semibold text-[11px]">Đang lọc ●</span>}
-          </p>
-        </button>
-
-        {/* KPI 3: Đến hạn hôm nay */}
-        <button
-          type="button"
-          onClick={() => setTaskFilter((curr) => (curr === "today" ? "all" : "today"))}
-          className={cn(
-            "rounded-2xl border p-5 text-left transition cursor-pointer shadow-2xs hover:border-amber-400/50",
-            taskFilter === "today"
-              ? "border-amber-500 bg-amber-50/50 ring-2 ring-amber-400/40 dark:bg-amber-950/40"
-              : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Đến hạn hôm nay
-            </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
-              <CalendarIcon className="h-4 w-4" />
-            </span>
-          </div>
-          <p
-            className={cn(
-              "mt-3 text-3xl font-bold",
-              stats.dueToday > 0
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-slate-900 dark:text-slate-100"
-            )}
-          >
-            {stats.dueToday}
-          </p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>Deadline trong ngày</span>
-            {taskFilter === "today" && <span className="text-amber-600 font-semibold text-[11px]">Đang lọc ●</span>}
-          </p>
-        </button>
-
-        {/* KPI 4: Tổng việc trong phạm vi */}
-        <button
-          type="button"
-          onClick={() => setTaskFilter("all")}
-          className={cn(
-            "rounded-2xl border p-5 text-left transition cursor-pointer shadow-2xs hover:border-blue-400/50",
-            taskFilter === "all"
-              ? "border-blue-500 bg-blue-50/30 ring-2 ring-blue-400/30 dark:bg-blue-950/30"
-              : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Tổng số công việc
-            </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
-              <ListTodo className="h-4 w-4" />
-            </span>
-          </div>
-          <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-slate-100">
-            {stats.total}
-          </p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            {scopeFilter === "assigned_to_me"
-              ? "Giao cho bạn"
-              : scopeFilter === "assigned_by_me"
-              ? "Bạn đã giao"
-              : "Tất cả liên quan"}
-          </p>
-        </button>
-      </div>
-
-      {/* Main 2-column layout (2/3 left, 1/3 right) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Left Main Column (2/3) */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs overflow-hidden">
-          
-          {/* Header 1: Scope Views (Assigned to me vs Assigned by me vs All) */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-3.5 bg-slate-50/50 dark:bg-slate-800/20">
-            <div className="inline-flex rounded-xl bg-slate-200/70 dark:bg-slate-800 p-1">
-              <button
-                type="button"
-                onClick={() => setScopeFilter("assigned_to_me")}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-semibold transition cursor-pointer",
-                  scopeFilter === "assigned_to_me"
-                    ? "bg-white dark:bg-slate-900 text-brand shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                )}
-              >
-                <UserCheck className="h-4 w-4" />
-                <span>Được giao cho tôi</span>
-                <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 text-[10px] text-slate-600 dark:text-slate-300">
-                  {assignedToMeTasks.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setScopeFilter("assigned_by_me")}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-semibold transition cursor-pointer",
-                  scopeFilter === "assigned_by_me"
-                    ? "bg-white dark:bg-slate-900 text-brand shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                )}
-              >
-                <Send className="h-4 w-4" />
-                <span>Tôi đã giao</span>
-                <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 text-[10px] text-slate-600 dark:text-slate-300">
-                  {assignedByMeTasks.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setScopeFilter("all")}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-semibold transition cursor-pointer",
-                  scopeFilter === "all"
-                    ? "bg-white dark:bg-slate-900 text-brand shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                )}
-              >
-                <Users className="h-4 w-4" />
-                <span>Tất cả</span>
-                <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 text-[10px] text-slate-600 dark:text-slate-300">
-                  {initialTasks.length}
-                </span>
-              </button>
-            </div>
-
-            {/* List vs Calendar Switcher */}
-            <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setMainView("list")}
-                className={cn(
-                  "p-1.5 rounded-lg text-xs font-medium transition cursor-pointer",
-                  mainView === "list"
-                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                )}
-                title="Dạng danh sách"
-              >
-                <ListTodo className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setMainView("calendar")}
-                className={cn(
-                  "p-1.5 rounded-lg text-xs font-medium transition cursor-pointer",
-                  mainView === "calendar"
-                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                )}
-                title="Dạng lịch"
-              >
-                <CalendarIcon className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Header 2: Filters Bar (matching Old Open Source Toolbar) */}
-          {mainView === "list" && (
-            <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-3 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                {/* Status Pills */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {(
-                    [
-                      { key: "all", label: "Tất cả", count: stats.total },
-                      { key: "open", label: "Chưa xong", count: stats.inProgress },
-                      { key: "overdue", label: "Quá hạn", count: stats.overdue },
-                      { key: "today", label: "Hôm nay", count: stats.dueToday },
-                      { key: "completed", label: "Đã xong", count: scopedTasks.length - stats.inProgress },
-                    ] as const
-                  ).map((tab) => (
+        ) : (
+          <div className="divide-y divide-[#f0f0f0] dark:divide-[#2a2a2a]">
+            {groupedTasks.map((group) => {
+              const isCollapsed = !!collapsedGroups[group.key];
+              return (
+                <div key={group.key}>
+                  {groupBy !== "none" && (
                     <button
-                      key={tab.key}
                       type="button"
-                      onClick={() => setTaskFilter(tab.key)}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition cursor-pointer",
-                        taskFilter === tab.key
-                          ? "bg-brand text-white shadow-2xs"
-                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-                      )}
+                      onClick={() =>
+                        setCollapsedGroups((prev) => ({
+                          ...prev,
+                          [group.key]: !prev[group.key],
+                        }))
+                      }
+                      className="flex w-full items-center justify-between bg-[#fafafa]/80 dark:bg-[#191919] px-4 py-1.5 text-left hover:bg-slate-100/80 dark:hover:bg-[#222222] transition cursor-pointer"
                     >
-                      <span>{tab.label}</span>
-                      <span
-                        className={cn(
-                          "rounded-full px-1.5 py-0.2 text-[10px]",
-                          taskFilter === tab.key
-                            ? "bg-white/20 text-white"
-                            : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400"
+                      <div className="flex items-center gap-2">
+                        {isCollapsed ? (
+                          <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
                         )}
-                      >
-                        {tab.count}
-                      </span>
+                        <span
+                          className="h-2.5 w-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: group.color }}
+                        />
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          {group.label}
+                        </span>
+                        <span className="rounded bg-slate-200/80 dark:bg-[#2c2c2c] px-1.5 py-0.2 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                          {group.items.length}
+                        </span>
+                      </div>
                     </button>
-                  ))}
+                  )}
+
+                  {!isCollapsed && (
+                    <div className="divide-y divide-[#f3f3f3] dark:divide-[#252525]">
+                      {group.items.map((task) => {
+                        const priorityCfg = PRIORITY_CONFIG[task.priority];
+                        const isDone =
+                          task.status?.category === "done" ||
+                          Boolean(task.completed_at);
+                        const overdue =
+                          !isDone &&
+                          isOverdue(task.due_date, task.completed_at);
+                        const isSelectedInDrawer =
+                          activeDrawerTask?.taskId === task.id;
+
+                        return (
+                          <div
+                            key={task.id}
+                            onClick={() =>
+                              setActiveDrawerTask({
+                                taskId: task.id,
+                                projectId: task.project_id,
+                              })
+                            }
+                            className={cn(
+                              "group grid grid-cols-1 md:grid-cols-12 items-center gap-2 px-4 py-2 text-left transition cursor-pointer",
+                              isSelectedInDrawer
+                                ? "bg-brand-soft/60 dark:bg-brand-soft-dark/40"
+                                : "hover:bg-[#f8f9fa] dark:hover:bg-[#242424]"
+                            )}
+                          >
+                            {/* Col 1: Checkbox + Title */}
+                            <div className="md:col-span-5 flex items-center gap-2.5 min-w-0">
+                              <button
+                                type="button"
+                                onClick={(e) => handleInlineToggleDone(task, e)}
+                                title={
+                                  isDone
+                                    ? "Đánh dấu chưa xong"
+                                    : "Đánh dấu hoàn thành"
+                                }
+                                className="shrink-0 text-slate-400 hover:text-emerald-600 transition cursor-pointer"
+                              >
+                                {isDone ? (
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                ) : (
+                                  <Circle className="h-4 w-4" />
+                                )}
+                              </button>
+                              <span
+                                className={cn(
+                                  "truncate text-[13px] font-medium",
+                                  isDone
+                                    ? "line-through text-slate-400 dark:text-slate-500"
+                                    : "text-slate-900 dark:text-slate-100 group-hover:text-brand"
+                                )}
+                              >
+                                {task.title}
+                              </span>
+                            </div>
+
+                            {/* Col 2: Project Link */}
+                            <div className="md:col-span-2 flex items-center min-w-0">
+                              {task.project ? (
+                                <Link
+                                  href={`/projects/${task.project_id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1.5 truncate rounded-[4px] bg-slate-100 dark:bg-[#2a2a2a] px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-brand"
+                                >
+                                  <span
+                                    className="h-1.5 w-1.5 rounded-full shrink-0"
+                                    style={{
+                                      backgroundColor:
+                                        task.project.color || "#F47830",
+                                    }}
+                                  />
+                                  <span className="truncate">
+                                    {task.project.name}
+                                  </span>
+                                </Link>
+                              ) : (
+                                <span className="text-xs text-slate-400">—</span>
+                              )}
+                            </div>
+
+                            {/* Col 3: Status badge */}
+                            <div className="md:col-span-2 flex items-center">
+                              {task.status && (
+                                <span className="inline-flex items-center gap-1.5 rounded-[4px] border border-[#e0e0e0] dark:border-[#383838] px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                                  <span
+                                    className="h-1.5 w-1.5 rounded-full shrink-0"
+                                    style={{
+                                      backgroundColor: task.status.color,
+                                    }}
+                                  />
+                                  <span className="truncate">
+                                    {task.status.name}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Col 4: Inline Priority Selector */}
+                            <div
+                              className="md:col-span-1 flex items-center md:justify-center"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <select
+                                value={task.priority}
+                                onChange={(e) =>
+                                  handleInlinePriorityChange(
+                                    task,
+                                    e.target.value as TaskPriority
+                                  )
+                                }
+                                className={cn(
+                                  "rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium focus:outline-none cursor-pointer",
+                                  priorityCfg.bg,
+                                  priorityCfg.color
+                                )}
+                              >
+                                <option value="low">Thấp</option>
+                                <option value="medium">TB</option>
+                                <option value="high">Cao</option>
+                                <option value="urgent">Khẩn</option>
+                              </select>
+                            </div>
+
+                            {/* Col 5: Assignees (if delegated) + Due Date */}
+                            <div className="md:col-span-2 flex items-center justify-end gap-2">
+                              {showDelegatedAssignees &&
+                                (task.assignees ?? []).length > 0 && (
+                                  <div className="flex -space-x-1">
+                                    {task.assignees!.slice(0, 2).map((u) => (
+                                      <span
+                                        key={u.id}
+                                        title={u.full_name}
+                                        className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-brand-soft text-[9px] font-bold text-brand ring-1 ring-white dark:ring-[#1f1f1f]"
+                                      >
+                                        {getInitials(u.full_name)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              <span
+                                className={cn(
+                                  "inline-flex items-center gap-1 font-mono text-[11.5px]",
+                                  overdue
+                                    ? "text-red-600 dark:text-red-400 font-semibold"
+                                    : "text-slate-500 dark:text-slate-400"
+                                )}
+                              >
+                                {task.due_date
+                                  ? formatDateVi(task.due_date)
+                                  : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Compact Greeting & Context Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-[#e8e8e8] dark:border-[#303030] pb-3">
+        <div className="flex flex-wrap items-baseline gap-2.5">
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            {getGreeting()}, {profile.full_name}
+          </h1>
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            {getTodayDateVi()}
+            {profile.job_title ? ` • ${profile.job_title}` : ""}
+          </span>
+        </div>
+
+        {/* Mode Title Pill + Go to Projects */}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/projects"
+            className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] hover:border-brand px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 transition"
+          >
+            <FolderKanban className="h-3.5 w-3.5 text-brand" />
+            <span>Tất cả Dự án</span>
+            <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+          </Link>
+        </div>
+      </div>
+
+      {/* ====================================================================
+       * MODE 1: OVERVIEW (Worklenz HomeOverviewView Widget Board)
+       * ==================================================================== */}
+      {activeView === "overview" && (
+        <div className="space-y-4">
+          {/* 4 Compact Stat Cards (Worklenz HomeStatCards) */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <button
+              type="button"
+              onClick={() => setTaskFilter("open")}
+              className={cn(
+                "flex items-center justify-between rounded-[8px] border px-4 py-3 text-left transition cursor-pointer",
+                taskFilter === "open"
+                  ? "border-brand bg-brand-soft/30 dark:bg-brand-soft-dark/25"
+                  : "border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] hover:border-brand/40"
+              )}
+            >
+              <div>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Việc đang mở
+                </p>
+                <p className="mt-1 font-mono text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  {stats.inProgress}
+                </p>
+              </div>
+              <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-brand-soft dark:bg-brand-soft-dark text-brand">
+                <Clock className="h-4 w-4" />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTaskFilter("overdue")}
+              className={cn(
+                "flex items-center justify-between rounded-[8px] border px-4 py-3 text-left transition cursor-pointer",
+                taskFilter === "overdue"
+                  ? "border-red-500 bg-red-50/40 dark:bg-red-950/30"
+                  : "border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] hover:border-red-400/50"
+              )}
+            >
+              <div>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Quá hạn
+                </p>
+                <p
+                  className={cn(
+                    "mt-1 font-mono text-2xl font-bold",
+                    stats.overdue > 0
+                      ? "text-red-600 dark:text-red-400"
+                      : "text-slate-900 dark:text-slate-100"
+                  )}
+                >
+                  {stats.overdue}
+                </p>
+              </div>
+              <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400">
+                <AlertTriangle className="h-4 w-4" />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTaskFilter("today")}
+              className={cn(
+                "flex items-center justify-between rounded-[8px] border px-4 py-3 text-left transition cursor-pointer",
+                taskFilter === "today"
+                  ? "border-amber-500 bg-amber-50/40 dark:bg-amber-950/30"
+                  : "border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] hover:border-amber-400/50"
+              )}
+            >
+              <div>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Hạn hôm nay
+                </p>
+                <p
+                  className={cn(
+                    "mt-1 font-mono text-2xl font-bold",
+                    stats.dueToday > 0
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-slate-900 dark:text-slate-100"
+                  )}
+                >
+                  {stats.dueToday}
+                </p>
+              </div>
+              <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
+                <CalendarIcon className="h-4 w-4" />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTaskFilter("completed")}
+              className={cn(
+                "flex items-center justify-between rounded-[8px] border px-4 py-3 text-left transition cursor-pointer",
+                taskFilter === "completed"
+                  ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/30"
+                  : "border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] hover:border-emerald-400/50"
+              )}
+            >
+              <div>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Đã hoàn thành
+                </p>
+                <p className="mt-1 font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                  {stats.completed}
+                </p>
+              </div>
+              <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-4 w-4" />
+              </span>
+            </button>
+          </div>
+
+          {/* 2-Column Workspace Grid: Main Task Table (3/4) + Right Widgets (1/4) */}
+          <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
+            <div className="xl:col-span-3">{renderDenseTaskTable(false)}</div>
+
+            {/* Right Column Widgets: Personal Todo + Delegated by Me summary */}
+            <div className="space-y-4">
+              {/* Widget 1: Personal Todos */}
+              <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-[13.5px] font-bold text-slate-900 dark:text-slate-100">
+                      Todo cá nhân
+                    </h2>
+                    <p className="text-[11px] text-slate-400">
+                      Hoàn thành {completedTodosCount}/{todos.length}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/home?view=todo")}
+                    className="text-[11px] font-medium text-brand hover:underline cursor-pointer"
+                  >
+                    Quản lý & Ghi chú →
+                  </button>
                 </div>
 
-                {/* Search input */}
-                <div className="relative w-full sm:w-56">
-                  <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                <form onSubmit={handleAddTodo} className="flex gap-1.5">
                   <input
                     type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Tìm tên việc, dự án..."
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    value={newTodoTitle}
+                    onChange={(e) => setNewTodoTitle(e.target.value)}
+                    placeholder="+ Thêm việc cá nhân nhanh..."
+                    disabled={addingTodo}
+                    className="flex-1 rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-[#fafafa] dark:bg-[#141414] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:border-brand focus:bg-white focus:outline-none"
                   />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                  <button
+                    type="submit"
+                    disabled={!newTodoTitle.trim() || addingTodo}
+                    className="inline-flex items-center justify-center rounded-[6px] bg-brand hover:bg-brand-hover disabled:opacity-50 px-2.5 py-1.5 text-white transition cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </form>
+
+                <div className="space-y-1 max-h-[260px] overflow-y-auto">
+                  {todos.length === 0 ? (
+                    <p className="py-4 text-center text-xs text-slate-400">
+                      Chưa có Todo cá nhân nào.
+                    </p>
+                  ) : (
+                    todos.map((todo) => {
+                      const catCfg = getTodoCategoryConfig(todo.category);
+                      const isOverdueTodo =
+                        !todo.is_done &&
+                        Boolean(todo.due_date && todo.due_date < todayKey);
+                      return (
+                        <div
+                          key={todo.id}
+                          className="group flex items-center justify-between gap-2 rounded-[6px] px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-[#262626] transition"
+                        >
+                          <div className="flex items-start gap-2 min-w-0 flex-1">
+                            <input
+                              type="checkbox"
+                              checked={todo.is_done}
+                              onChange={() => handleToggleTodo(todo)}
+                              className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-brand accent-brand cursor-pointer shrink-0"
+                            />
+                            <div
+                              onClick={() => router.push("/home?view=todo")}
+                              className="min-w-0 flex-1 cursor-pointer"
+                              title="Nhấn để sửa chi tiết, ghi chú & gắn hạn"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className="h-1.5 w-1.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: catCfg.dot }}
+                                  title={catCfg.label}
+                                />
+                                <span
+                                  className={cn(
+                                    "truncate text-xs font-medium",
+                                    todo.is_done
+                                      ? "line-through text-slate-400"
+                                      : "text-slate-700 dark:text-slate-200 group-hover:text-brand"
+                                  )}
+                                >
+                                  {todo.title}
+                                </span>
+                              </div>
+                              {(todo.due_date || todo.notes) && (
+                                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                                  {todo.due_date && (
+                                    <span
+                                      className={cn(
+                                        "font-mono",
+                                        isOverdueTodo &&
+                                          "text-red-500 font-semibold"
+                                      )}
+                                    >
+                                      {todo.due_date === todayKey
+                                        ? "Hôm nay"
+                                        : formatDateVi(todo.due_date)}
+                                    </span>
+                                  )}
+                                  {todo.notes && (
+                                    <span className="truncate">
+                                      • {todo.notes}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTodo(todo.id)}
+                            title="Xóa"
+                            className="p-0.5 text-slate-400 hover:text-red-500 cursor-pointer shrink-0"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
 
-              {/* Secondary Filter dropdowns (Project & Priority) */}
-              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-                <span className="text-slate-400 font-medium inline-flex items-center gap-1 mr-1">
-                  <Filter className="h-3 w-3" /> Lọc:
-                </span>
-
-                {/* Project Filter */}
-                {projects.length > 0 && (
-                  <select
-                    value={projectFilter}
-                    onChange={(e) => setProjectFilter(e.target.value)}
-                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+              {/* Widget 2: Assigned By Me Widget (matching legacy HomeAssignedByMeWidget) */}
+              <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Send className="h-3.5 w-3.5 text-brand" />
+                    <h2 className="text-[13.5px] font-bold text-slate-900 dark:text-slate-100">
+                      Việc tôi đã giao ({assignedByMeTasks.length})
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/home?view=delegated")}
+                    className="text-[11px] font-medium text-brand hover:underline cursor-pointer"
                   >
-                    <option value="all">Tất cả dự án ({projects.length})</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
+                    Xem tất cả
+                  </button>
+                </div>
+
+                {assignedByMeTasks.length === 0 ? (
+                  <p className="py-3 text-xs text-slate-400">
+                    Bạn chưa giao việc cho thành viên khác.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-[#f0f0f0] dark:divide-[#2a2a2a]">
+                    {assignedByMeTasks.slice(0, 5).map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() =>
+                          setActiveDrawerTask({
+                            taskId: t.id,
+                            projectId: t.project_id,
+                          })
+                        }
+                        className="flex w-full items-center justify-between gap-2 py-2 text-left hover:text-brand transition cursor-pointer"
+                      >
+                        <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">
+                          {t.title}
+                        </span>
+                        <span className="shrink-0 font-mono text-[11px] text-slate-400">
+                          {t.due_date ? formatDateVi(t.due_date) : "—"}
+                        </span>
+                      </button>
                     ))}
-                  </select>
-                )}
-
-                {/* Priority Filter */}
-                <select
-                  value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
-                >
-                  <option value="all">Mọi mức ưu tiên</option>
-                  <option value="urgent">Khẩn cấp</option>
-                  <option value="high">Cao</option>
-                  <option value="medium">Trung bình</option>
-                  <option value="low">Thấp</option>
-                </select>
-
-                {(projectFilter !== "all" || priorityFilter !== "all" || searchQuery) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProjectFilter("all");
-                      setPriorityFilter("all");
-                      setSearchQuery("");
-                    }}
-                    className="text-brand hover:underline font-medium text-[11px] ml-auto cursor-pointer"
-                  >
-                    Đặt lại bộ lọc
-                  </button>
+                  </div>
                 )}
               </div>
             </div>
-          )}
-
-          {/* List View */}
-          {mainView === "list" && (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredTasks.length === 0 ? (
-                <div className="py-16 px-6 text-center">
-                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400">
-                    <CheckCircle2 className="h-6 w-6" />
-                  </div>
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                    {taskFilter === "overdue"
-                      ? "Tuyệt vời! Không có công việc nào quá hạn."
-                      : taskFilter === "today"
-                      ? "Hôm nay không có hạn chót nào cần xử lý."
-                      : taskFilter === "open"
-                      ? "Không còn công việc nào đang mở."
-                      : scopeFilter === "assigned_by_me"
-                      ? "Bạn chưa giao công việc nào cho nhân sự khác."
-                      : "Không tìm thấy công việc phù hợp với bộ lọc."}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {scopeFilter === "assigned_by_me"
-                      ? "Khi bạn tạo việc trong các dự án và phân công cho đồng nghiệp, danh sách sẽ xuất hiện tại đây."
-                      : "Khám phá các dự án đang hoạt động để nhận hoặc tạo công việc mới."}
-                  </p>
-                </div>
-              ) : (
-                filteredTasks.map((task) => {
-                  const priorityCfg = PRIORITY_CONFIG[task.priority];
-                  const isDone =
-                    task.status?.category === "done" || Boolean(task.completed_at);
-                  const overdue = !isDone && isOverdue(task.due_date, task.completed_at);
-                  const hasAssignees = (task.assignees ?? []).length > 0;
-
-                  return (
-                    <button
-                      key={task.id}
-                      type="button"
-                      onClick={() =>
-                        router.push(`/projects/${task.project_id}?task=${task.id}`)
-                      }
-                      className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer"
-                    >
-                      <div className="min-w-0 space-y-1.5 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={cn(
-                              "h-2 w-2 rounded-full shrink-0",
-                              priorityCfg.dot
-                            )}
-                          />
-                          <p
-                            className={cn(
-                              "truncate text-sm font-medium",
-                              isDone
-                                ? "line-through text-slate-400 dark:text-slate-500"
-                                : "text-slate-900 dark:text-slate-100"
-                            )}
-                          >
-                            {task.title}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 text-xs">
-                          {task.project && (
-                            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-slate-600 dark:text-slate-300 font-medium">
-                              <span
-                                className="h-2 w-2 rounded-full shrink-0"
-                                style={{
-                                  backgroundColor:
-                                    task.project.color || "#F26522",
-                                }}
-                              />
-                              <span className="truncate max-w-[150px]">
-                                {task.project.name}
-                              </span>
-                            </span>
-                          )}
-
-                          {task.status && (
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-700 px-2.5 py-0.5 text-slate-700 dark:text-slate-300">
-                              <span
-                                className="h-1.5 w-1.5 rounded-full shrink-0"
-                                style={{ backgroundColor: task.status.color }}
-                              />
-                              {task.status.name}
-                            </span>
-                          )}
-
-                          {/* Show Assignees if looking at 'Assigned by me' */}
-                          {scopeFilter === "assigned_by_me" && (
-                            hasAssignees ? (
-                              <div className="inline-flex items-center gap-1 pl-1">
-                                <span className="text-[11px] text-slate-400">Giao cho:</span>
-                                <div className="flex -space-x-1.5 items-center">
-                                  {task.assignees!.slice(0, 3).map((u) => (
-                                    <span
-                                      key={u.id}
-                                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-700 ring-1 ring-white dark:ring-slate-900"
-                                      title={u.full_name}
-                                    >
-                                      {getInitials(u.full_name)}
-                                    </span>
-                                  ))}
-                                  {task.assignees!.length > 3 && (
-                                    <span className="text-[10px] text-slate-400 pl-1 font-medium">
-                                      +{task.assignees!.length - 3}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-slate-600 dark:text-slate-300 font-medium text-[11px] ml-1">
-                                  {task.assignees![0].full_name}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="rounded bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
-                                Chưa phân công
-                              </span>
-                            )
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-center">
-                        <span
-                          className={cn(
-                            "rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
-                            priorityCfg.bg,
-                            priorityCfg.color
-                          )}
-                        >
-                          {priorityCfg.label}
-                        </span>
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 text-xs font-medium min-w-[88px] justify-end",
-                            overdue
-                              ? "text-red-600 dark:text-red-400 font-semibold"
-                              : "text-slate-500 dark:text-slate-400"
-                          )}
-                        >
-                          <CalendarIcon className="h-3.5 w-3.5" />
-                          {formatDateVi(task.due_date)}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {/* Calendar View */}
-          {mainView === "calendar" && (
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  Tháng {calMonth + 1} năm {calYear}
-                </span>
-                <div className="inline-flex items-center rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={handlePrevMonth}
-                    className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    aria-label="Tháng trước"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleGoToday}
-                    className="border-x border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                  >
-                    Hôm nay
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleNextMonth}
-                    className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    aria-label="Tháng sau"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-7 gap-1 mb-1">
-                {WEEKDAY_LABELS.map((day) => (
-                  <div
-                    key={day}
-                    className="py-1.5 text-center text-xs font-semibold text-slate-500 dark:text-slate-400"
-                  >
-                    {day}
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-7 gap-1">
-                {calendarDays.map((cell) => {
-                  const dayTasks = tasksByDate.get(cell.dateKey) ?? [];
-                  const isToday = cell.dateKey === todayKey;
-
-                  return (
-                    <div
-                      key={cell.dateKey}
-                      className={cn(
-                        "min-h-[96px] rounded-xl border p-1.5 transition flex flex-col",
-                        cell.inCurrentMonth
-                          ? "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-                          : "border-slate-100 dark:border-slate-800/50 bg-slate-50/70 dark:bg-slate-950/40",
-                        isToday &&
-                          "ring-2 ring-brand/60 border-brand bg-brand-soft/40 dark:bg-brand-soft-dark/30"
-                      )}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span
-                          className={cn(
-                            "text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center",
-                            isToday
-                              ? "bg-brand text-white"
-                              : cell.inCurrentMonth
-                              ? "text-slate-700 dark:text-slate-200"
-                              : "text-slate-400 dark:text-slate-600"
-                          )}
-                        >
-                          {cell.dayNumber}
-                        </span>
-                        {dayTasks.length > 0 && (
-                          <span className="text-[10px] font-semibold text-brand px-1 rounded bg-brand-soft dark:bg-brand-soft-dark">
-                            {dayTasks.length} việc
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="space-y-1 overflow-y-auto max-h-[70px] pr-0.5">
-                        {dayTasks.slice(0, 3).map((t) => {
-                          const done =
-                            t.status?.category === "done" || Boolean(t.completed_at);
-                          return (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() =>
-                                router.push(`/projects/${t.project_id}?task=${t.id}`)
-                              }
-                              className={cn(
-                                "w-full text-left truncate rounded px-1.5 py-0.5 text-[11px] block transition cursor-pointer",
-                                done
-                                  ? "bg-slate-100 text-slate-400 line-through dark:bg-slate-800"
-                                  : "bg-brand-soft/60 hover:bg-brand-soft text-slate-800 dark:bg-slate-800 dark:text-slate-200"
-                              )}
-                              title={t.title}
-                            >
-                              {t.title}
-                            </button>
-                          );
-                        })}
-                        {dayTasks.length > 3 && (
-                          <span className="text-[10px] text-slate-400 block text-center">
-                            +{dayTasks.length - 3} việc nữa
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
+      )}
 
-        {/* Right Column: Personal Todos (1/3) */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-2xs space-y-4">
+      {/* ====================================================================
+       * MODE 2: MY TASKS (Full-width Worklenz HomeMyTasksView)
+       * ==================================================================== */}
+      {activeView === "my-tasks" && (
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Ghi chú cần làm cá nhân
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-brand" />
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Công việc được giao cho tôi ({assignedToMeTasks.length})
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Chỉ mình bạn nhìn thấy ({completedTodosCount}/{todos.length} xong)
-              </p>
             </div>
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-              <Check className="h-4 w-4" />
-            </span>
+          </div>
+          {renderDenseTaskTable(false)}
+        </div>
+      )}
+
+      {/* ====================================================================
+       * MODE 3: DELEGATED BY ME (Full-width Assigned by me)
+       * ==================================================================== */}
+      {activeView === "delegated" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Send className="h-4 w-4 text-brand" />
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Công việc tôi đã giao cho đồng nghiệp ({assignedByMeTasks.length})
+              </h2>
+            </div>
+          </div>
+          {renderDenseTaskTable(true)}
+        </div>
+      )}
+
+      {/* ====================================================================
+       * MODE 4: FULL-WIDTH CALENDAR VIEW (Worklenz HomeCalendarView)
+       * ==================================================================== */}
+      {activeView === "calendar" && (
+        <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4">
+          <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[#e8e8e8] dark:border-[#303030]">
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="h-4 w-4 text-brand" />
+              <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                Lịch công việc — Tháng {calMonth + 1}/{calYear}
+              </span>
+            </div>
+            <div className="inline-flex items-center rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] overflow-hidden">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleGoToday}
+                className="border-x border-[#d9d9d9] dark:border-[#3a3a3a] px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Hôm nay
+              </button>
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
-          {/* Add Todo Form */}
-          <form onSubmit={handleAddTodo} className="flex gap-2">
-            <input
-              type="text"
-              value={newTodoTitle}
-              onChange={(e) => setNewTodoTitle(e.target.value)}
-              placeholder="Thêm việc nhanh (nhấn Enter)..."
-              disabled={addingTodo}
-              className="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-brand focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition"
-            />
-            <button
-              type="submit"
-              disabled={!newTodoTitle.trim() || addingTodo}
-              className="inline-flex items-center justify-center rounded-xl bg-brand hover:bg-brand-hover disabled:opacity-50 px-3 py-2 text-white transition cursor-pointer"
-              title="Thêm"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </form>
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {WEEKDAY_LABELS.map((day) => (
+              <div
+                key={day}
+                className="py-1 text-center text-xs font-semibold text-slate-500 dark:text-slate-400"
+              >
+                {day}
+              </div>
+            ))}
+          </div>
 
-          {/* Todos List */}
-          <div className="space-y-1.5 max-h-[460px] overflow-y-auto pr-1">
-            {todos.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-400">
-                Chưa có ghi chú nào. Gõ việc cần làm và nhấn Enter.
-              </p>
-            ) : (
-              todos.map((todo) => (
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDays.map((cell) => {
+              const dayTasks = tasksByDate.get(cell.dateKey) ?? [];
+              const dayTodos = todosByDate.get(cell.dateKey) ?? [];
+              const totalCount = dayTasks.length + dayTodos.length;
+              const isToday = cell.dateKey === todayKey;
+
+              return (
                 <div
-                  key={todo.id}
-                  className="group flex items-center justify-between gap-2 rounded-xl p-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition"
+                  key={cell.dateKey}
+                  className={cn(
+                    "min-h-[108px] rounded-[6px] border p-1.5 flex flex-col",
+                    cell.inCurrentMonth
+                      ? "border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f]"
+                      : "border-[#f0f0f0] dark:border-[#252525] bg-[#fafafa] dark:bg-[#161616]",
+                    isToday &&
+                      "ring-1 ring-brand border-brand bg-brand-soft/30 dark:bg-brand-soft-dark/20"
+                  )}
                 >
-                  <label className="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1">
-                    <input
-                      type="checkbox"
-                      checked={todo.is_done}
-                      onChange={() => handleToggleTodo(todo)}
-                      className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand accent-brand cursor-pointer"
-                    />
+                  <div className="flex items-center justify-between mb-1">
                     <span
                       className={cn(
-                        "truncate text-xs",
-                        todo.is_done
-                          ? "line-through text-slate-400 dark:text-slate-500"
-                          : "text-slate-700 dark:text-slate-200"
+                        "text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center",
+                        isToday
+                          ? "bg-brand text-white"
+                          : cell.inCurrentMonth
+                          ? "text-slate-700 dark:text-slate-200"
+                          : "text-slate-400 dark:text-slate-600"
                       )}
                     >
-                      {todo.title}
+                      {cell.dayNumber}
                     </span>
-                  </label>
+                    {totalCount > 0 && (
+                      <span className="text-[10px] font-semibold text-brand px-1 rounded bg-brand-soft dark:bg-brand-soft-dark">
+                        {totalCount}
+                      </span>
+                    )}
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteTodo(todo.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition cursor-pointer"
-                    title="Xóa"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="space-y-1 overflow-y-auto max-h-[82px]">
+                    {dayTasks.map((t) => {
+                      const done =
+                        t.status?.category === "done" ||
+                        Boolean(t.completed_at);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() =>
+                            setActiveDrawerTask({
+                              taskId: t.id,
+                              projectId: t.project_id,
+                            })
+                          }
+                          className={cn(
+                            "w-full text-left truncate rounded-[4px] px-1.5 py-0.5 text-[11px] block transition cursor-pointer",
+                            done
+                              ? "bg-slate-100 text-slate-400 line-through dark:bg-slate-800"
+                              : "bg-brand-soft/70 hover:bg-brand-soft text-slate-800 dark:bg-[#2a2a2a] dark:text-slate-200"
+                          )}
+                          title={`[Task dự án] ${t.title}`}
+                        >
+                          {t.title}
+                        </button>
+                      );
+                    })}
+                    {dayTodos.map((td) => (
+                      <button
+                        key={td.id}
+                        type="button"
+                        onClick={() => router.push("/home?view=todo")}
+                        className={cn(
+                          "w-full text-left truncate rounded-[4px] border border-dashed px-1.5 py-0.5 text-[10.5px] block transition cursor-pointer",
+                          td.is_done
+                            ? "border-slate-200 bg-slate-50 text-slate-400 line-through dark:border-slate-800 dark:bg-slate-900"
+                            : "border-purple-300 bg-purple-50/70 text-purple-800 hover:bg-purple-100 dark:border-purple-800/70 dark:bg-purple-950/40 dark:text-purple-200"
+                        )}
+                        title={`[Todo cá nhân] ${td.title}`}
+                      >
+                        • {td.title}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              ))
-            )}
+              );
+            })}
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ====================================================================
+       * MODE 5: PERSONAL TODO LIST 2.0 (GTD Personal Workspace)
+       * ==================================================================== */}
+      {activeView === "todo" && (
+        <PersonalTodoManager
+          profile={profile}
+          todos={todos}
+          setTodos={setTodos}
+          projects={projects}
+          allStatuses={allStatuses}
+          todayKey={todayKey}
+          onTaskPromoted={(newTask) => {
+            setTasks((prev) => [newTask, ...prev]);
+          }}
+          onOpenTaskDrawer={(taskId, projectId) =>
+            setActiveDrawerTask({ taskId, projectId })
+          }
+        />
+      )}
+
+      {/* ====================================================================
+       * IN-PLACE TASK DRAWER (Matches legacy HomeLayout TaskDrawer Portal)
+       * ==================================================================== */}
+      {activeDrawerTask && (
+        <TaskDrawer
+          taskId={activeDrawerTask.taskId}
+          projectId={activeDrawerTask.projectId}
+          statuses={drawerProjectStatuses}
+          members={allProfiles}
+          allProfiles={allProfiles}
+          currentUser={profile}
+          onClose={() => setActiveDrawerTask(null)}
+          onUpdated={() => router.refresh()}
+          onDeleted={(deletedId) => {
+            setTasks((prev) => prev.filter((t) => t.id !== deletedId));
+            setActiveDrawerTask(null);
+          }}
+          onOpenTask={(nextTaskId) =>
+            setActiveDrawerTask((prev) =>
+              prev ? { ...prev, taskId: nextTaskId } : null
+            )
+          }
+        />
+      )}
     </div>
   );
 }

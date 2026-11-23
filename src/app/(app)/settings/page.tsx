@@ -1,7 +1,16 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { SettingsView } from "@/components/settings/SettingsView";
-import type { Department, Profile, SystemRole } from "@/types/database";
+import type {
+  Department,
+  Profile,
+  ProjectTemplate,
+  SystemRole,
+  TaskActivityLog,
+} from "@/types/database";
+
+export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const supabase = await createServerSupabaseClient();
@@ -19,6 +28,8 @@ export default async function SettingsPage() {
     { data: profilesData },
     { data: projectsData },
     { data: rolesData },
+    { data: templatesData },
+    { data: activityLogsData },
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -39,12 +50,21 @@ export default async function SettingsPage() {
       .order("created_at", { ascending: false }),
     supabase
       .from("projects")
-      .select("id, name, code")
+      .select("id, name, code, category")
       .order("name", { ascending: true }),
     supabase
       .from("roles")
       .select("*")
       .order("created_at", { ascending: true }),
+    supabase
+      .from("project_templates")
+      .select("*, tasks:project_template_tasks(*)")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("task_activity_logs")
+      .select("*, actor:profiles(id, full_name, email, avatar_url)")
+      .order("created_at", { ascending: false })
+      .limit(40),
   ]);
 
   const currentProfile: Profile = (currentProfileData as Profile | null) ?? {
@@ -69,14 +89,23 @@ export default async function SettingsPage() {
   };
 
   return (
-    <SettingsView
-      currentProfile={currentProfile}
-      initialDepartments={(departmentsData as Department[]) ?? []}
-      initialProfiles={(profilesData as Profile[]) ?? []}
-      projects={
-        (projectsData as Array<{ id: string; name: string; code: string }>) ?? []
-      }
-      initialRoles={(rolesData as SystemRole[]) ?? []}
-    />
+    <Suspense fallback={null}>
+      <SettingsView
+        currentProfile={currentProfile}
+        initialDepartments={(departmentsData as Department[]) ?? []}
+        initialProfiles={(profilesData as Profile[]) ?? []}
+        projects={
+          (projectsData as Array<{
+            id: string;
+            name: string;
+            code: string;
+            category?: string | null;
+          }>) ?? []
+        }
+        initialRoles={(rolesData as SystemRole[]) ?? []}
+        initialTemplates={(templatesData as ProjectTemplate[]) ?? []}
+        initialActivityLogs={(activityLogsData as TaskActivityLog[]) ?? []}
+      />
+    </Suspense>
   );
 }

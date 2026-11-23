@@ -1,4 +1,9 @@
-import type { Profile, Project, ProjectMember, SystemRole, ProjectRole } from "@/types/database";
+import type {
+  Profile,
+  Project,
+  ProjectMember,
+  Task,
+} from "@/types/database";
 
 /**
  * HỆ THỐNG MÃ QUYỀN HỆ THỐNG (SYSTEM PERMISSIONS)
@@ -146,7 +151,7 @@ export const PROJECT_PERMISSION_DEFINITIONS: ProjectPermissionDef[] = [
   {
     key: "post_updates",
     label: "Đăng bài và bình luận thảo luận",
-    description: "Viết cập nhật tiến độ dự án, thả reaction và trao đổi trao đổi",
+    description: "Viết cập nhật tiến độ dự án, thả reaction và trao đổi bình luận",
     group: "collaboration",
   },
   {
@@ -157,17 +162,32 @@ export const PROJECT_PERMISSION_DEFINITIONS: ProjectPermissionDef[] = [
   },
 ];
 
+export interface ProjectPermissionsMap {
+  canViewProject: boolean;
+  canCreateTasks: boolean;
+  canEditOwnTasks: boolean;
+  canEditAllTasks: boolean;
+  canDeleteTasks: boolean;
+  canChangeStatus: boolean;
+  canManageMembers: boolean;
+  canManageFiles: boolean;
+  canPostUpdates: boolean;
+  canManagePhases: boolean;
+}
+
 /**
  * Kiểm tra xem người dùng hiện tại có quyền hệ thống chỉ định hay không.
  * - Quản trị viên (admin): Luôn có tất cả quyền.
  * - Nếu người dùng có vai trò tùy chỉnh (custom_role): Kiểm tra mảng custom_role.permissions.
- * - Fallback: Nếu role là manager, mặc định có quyền tạo dự án, xem mọi dự án, xem báo cáo, quản lý phòng ban, webhook.
+ * - Fallback:
+ *   + Nếu role là manager: mặc định có quyền tạo dự án, xem mọi dự án, xem báo cáo, quản lý phòng ban, webhook.
+ *   + Nếu role là member (chưa gán custom_role): mặc định có quyền tạo dự án (`create_projects`).
  */
 export function hasSystemPermission(
   currentUser: Profile | null | undefined,
   permission: string
 ): boolean {
-  if (!currentUser) return false;
+  if (!currentUser || !currentUser.is_active) return false;
 
   // Quản trị viên hệ thống có toàn quyền
   if (currentUser.role === "admin") {
@@ -191,14 +211,71 @@ export function hasSystemPermission(
     return managerDefaults.includes(permission);
   }
 
+  // Fallback cho member chuẩn (tương đương Chuyên viên SPECIALIST) khi chưa bị khóa bởi custom_role COLLABORATOR
+  if (currentUser.role === "member") {
+    const memberDefaults: string[] = [SYSTEM_PERMISSIONS.CREATE_PROJECTS];
+    return memberDefaults.includes(permission);
+  }
+
   return false;
+}
+
+/**
+ * Kiểm tra xem người dùng có phải là người có đặc quyền quản trị trong dự án không
+ * (Admin hệ thống, Người tạo dự án, Trưởng dự án PM, hoặc Owner trong project_members)
+ */
+export function isProjectPrivilegedUser(
+  currentUser: Profile | null | undefined,
+  project: Project | null | undefined,
+  member: ProjectMember | undefined
+): boolean {
+  if (!currentUser) return false;
+  if (currentUser.role === "admin") return true;
+  if (project && project.created_by === currentUser.id) return true;
+  if (project && project.project_manager_id === currentUser.id) return true;
+  if (member && member.role === "owner") return true;
+  if (member?.project_role?.code === "LEAD") return true;
+  return false;
+}
+
+/**
+ * Kiểm tra xem một dự án có được phép hiển thị với người dùng hiện tại không.
+ * - Admin hoặc người có quyền hệ thống `view_all_projects`: Xem được mọi dự án.
+ * - Người tạo dự án, Trưởng dự án (PM), hoặc thành viên trong `project_members`: Xem được dự án đó.
+ * - Nếu dự án KHÔNG đánh dấu `is_private` VÀ người dùng không phải là Cộng tác viên hạn chế (`COLLABORATOR`),
+ *   cho phép xem trong không gian làm việc nội bộ.
+ */
+export function canUserViewProject(
+  currentUser: Profile | null | undefined,
+  project: Project | null | undefined,
+  isProjectMember: boolean
+): boolean {
+  if (!currentUser || !project) return false;
+  if (currentUser.role === "admin") return true;
+  if (hasSystemPermission(currentUser, SYSTEM_PERMISSIONS.VIEW_ALL_PROJECTS)) {
+    return true;
+  }
+  if (
+    project.created_by === currentUser.id ||
+    project.project_manager_id === currentUser.id ||
+    isProjectMember
+  ) {
+    return true;
+  }
+  // Nếu tài khoản bị gán vai trò COLLABORATOR (Cộng tác viên ngoài), bắt buộc chỉ thấy dự án mình tham gia
+  if (currentUser.custom_role?.code === "COLLABORATOR") {
+    return false;
+  }
+  // Dự án nội bộ (không bật is_private) thì nhân viên chính thức xem được
+  return !project.is_private;
 }
 
 /**
  * Kiểm tra quyền của người dùng trong một dự án cụ thể.
  * - Admin hệ thống: Luôn có mọi quyền.
- * - Chủ dự án (người tạo hoặc role === 'owner'): Luôn có mọi quyền.
+ * - Chủ dự án (người tạo, PM hoặc role === 'owner'): Luôn có mọi quyền.
  * - Nếu thành viên có `project_role`: Kiểm tra `project_role.permissions`.
+ *   + Lưu ý: Nếu `view_project` bị thu hồi trong `project_role`, tự động từ chối mọi quyền thao tác khác (giống Worklenz).
  * - Nếu không có `project_role`: Dùng bộ quyền mặc định của thành viên thông thường.
  */
 export function hasProjectPermission(
@@ -214,8 +291,8 @@ export function hasProjectPermission(
     return true;
   }
 
-  // Chủ sở hữu dự án (người tạo hoặc role là owner) có toàn quyền
-  if (project && project.created_by === currentUser.id) {
+  // Chủ sở hữu dự án (người tạo, Trưởng dự án PM, hoặc role là owner) có toàn quyền
+  if (project && (project.created_by === currentUser.id || project.project_manager_id === currentUser.id)) {
     return true;
   }
   if (member && member.role === "owner") {
@@ -224,7 +301,12 @@ export function hasProjectPermission(
 
   // Kiểm tra vai trò dự án cụ thể (project_role)
   if (member?.project_role?.permissions) {
-    return member.project_role.permissions.includes(permission);
+    const perms = member.project_role.permissions;
+    // Nếu bị thu hồi quyền xem dự án thì không có bất kỳ quyền thao tác nào
+    if (!perms.includes(PROJECT_PERMISSIONS.VIEW_PROJECT)) {
+      return false;
+    }
+    return perms.includes(permission);
   }
 
   // Nếu là thành viên tham gia nhưng chưa gán vai trò riêng: Áp dụng quyền thành viên cơ bản
@@ -240,12 +322,27 @@ export function hasProjectPermission(
     return defaultMemberPermissions.includes(permission);
   }
 
-  // Nếu không tham gia dự án: Nếu có quyền xem mọi dự án ở cấp hệ thống thì cho phép xem
+  // Nếu không nằm trong danh sách project_members:
+  if (permission === PROJECT_PERMISSIONS.VIEW_PROJECT) {
+    return canUserViewProject(currentUser, project, false);
+  }
+
+  // Người có quyền view_all_projects là Manager được phép tương tác cơ bản nếu dự án không private
   if (
-    permission === PROJECT_PERMISSIONS.VIEW_PROJECT &&
-    hasSystemPermission(currentUser, SYSTEM_PERMISSIONS.VIEW_ALL_PROJECTS)
+    currentUser.role === "manager" &&
+    hasSystemPermission(currentUser, SYSTEM_PERMISSIONS.VIEW_ALL_PROJECTS) &&
+    !project?.is_private
   ) {
-    return true;
+    const managerFallbackPerms: string[] = [
+      PROJECT_PERMISSIONS.VIEW_PROJECT,
+      PROJECT_PERMISSIONS.CREATE_TASKS,
+      PROJECT_PERMISSIONS.EDIT_OWN_TASKS,
+      PROJECT_PERMISSIONS.EDIT_ALL_TASKS,
+      PROJECT_PERMISSIONS.CHANGE_STATUS,
+      PROJECT_PERMISSIONS.POST_UPDATES,
+      PROJECT_PERMISSIONS.MANAGE_FILES,
+    ];
+    return managerFallbackPerms.includes(permission);
   }
 
   return false;
@@ -258,7 +355,7 @@ export function getProjectPermissionsMap(
   currentUser: Profile | null | undefined,
   project: Project | null | undefined,
   member: ProjectMember | undefined
-) {
+): ProjectPermissionsMap {
   return {
     canViewProject: hasProjectPermission(
       currentUser,
@@ -321,4 +418,49 @@ export function getProjectPermissionsMap(
       PROJECT_PERMISSIONS.MANAGE_PHASES
     ),
   };
+}
+
+/**
+ * Kiểm tra xem người dùng có quyền chỉnh sửa một công việc (Task) cụ thể hay không.
+ * - Có `canEditAllTasks`: Sửa được mọi task trong dự án.
+ * - Có `canEditOwnTasks`: Chỉ sửa được nếu mình là người tạo (`created_by`) hoặc nằm trong danh sách `assignees` (hoặc `assigneeIds`).
+ */
+export function canUserEditTask(
+  currentUser: Profile | null | undefined,
+  task: Pick<Task, "created_by" | "assignees"> | null | undefined,
+  permissionsMap: Pick<ProjectPermissionsMap, "canEditAllTasks" | "canEditOwnTasks">,
+  explicitAssigneeIds?: string[]
+): boolean {
+  if (!currentUser || !task) return false;
+  if (permissionsMap.canEditAllTasks) return true;
+  if (!permissionsMap.canEditOwnTasks) return false;
+
+  const isCreator = task.created_by === currentUser.id;
+  const isAssignedInList = explicitAssigneeIds
+    ? explicitAssigneeIds.includes(currentUser.id)
+    : (task.assignees ?? []).some((a) => a.id === currentUser.id);
+
+  return isCreator || isAssignedInList;
+}
+
+/**
+ * Kiểm tra xem người dùng có bị giới hạn chỉ xem các công việc được giao cho mình không
+ * (tương đương `resolveAssigneeTaskScope` trong Worklenz cũ).
+ * Áp dụng khi:
+ * 1. Dự án bật `restrict_tasks_to_assignee === true`, HOẶC người dùng có vai trò hệ thống `COLLABORATOR`.
+ * 2. VÀ người dùng không phải Admin, Trưởng phòng (`manager`), Chủ dự án, PM, hoặc Trưởng dự án (`LEAD`).
+ */
+export function shouldRestrictTasksToAssignee(
+  currentUser: Profile | null | undefined,
+  project: Project | null | undefined,
+  member: ProjectMember | undefined
+): boolean {
+  if (!currentUser || !project) return false;
+  if (isProjectPrivilegedUser(currentUser, project, member)) return false;
+  if (currentUser.role === "manager") return false;
+
+  if (project.restrict_tasks_to_assignee) return true;
+  if (currentUser.custom_role?.code === "COLLABORATOR") return true;
+
+  return false;
 }

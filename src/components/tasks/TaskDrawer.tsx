@@ -28,10 +28,16 @@ import {
   Layers,
   AlertTriangle,
   Search,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { cn, PRIORITY_CONFIG, getInitials, isOverdue } from "@/lib/utils";
+import {
+  canUserEditTask,
+  isProjectPrivilegedUser,
+  type ProjectPermissionsMap,
+} from "@/lib/permissions";
 import { logTaskActivity } from "@/lib/activity-logger";
 import TaskActivityTimeline from "@/components/tasks/TaskActivityTimeline";
 import TaskDependenciesSection from "@/components/tasks/TaskDependenciesSection";
@@ -42,7 +48,9 @@ import {
 import type {
   AttachmentType,
   Profile,
+  Project,
   ProjectCustomField,
+  ProjectMember,
   ProjectPhase,
   Task,
   TaskAttachment,
@@ -55,6 +63,9 @@ import type {
 export interface TaskDrawerProps {
   taskId: string;
   projectId: string;
+  project?: Project;
+  currentMember?: ProjectMember;
+  permissions?: ProjectPermissionsMap;
   statuses: TaskStatus[];
   members: Profile[];
   allProfiles?: Profile[];
@@ -133,6 +144,9 @@ function AttachmentIcon({ type }: { type: AttachmentType }) {
 export default function TaskDrawer({
   taskId,
   projectId,
+  project,
+  currentMember,
+  permissions,
   statuses,
   members,
   allProfiles,
@@ -168,21 +182,107 @@ export default function TaskDrawer({
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
   const [assigneeSearch, setAssigneeSearch] = useState("");
+  const assigneeContainerRef = useRef<HTMLDivElement | null>(null);
+  const assigneeInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    function handleClickOutsideAssignee(e: MouseEvent) {
+      if (
+        assigneeContainerRef.current &&
+        !assigneeContainerRef.current.contains(e.target as Node)
+      ) {
+        setShowAssigneePicker(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutsideAssignee);
+    return () =>
+      document.removeEventListener("mousedown", handleClickOutsideAssignee);
+  }, []);
 
   const mentionableProfiles = useMemo(() => {
     if (allProfiles && allProfiles.length > 0) return allProfiles;
     return members;
   }, [allProfiles, members]);
 
+  // Effective RBAC flags for current task
+  const effectivePerms: ProjectPermissionsMap = useMemo(
+    () =>
+      permissions ?? {
+        canViewProject: true,
+        canCreateTasks: true,
+        canEditOwnTasks: true,
+        canEditAllTasks: true,
+        canDeleteTasks: true,
+        canChangeStatus: true,
+        canManageMembers: true,
+        canManageFiles: true,
+        canPostUpdates: true,
+        canManagePhases: true,
+      },
+    [permissions]
+  );
+
+  const canEdit = useMemo(
+    () => canUserEditTask(currentUser, task, effectivePerms, assigneeIds),
+    [currentUser, task, effectivePerms, assigneeIds]
+  );
+
+  const isPrivileged = useMemo(
+    () => isProjectPrivilegedUser(currentUser, project, currentMember),
+    [currentUser, project, currentMember]
+  );
+
+  const canChangeStatus = useMemo(() => {
+    if (!effectivePerms.canChangeStatus && !canEdit) return false;
+    if (project?.enable_phase_assignees && task?.phase_id) {
+      const currentPhase = phases.find((p) => p.id === task.phase_id);
+      if (
+        currentPhase?.assignee_id &&
+        currentPhase.assignee_id !== currentUser.id &&
+        !isPrivileged
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }, [
+    effectivePerms.canChangeStatus,
+    canEdit,
+    project?.enable_phase_assignees,
+    task?.phase_id,
+    phases,
+    currentUser.id,
+    isPrivileged,
+  ]);
+
+  const canAssignTask = useMemo(() => {
+    if (!canEdit) return false;
+    if (project?.restrict_task_assignment) {
+      return isPrivileged || currentUser.role === "manager";
+    }
+    return true;
+  }, [canEdit, project?.restrict_task_assignment, isPrivileged, currentUser.role]);
+
+  const canDelete = effectivePerms.canDeleteTasks;
+  const canComment = effectivePerms.canPostUpdates;
+  const canManageTaskFiles = canEdit && effectivePerms.canManageFiles;
+
+  // All active staff available for assignment (project members prioritized first)
+  const assignableCandidateProfiles = useMemo(() => {
+    const memberIdsSet = new Set(members.map((m) => m.id));
+    const extras = (allProfiles ?? []).filter((p) => !memberIdsSet.has(p.id));
+    return [...members, ...extras];
+  }, [members, allProfiles]);
+
   const filteredAssignees = useMemo(() => {
     const q = assigneeSearch.toLowerCase().trim();
-    if (!q) return members;
+    if (!q) return assignableCandidateProfiles;
     const qNorm = q
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/đ/gi, "d");
 
-    return members.filter((m) => {
+    return assignableCandidateProfiles.filter((m) => {
       const name = (m.full_name ?? "").toLowerCase();
       const nameNorm = name
         .normalize("NFD")
@@ -194,7 +294,7 @@ export default function TaskDrawer({
       const deptMatch = (m.department?.name ?? "").toLowerCase().includes(q);
       return nameMatch || emailMatch || roleMatch || deptMatch;
     });
-  }, [members, assigneeSearch]);
+  }, [assignableCandidateProfiles, assigneeSearch]);
 
   const [subtasks, setSubtasks] = useState<Task[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
@@ -219,8 +319,8 @@ export default function TaskDrawer({
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const [savingFieldId, setSavingFieldId] = useState<string | null>(null);
 
-  // Tabs: Bình luận vs Lịch sử hoạt động
-  const [activeBottomTab, setActiveBottomTab] = useState<"comments" | "activity">("comments");
+  // Top-level Worklenz Drawer Tabs: Info | Comments | Activity
+  const [activeBottomTab, setActiveBottomTab] = useState<"info" | "comments" | "activity">("info");
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
@@ -369,6 +469,11 @@ export default function TaskDrawer({
 
   async function handleSaveTitle() {
     if (!task) return;
+    if (!canEdit) {
+      setTitle(task.title);
+      toast.error("Bạn không có quyền chỉnh sửa công việc này.");
+      return;
+    }
     const trimmed = title.trim();
     if (!trimmed) {
       setTitle(task.title);
@@ -391,6 +496,14 @@ export default function TaskDrawer({
   }
 
   function onAttemptStatusChange(newStatusId: string) {
+    if (!canChangeStatus) {
+      toast.error(
+        project?.enable_phase_assignees
+          ? "Chỉ người phụ trách giai đoạn này (hoặc Trưởng dự án / Admin) mới có quyền đổi trạng thái."
+          : "Bạn không có quyền thay đổi trạng thái công việc này."
+      );
+      return;
+    }
     const targetStatus = statuses.find((s) => s.id === newStatusId);
     if (targetStatus?.category === "done" && hasUnresolvedBlockers) {
       setPendingStatusId(newStatusId);
@@ -410,9 +523,24 @@ export default function TaskDrawer({
 
   async function handlePhaseChange(newPhaseId: string | null) {
     if (!task || task.phase_id === newPhaseId) return;
+    if (!canEdit) {
+      toast.error("Bạn không có quyền thay đổi giai đoạn của công việc này.");
+      return;
+    }
     const oldPhase = phases.find((p) => p.id === task.phase_id);
     const targetPhase = phases.find((p) => p.id === newPhaseId);
     await updateTaskFields({ phase_id: newPhaseId });
+
+    // Auto-assign parent phase to subtasks if project setting is enabled (default true)
+    if (subtasks.length > 0 && project?.auto_assign_subtask_phase !== false) {
+      await supabase
+        .from("tasks")
+        .update({ phase_id: newPhaseId })
+        .eq("parent_id", task.id);
+      setSubtasks((prev) =>
+        prev.map((s) => ({ ...s, phase_id: newPhaseId }))
+      );
+    }
 
     await logTaskActivity(supabase, {
       taskId: task.id,
@@ -468,6 +596,10 @@ export default function TaskDrawer({
 
   async function handlePriorityChange(newPriority: TaskPriority) {
     if (!task || task.priority === newPriority) return;
+    if (!canEdit) {
+      toast.error("Bạn không có quyền chỉnh sửa mức độ ưu tiên.");
+      return;
+    }
     const oldPriority = task.priority;
     await updateTaskFields({ priority: newPriority });
 
@@ -485,6 +617,10 @@ export default function TaskDrawer({
 
   async function handleDueDateChange(newDate: string) {
     if (!task) return;
+    if (!canEdit) {
+      toast.error("Bạn không có quyền chỉnh sửa hạn hoàn thành.");
+      return;
+    }
     const oldDueDate = task.due_date;
     const val = newDate || null;
     await updateTaskFields({ due_date: val });
@@ -503,6 +639,10 @@ export default function TaskDrawer({
 
   async function handleSaveDescription() {
     if (!task) return;
+    if (!canEdit) {
+      toast.error("Bạn không có quyền chỉnh sửa mô tả công việc.");
+      return;
+    }
     setSavingDesc(true);
     try {
       await updateTaskFields({ description: description.trim() || null });
@@ -522,8 +662,20 @@ export default function TaskDrawer({
 
   async function handleDeleteTask() {
     if (!task) return;
+    if (!canDelete) {
+      toast.error("Bạn không có quyền xóa công việc trong dự án này.");
+      return;
+    }
     setDeletingTask(true);
     try {
+      // Dọn dẹp tệp vật lý trên Supabase Storage trước khi xóa task
+      const storagePaths = attachments
+        .map((a) => a.storage_path)
+        .filter((p): p is string => Boolean(p));
+      if (storagePaths.length > 0) {
+        await supabase.storage.from("attachments").remove(storagePaths);
+      }
+
       const { error } = await supabase.from("tasks").delete().eq("id", task.id);
       if (error) throw new Error(error.message);
       toast.success("Đã xóa công việc");
@@ -538,6 +690,14 @@ export default function TaskDrawer({
 
   async function handleToggleAssignee(member: Profile) {
     if (!task) return;
+    if (!canAssignTask) {
+      toast.error(
+        project?.restrict_task_assignment
+          ? "Dự án này chỉ cho phép Trưởng dự án hoặc Quản lý phân công người phụ trách."
+          : "Bạn không có quyền thay đổi người phụ trách công việc này."
+      );
+      return;
+    }
     const isAssigned = assigneeIds.includes(member.id);
 
     if (isAssigned) {
@@ -571,12 +731,26 @@ export default function TaskDrawer({
       const { error } = await supabase.from("task_assignees").insert({
         task_id: task.id,
         user_id: member.id,
+        assigned_by: currentUser.id,
       });
 
       if (error) {
         setAssigneeIds((prev) => prev.filter((id) => id !== member.id));
         toast.error("Không thể giao việc cho thành viên này");
         return;
+      }
+
+      // Tự động thêm nhân sự vào project_members nếu họ chưa thuộc dự án
+      const isAlreadyInProject = members.some((m) => m.id === member.id);
+      if (!isAlreadyInProject) {
+        await supabase.from("project_members").upsert(
+          {
+            project_id: projectId,
+            user_id: member.id,
+            role: "member",
+          },
+          { onConflict: "project_id,user_id" }
+        );
       }
 
       await logTaskActivity(supabase, {
@@ -620,16 +794,26 @@ export default function TaskDrawer({
   async function handleAddSubtask(e: React.FormEvent) {
     e.preventDefault();
     if (!task || !todoStatus) return;
+    if (!canEdit) {
+      toast.error("Bạn không có quyền thêm công việc con cho việc này.");
+      return;
+    }
     const trimmed = newSubtaskTitle.trim();
     if (!trimmed) return;
 
     setAddingSubtask(true);
     try {
+      const inheritPhaseId =
+        project?.auto_assign_subtask_phase !== false
+          ? task.phase_id || null
+          : null;
+
       const { data, error } = await supabase
         .from("tasks")
         .insert({
           project_id: projectId,
           parent_id: task.id,
+          phase_id: inheritPhaseId,
           status_id: todoStatus.id,
           title: trimmed,
           priority: "medium",
@@ -664,6 +848,10 @@ export default function TaskDrawer({
 
   async function handleToggleSubtask(sub: Task) {
     if (!todoStatus || !doneStatus || !task) return;
+    if (!canChangeStatus && !canEdit) {
+      toast.error("Bạn không có quyền đổi trạng thái việc con.");
+      return;
+    }
     const isDone = Boolean(sub.completed_at) || sub.status_id === doneStatus.id;
     const nextStatusId = isDone ? todoStatus.id : doneStatus.id;
     const nextCompletedAt = isDone ? null : new Date().toISOString();
@@ -704,6 +892,10 @@ export default function TaskDrawer({
   }
 
   async function handleDeleteSubtask(subId: string) {
+    if (!canEdit && !canDelete) {
+      toast.error("Bạn không có quyền xóa việc con.");
+      return;
+    }
     setSubtasks((prev) => prev.filter((s) => s.id !== subId));
     const { error } = await supabase.from("tasks").delete().eq("id", subId);
     if (error) {
@@ -715,6 +907,10 @@ export default function TaskDrawer({
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!canManageTaskFiles) {
+      toast.error("Bạn không có quyền tải tệp đính kèm cho công việc này.");
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file || !task) return;
 
@@ -782,6 +978,10 @@ export default function TaskDrawer({
   async function handleAddLink(e: React.FormEvent) {
     e.preventDefault();
     if (!task) return;
+    if (!canManageTaskFiles) {
+      toast.error("Bạn không có quyền gắn liên kết cho công việc này.");
+      return;
+    }
     const trimmedName = linkName.trim();
     let trimmedUrl = linkUrl.trim();
     if (!trimmedName || !trimmedUrl) {
@@ -836,6 +1036,10 @@ export default function TaskDrawer({
 
   async function handleDeleteAttachment(att: TaskAttachment) {
     if (!task) return;
+    if (!canManageTaskFiles) {
+      toast.error("Bạn không có quyền xóa tài liệu đính kèm của công việc này.");
+      return;
+    }
     setAttachments((prev) => prev.filter((a) => a.id !== att.id));
     if (att.storage_path) {
       await supabase.storage.from("attachments").remove([att.storage_path]);
@@ -868,6 +1072,10 @@ export default function TaskDrawer({
     newValue: string
   ) {
     if (!task) return;
+    if (!canEdit) {
+      toast.error("Bạn không có quyền chỉnh sửa trường tùy biến của công việc này.");
+      return;
+    }
     const oldValue = customValues[field.id] || "";
     if (oldValue === newValue) return;
 
@@ -922,6 +1130,10 @@ export default function TaskDrawer({
   async function handlePostComment(e: React.FormEvent) {
     e.preventDefault();
     if (!task) return;
+    if (!canComment) {
+      toast.error("Bạn không có quyền gửi bình luận trong dự án này.");
+      return;
+    }
     const trimmed = commentText.trim();
     if (!trimmed) return;
 
@@ -990,8 +1202,9 @@ export default function TaskDrawer({
   }
 
   const assignedProfiles = useMemo(
-    () => members.filter((m) => assigneeIds.includes(m.id)),
-    [members, assigneeIds]
+    () =>
+      assignableCandidateProfiles.filter((m) => assigneeIds.includes(m.id)),
+    [assignableCandidateProfiles, assigneeIds]
   );
 
   const completedSubtasksCount = useMemo(
@@ -1003,36 +1216,45 @@ export default function TaskDrawer({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-[1px]">
-      <div className="flex-1" onClick={onClose} />
-
-      <div className="flex h-full w-full max-w-2xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-        {/* Top bar */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
+    <div className="fixed inset-y-0 right-0 top-[52px] z-40 flex justify-end pointer-events-none">
+      <div className="pointer-events-auto flex h-[calc(100vh-52px)] w-full max-w-[680px] flex-col border-l border-[#e8e8e8] bg-white shadow-2xl dark:border-[#303030] dark:bg-[#1f1f1f]">
+        {/* Top bar (Worklenz TaskDrawerHeader) */}
+        <div className="flex items-center justify-between border-b border-[#e8e8e8] px-5 py-2.5 dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818]">
           <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+            {project && (
+              <span className="rounded-[4px] bg-slate-200/80 dark:bg-[#2a2a2a] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300">
+                {project.code}
+              </span>
+            )}
             <span>Chi tiết công việc</span>
             {task && isOverdue(task.due_date, task.completed_at) && (
-              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-950/70 dark:text-red-300">
+              <span className="rounded-[4px] bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/70 dark:text-red-300">
                 Quá hạn
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            {task && !confirmDelete && (
+          <div className="flex items-center gap-1.5">
+            {task && !canEdit && (
+              <span className="inline-flex items-center gap-1 rounded-[4px] bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800">
+                <Lock className="h-3 w-3" />
+                Chỉ xem
+              </span>
+            )}
+            {task && canDelete && !confirmDelete && (
               <button
                 type="button"
                 onClick={() => setConfirmDelete(true)}
-                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-400 cursor-pointer"
+                className="inline-flex items-center gap-1 rounded-[6px] px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-400 cursor-pointer"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Xóa
               </button>
             )}
-            {task && confirmDelete && (
-              <div className="flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-1 dark:bg-red-950/50">
+            {task && canDelete && confirmDelete && (
+              <div className="flex items-center gap-1.5 rounded-[6px] bg-red-50 px-2 py-0.5 dark:bg-red-950/50">
                 <span className="text-xs font-medium text-red-700 dark:text-red-300">
-                  Xác nhận xóa?
+                  Xác nhận?
                 </span>
                 <button
                   type="button"
@@ -1056,9 +1278,9 @@ export default function TaskDrawer({
               type="button"
               onClick={onClose}
               aria-label="Đóng"
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              className="rounded-[6px] p-1 text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 cursor-pointer"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -1069,11 +1291,12 @@ export default function TaskDrawer({
             <Loader2 className="h-6 w-6 animate-spin text-brand" />
           </div>
         ) : (
-          <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
-            {/* Editable Title */}
-            <div>
+          <>
+            {/* Fixed Task Title & Top-Level Card Tabs (Worklenz TaskDrawerTitleSection + Tabs) */}
+            <div className="border-b border-[#e8e8e8] dark:border-[#303030] px-5 pt-3.5 pb-0 bg-white dark:bg-[#1f1f1f] shrink-0">
               <input
                 type="text"
+                disabled={!canEdit}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onBlur={handleSaveTitle}
@@ -1082,21 +1305,80 @@ export default function TaskDrawer({
                     e.currentTarget.blur();
                   }
                 }}
-                className="w-full rounded-lg border border-transparent bg-transparent px-1 py-1 text-xl font-bold text-slate-900 focus:border-brand focus:bg-slate-50 focus:outline-none dark:text-slate-100 dark:focus:bg-slate-800/60"
+                className="w-full rounded-[6px] border border-transparent bg-transparent px-1.5 py-1 text-lg font-bold text-slate-900 focus:border-brand focus:bg-slate-50 focus:outline-none disabled:cursor-default dark:text-slate-100 dark:focus:bg-[#262626]"
               />
+
+              {/* Worklenz 3 Card Tabs immediately below Task Title */}
+              <div className="mt-2.5 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveBottomTab("info")}
+                  className={cn(
+                    "relative inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold transition cursor-pointer border-b-2",
+                    activeBottomTab === "info"
+                      ? "border-brand text-brand"
+                      : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  )}
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  <span>Thông tin & Việc con</span>
+                  {subtasks.length > 0 && (
+                    <span className="rounded bg-slate-100 dark:bg-[#2c2c2c] px-1.5 py-0.2 text-[10px] text-slate-600 dark:text-slate-300">
+                      {completedSubtasksCount}/{subtasks.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveBottomTab("comments")}
+                  className={cn(
+                    "relative inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold transition cursor-pointer border-b-2",
+                    activeBottomTab === "comments"
+                      ? "border-brand text-brand"
+                      : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  )}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  <span>Bình luận</span>
+                  {comments.length > 0 && (
+                    <span className="rounded bg-brand-soft dark:bg-brand-soft-dark px-1.5 py-0.2 text-[10px] font-bold text-brand">
+                      {comments.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveBottomTab("activity")}
+                  className={cn(
+                    "relative inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold transition cursor-pointer border-b-2",
+                    activeBottomTab === "activity"
+                      ? "border-brand text-brand"
+                      : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  )}
+                >
+                  <History className="h-3.5 w-3.5" />
+                  <span>Nhật ký hoạt động</span>
+                </button>
+              </div>
             </div>
 
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+            {activeBottomTab === "info" && (
+              <div className="space-y-5">
             {/* Metadata Grid */}
-            <div className="grid grid-cols-1 gap-3.5 rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 rounded-[8px] border border-[#e8e8e8] bg-[#fafafa] p-3.5 dark:border-[#303030] dark:bg-[#181818] sm:grid-cols-2">
               {/* Status */}
               <div>
                 <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
                   Trạng thái
                 </label>
                 <select
+                  disabled={!canChangeStatus}
                   value={task.status_id ?? ""}
                   onChange={(e) => onAttemptStatusChange(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 >
                   {statuses.map((st) => (
                     <option key={st.id} value={st.id}>
@@ -1113,11 +1395,12 @@ export default function TaskDrawer({
                   Mức độ ưu tiên
                 </label>
                 <select
+                  disabled={!canEdit}
                   value={task.priority}
                   onChange={(e) =>
                     handlePriorityChange(e.target.value as TaskPriority)
                   }
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 >
                   {(Object.keys(PRIORITY_CONFIG) as TaskPriority[]).map((p) => (
                     <option key={p} value={p}>
@@ -1135,11 +1418,13 @@ export default function TaskDrawer({
                 </label>
                 <input
                   type="date"
+                  disabled={!canEdit}
                   value={task.start_date ? task.start_date.slice(0, 10) : ""}
                   onChange={(e) =>
+                    canEdit &&
                     updateTaskFields({ start_date: e.target.value || null })
                   }
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 />
               </div>
 
@@ -1151,10 +1436,11 @@ export default function TaskDrawer({
                 </label>
                 <input
                   type="date"
+                  disabled={!canEdit}
                   value={task.due_date ? task.due_date.slice(0, 10) : ""}
                   onChange={(e) => handleDueDateChange(e.target.value)}
                   className={cn(
-                    "w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800",
+                    "w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800",
                     isOverdue(task.due_date, task.completed_at)
                       ? "border-red-300 font-medium text-red-600 dark:border-red-800 dark:text-red-400"
                       : "text-slate-800 dark:text-slate-100"
@@ -1169,9 +1455,10 @@ export default function TaskDrawer({
                   Giai đoạn xuất bản
                 </label>
                 <select
+                  disabled={!canEdit}
                   value={task.phase_id ?? ""}
                   onChange={(e) => handlePhaseChange(e.target.value || null)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
                 >
                   <option value="">— Chưa phân giai đoạn —</option>
                   {phases.map((ph) => (
@@ -1212,11 +1499,12 @@ export default function TaskDrawer({
 
                         {field.field_type === "dropdown" ? (
                           <select
+                            disabled={!canEdit}
                             value={currentVal}
                             onChange={(e) =>
                               handleSaveCustomFieldValue(field, e.target.value)
                             }
-                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                           >
                             <option value="">— Chọn {field.name} —</option>
                             {(field.options || []).map((opt) => (
@@ -1228,19 +1516,21 @@ export default function TaskDrawer({
                         ) : field.field_type === "date" ? (
                           <input
                             type="date"
+                            disabled={!canEdit}
                             value={currentVal ? currentVal.slice(0, 10) : ""}
                             onChange={(e) =>
                               handleSaveCustomFieldValue(field, e.target.value)
                             }
-                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                           />
                         ) : field.field_type === "people" ? (
                           <select
+                            disabled={!canEdit}
                             value={currentVal}
                             onChange={(e) =>
                               handleSaveCustomFieldValue(field, e.target.value)
                             }
-                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                           >
                             <option value="">— Chưa chỉ định —</option>
                             {(allProfiles && allProfiles.length > 0 ? allProfiles : members).map((p) => (
@@ -1252,6 +1542,7 @@ export default function TaskDrawer({
                         ) : field.field_type === "number" ? (
                           <input
                             type="number"
+                            disabled={!canEdit}
                             value={currentVal}
                             onChange={(e) =>
                               setCustomValues((prev) => ({
@@ -1263,11 +1554,12 @@ export default function TaskDrawer({
                               handleSaveCustomFieldValue(field, e.target.value)
                             }
                             placeholder="Nhập số..."
-                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                           />
                         ) : (
                           <input
                             type="text"
+                            disabled={!canEdit}
                             value={currentVal}
                             onChange={(e) =>
                               setCustomValues((prev) => ({
@@ -1279,7 +1571,7 @@ export default function TaskDrawer({
                               handleSaveCustomFieldValue(field, e.target.value)
                             }
                             placeholder={`Nhập ${field.name.toLowerCase()}...`}
-                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                           />
                         )}
                       </div>
@@ -1296,6 +1588,7 @@ export default function TaskDrawer({
                 projectId={projectId}
                 currentUser={currentUser}
                 statuses={statuses}
+                canEditTask={canEdit}
                 onOpenTask={onOpenTask}
                 onBlockersChange={(has, blockers) => {
                   setHasUnresolvedBlockers(has);
@@ -1305,29 +1598,29 @@ export default function TaskDrawer({
             </div>
 
             {/* Assignees */}
-            <div>
+            <div ref={assigneeContainerRef}>
               <div className="mb-2 flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200">
                   <Users className="h-4 w-4 text-slate-400" />
                   Người phụ trách
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setShowAssigneePicker((v) => !v)}
-                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand hover:bg-brand-soft dark:hover:bg-brand/15 cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  {showAssigneePicker ? "Đóng" : "Giao việc"}
-                </button>
+                {showAssigneePicker && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAssigneePicker(false);
+                      setAssigneeSearch("");
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    Đóng đề xuất
+                  </button>
+                )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {assignedProfiles.length === 0 ? (
-                  <span className="text-xs italic text-slate-400">
-                    Chưa giao cho ai
-                  </span>
-                ) : (
-                  assignedProfiles.map((m) => (
+              {assignedProfiles.length > 0 && (
+                <div className="mb-2.5 flex flex-wrap items-center gap-2">
+                  {assignedProfiles.map((m) => (
                     <span
                       key={m.id}
                       className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white py-1 pl-1.5 pr-2.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
@@ -1336,46 +1629,62 @@ export default function TaskDrawer({
                         {getInitials(m.full_name)}
                       </span>
                       {m.full_name}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleAssignee(m)}
-                        className="ml-0.5 text-slate-400 hover:text-red-500 cursor-pointer"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))
-                )}
-              </div>
-
-              {showAssigneePicker && (
-                <div className="mt-2.5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md dark:border-slate-700 dark:bg-slate-800">
-                  {/* Search input */}
-                  <div className="border-b border-slate-100 p-2 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/50">
-                    <div className="relative">
-                      <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                      <input
-                        type="text"
-                        value={assigneeSearch}
-                        onChange={(e) => setAssigneeSearch(e.target.value)}
-                        placeholder="Tìm nhân sự theo tên, email, chức danh..."
-                        autoFocus
-                        className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-7 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                      />
-                      {assigneeSearch && (
+                      {canAssignTask && (
                         <button
                           type="button"
-                          onClick={() => setAssigneeSearch("")}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                          onClick={() => handleToggleAssignee(m)}
+                          className="ml-0.5 text-slate-400 hover:text-red-500 cursor-pointer"
                         >
                           <X className="h-3 w-3" />
                         </button>
                       )}
-                    </div>
-                  </div>
+                    </span>
+                  ))}
+                </div>
+              )}
 
-                  {/* Members list */}
-                  <div className="max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+              {/* Ô tìm kiếm nhân sự: ấn vào mới hiển thị box đề xuất, chọn xong tự tắt */}
+              {canAssignTask && (
+              <div className="relative">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    ref={assigneeInputRef}
+                    type="text"
+                    value={assigneeSearch}
+                    onFocus={() => setShowAssigneePicker(true)}
+                    onClick={() => setShowAssigneePicker(true)}
+                    onChange={(e) => {
+                      setAssigneeSearch(e.target.value);
+                      setShowAssigneePicker(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        setShowAssigneePicker(false);
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    placeholder="Ấn vào đây để tìm và chọn người phụ trách..."
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100"
+                  />
+                  {assigneeSearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssigneeSearch("");
+                        assigneeInputRef.current?.focus();
+                        setShowAssigneePicker(true);
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Box đề xuất: chỉ bật khi ấn vào ô tìm kiếm, chọn xong tự động đóng */}
+                {showAssigneePicker && (
+                  <div className="mt-1.5 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-slate-800 space-y-0.5">
                     {filteredAssignees.length === 0 ? (
                       <div className="py-4 text-center text-xs text-slate-400">
                         Không tìm thấy nhân sự phù hợp
@@ -1387,7 +1696,12 @@ export default function TaskDrawer({
                           <button
                             key={m.id}
                             type="button"
-                            onClick={() => handleToggleAssignee(m)}
+                            onClick={() => {
+                              handleToggleAssignee(m);
+                              setShowAssigneePicker(false);
+                              setAssigneeSearch("");
+                              assigneeInputRef.current?.blur();
+                            }}
                             className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition cursor-pointer ${
                               checked
                                 ? "bg-brand/10 dark:bg-brand/20 text-brand"
@@ -1413,7 +1727,8 @@ export default function TaskDrawer({
                       })
                     )}
                   </div>
-                </div>
+                )}
+              </div>
               )}
             </div>
 
@@ -1434,20 +1749,28 @@ export default function TaskDrawer({
                   </button>
                 )}
               </div>
-              <MentionTextarea
-                profiles={mentionableProfiles}
-                value={description}
-                onChange={setDescription}
-                dropdownPlacement="bottom"
-                rows={4}
-                onBlur={() => {
-                  if (description !== (task.description ?? "")) {
-                    handleSaveDescription();
-                  }
-                }}
-                placeholder="Nhập yêu cầu, checklist hoặc ghi chú... (gõ @ để nhắc tên đồng nghiệp)"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100"
-              />
+              {canEdit ? (
+                <MentionTextarea
+                  profiles={mentionableProfiles}
+                  value={description}
+                  onChange={setDescription}
+                  dropdownPlacement="bottom"
+                  rows={4}
+                  onBlur={() => {
+                    if (description !== (task.description ?? "")) {
+                      handleSaveDescription();
+                    }
+                  }}
+                  placeholder="Nhập yêu cầu, checklist hoặc ghi chú... (gõ @ để nhắc tên đồng nghiệp)"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100"
+                />
+              ) : (
+                <div className="min-h-[80px] whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300">
+                  {description
+                    ? renderContentWithMentions(description, mentionableProfiles)
+                    : "Chưa có mô tả chi tiết."}
+                </div>
+              )}
             </div>
 
             {/* Subtasks */}
@@ -1490,34 +1813,38 @@ export default function TaskDrawer({
                           {sub.title}
                         </span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteSubtask(sub.id)}
-                        className="opacity-0 transition group-hover:opacity-100 text-slate-400 hover:text-red-500 cursor-pointer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSubtask(sub.id)}
+                          className="opacity-0 transition group-hover:opacity-100 text-slate-400 hover:text-red-500 cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   );
                 })}
               </div>
 
-              <form onSubmit={handleAddSubtask} className="mt-2.5 flex gap-2">
-                <input
-                  type="text"
-                  value={newSubtaskTitle}
-                  onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                  placeholder="+ Thêm công việc con..."
-                  className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                />
-                <button
-                  type="submit"
-                  disabled={addingSubtask || !newSubtaskTitle.trim()}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-700 dark:hover:bg-slate-600 cursor-pointer"
-                >
-                  Thêm
-                </button>
-              </form>
+              {canEdit && (
+                <form onSubmit={handleAddSubtask} className="mt-2.5 flex gap-2">
+                  <input
+                    type="text"
+                    value={newSubtaskTitle}
+                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                    placeholder="+ Thêm công việc con..."
+                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                  <button
+                    type="submit"
+                    disabled={addingSubtask || !newSubtaskTitle.trim()}
+                    className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-700 dark:hover:bg-slate-600 cursor-pointer"
+                  >
+                    Thêm
+                  </button>
+                </form>
+              )}
             </div>
 
             {/* Attachments & External Links */}
@@ -1527,35 +1854,37 @@ export default function TaskDrawer({
                   <Paperclip className="h-4 w-4 text-slate-400" />
                   Tài liệu & Liên kết ({attachments.length})
                 </span>
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    disabled={uploadingFile}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
-                  >
-                    {uploadingFile ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Upload className="h-3.5 w-3.5" />
-                    )}
-                    Tải tệp lên
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowLinkForm((v) => !v)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-brand hover:bg-brand-soft dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
-                  >
-                    <Link2 className="h-3.5 w-3.5" />
-                    Gắn link Drive / Lark
-                  </button>
-                </div>
+                {canManageTaskFiles && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      disabled={uploadingFile}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+                    >
+                      {uploadingFile ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="h-3.5 w-3.5" />
+                      )}
+                      Tải tệp lên
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowLinkForm((v) => !v)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-brand hover:bg-brand-soft dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
+                    >
+                      <Link2 className="h-3.5 w-3.5" />
+                      Gắn link Drive / Lark
+                    </button>
+                  </div>
+                )}
               </div>
 
               {showLinkForm && (
@@ -1649,56 +1978,26 @@ export default function TaskDrawer({
                           </div>
                           <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                         </a>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteAttachment(att)}
-                          title="Xóa tài liệu"
-                          className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {canManageTaskFiles && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAttachment(att)}
+                            title="Xóa tài liệu"
+                            className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 cursor-pointer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               )}
             </div>
+            </div>
+            )}
 
-            {/* Bottom Tabs: Trao đổi & Bình luận vs Lịch sử hoạt động */}
-            <div className="border-t border-slate-200 pt-5 dark:border-slate-800">
-              <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-2 dark:border-slate-800">
-                <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setActiveBottomTab("comments")}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
-                      activeBottomTab === "comments"
-                        ? "bg-white text-brand shadow-xs dark:bg-slate-900"
-                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-                    )}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    Bình luận ({comments.length})
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveBottomTab("activity")}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
-                      activeBottomTab === "activity"
-                        ? "bg-white text-brand shadow-xs dark:bg-slate-900"
-                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-                    )}
-                  >
-                    <History className="h-3.5 w-3.5" />
-                    Lịch sử hoạt động
-                  </button>
-                </div>
-              </div>
-
-              {/* Tab 1: Bình luận */}
+              {/* Tab 2: Bình luận */}
               {activeBottomTab === "comments" && (
                 <div>
                   <div className="space-y-3">
@@ -1714,7 +2013,7 @@ export default function TaskDrawer({
                             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[11px] font-bold text-brand dark:bg-brand/20">
                               {getInitials(authorName)}
                             </div>
-                            <div className="flex-1 rounded-xl bg-slate-50 px-3.5 py-2.5 dark:bg-slate-800/60">
+                            <div className="flex-1 rounded-[8px] bg-[#fafafa] px-3.5 py-2.5 dark:bg-[#262626] border border-[#f0f0f0] dark:border-[#303030]">
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                                   {authorName}
@@ -1723,7 +2022,7 @@ export default function TaskDrawer({
                                   {formatDateTimeVi(c.created_at)}
                                 </span>
                               </div>
-                              <div className="mt-1 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
+                              <div className="mt-1 whitespace-pre-wrap text-[13px] text-slate-700 dark:text-slate-300">
                                 {renderContentWithMentions(
                                   c.content,
                                   mentionableProfiles
@@ -1737,7 +2036,8 @@ export default function TaskDrawer({
                   </div>
 
                   {/* Comment input with @mention helper */}
-                  <form onSubmit={handlePostComment} className="mt-4 space-y-2">
+                  {canComment && (
+                    <form onSubmit={handlePostComment} className="mt-4 space-y-2">
                     <div className="flex items-center justify-between">
                       <button
                         type="button"
@@ -1750,7 +2050,7 @@ export default function TaskDrawer({
                     </div>
 
                     {showMentionBar && (
-                      <div className="flex flex-wrap gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/60">
+                      <div className="flex flex-wrap gap-1.5 rounded-[6px] border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/60">
                         {mentionableProfiles.map((m) => (
                           <button
                             key={m.id}
@@ -1776,15 +2076,15 @@ export default function TaskDrawer({
                             );
                           }}
                           dropdownPlacement="top"
-                          rows={2}
+                          rows={3}
                           placeholder="Viết bình luận... (gõ @ để nhắc tên đồng nghiệp)"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                         />
                       </div>
                       <button
                         type="submit"
                         disabled={postingComment || !commentText.trim()}
-                        className="inline-flex items-center justify-center rounded-xl bg-brand px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-50 cursor-pointer h-[42px]"
+                        className="inline-flex items-center justify-center rounded-[6px] bg-brand px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-brand-hover disabled:opacity-50 cursor-pointer h-[38px]"
                       >
                         {postingComment ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -1794,17 +2094,18 @@ export default function TaskDrawer({
                       </button>
                     </div>
                   </form>
+                  )}
                 </div>
               )}
 
-              {/* Tab 2: Lịch sử hoạt động Realtime */}
+              {/* Tab 3: Lịch sử hoạt động Realtime */}
               {activeBottomTab === "activity" && (
                 <div className="pt-1">
                   <TaskActivityTimeline taskId={task.id} />
                 </div>
               )}
             </div>
-          </div>
+          </>
         )}
 
         {/* Modal Cảnh báo Phụ thuộc chưa hoàn thành */}

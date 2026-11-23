@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { AppShell } from "@/components/layout/AppShell";
@@ -20,7 +21,7 @@ export default async function AuthenticatedLayout({
   const [{ data: profileData }, { count: unreadCount }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("*, department:departments(*)")
+      .select("*, department:departments(*), custom_role:roles(*)")
       .eq("id", user.id)
       .single(),
     supabase
@@ -51,8 +52,10 @@ export default async function AuthenticatedLayout({
   };
 
   return (
-    <AppShell profile={profile} initialUnreadCount={unreadCount ?? 0}>
-      {children}
-    </AppShell>
+    <Suspense fallback={null}>
+      <AppShell profile={profile} initialUnreadCount={unreadCount ?? 0}>
+        {children}
+      </AppShell>
+    </Suspense>
   );
 }

@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { canUserViewProject } from "@/lib/permissions";
 import { cn, formatDateVi, getInitials, PRIORITY_CONFIG } from "@/lib/utils";
-import type { TaskPriority } from "@/types/database";
+import type { Profile, Project, TaskPriority } from "@/types/database";
 import {
   CheckSquare,
   FolderKanban,
@@ -47,9 +48,14 @@ type SearchResultItem =
 interface GlobalSearchModalProps {
   open: boolean;
   onClose: () => void;
+  currentUser?: Profile;
 }
 
-export function GlobalSearchModal({ open, onClose }: GlobalSearchModalProps) {
+export function GlobalSearchModal({
+  open,
+  onClose,
+  currentUser,
+}: GlobalSearchModalProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -100,43 +106,76 @@ export function GlobalSearchModal({ open, onClose }: GlobalSearchModalProps) {
         const supabase = createClient();
         const pattern = `%${trimmed}%`;
 
-        const [projRes, taskRes, profRes] = await Promise.all([
+        const [projRes, taskRes, profRes, memberRes] = await Promise.all([
           supabase
             .from("projects")
-            .select("id, name, code, color")
+            .select("id, name, code, color, created_by, project_manager_id, is_private")
             .or(`name.ilike.${pattern},code.ilike.${pattern}`)
-            .limit(5),
+            .limit(10),
           supabase
             .from("tasks")
             .select(
-              "id, title, project_id, priority, due_date, project:projects(id, name, code, color)"
+              "id, title, project_id, priority, due_date, project:projects(id, name, code, color, created_by, project_manager_id, is_private)"
             )
             .ilike("title", pattern)
-            .limit(8),
+            .limit(12),
           supabase
             .from("profiles")
             .select("id, full_name, email, job_title, avatar_url")
             .or(`full_name.ilike.${pattern},email.ilike.${pattern}`)
             .limit(5),
+          currentUser
+            ? supabase
+                .from("project_members")
+                .select("project_id")
+                .eq("user_id", currentUser.id)
+            : Promise.resolve({ data: [] as { project_id: string }[] }),
         ]);
 
         if (cancelled) return;
 
-        setProjects((projRes.data as SearchProject[]) ?? []);
+        const memberProjectIds = new Set(
+          ((memberRes.data ?? []) as { project_id: string }[]).map(
+            (m) => m.project_id
+          )
+        );
+
+        const rawProjects = (projRes.data ?? []) as Array<
+          SearchProject & Pick<Project, "created_by" | "project_manager_id" | "is_private">
+        >;
+        const visibleProjects = currentUser
+          ? rawProjects.filter((p) =>
+              canUserViewProject(
+                currentUser,
+                p as unknown as Project,
+                memberProjectIds.has(p.id)
+              )
+            )
+          : rawProjects;
+
+        setProjects(visibleProjects.slice(0, 5));
         const rawTasks = (taskRes.data ?? []) as unknown as Array<
           Omit<SearchTask, "project"> & {
             project:
-              | { id: string; name: string; code: string; color: string }
-              | Array<{ id: string; name: string; code: string; color: string }>
+              | (SearchProject & Pick<Project, "created_by" | "project_manager_id" | "is_private">)
+              | Array<SearchProject & Pick<Project, "created_by" | "project_manager_id" | "is_private">>
               | null;
           }
         >;
-        setTasks(
-          rawTasks.map((t) => ({
+        const normalizedTasks = rawTasks
+          .map((t) => ({
             ...t,
             project: Array.isArray(t.project) ? t.project[0] ?? null : t.project,
           }))
-        );
+          .filter((t) => {
+            if (!currentUser || !t.project) return true;
+            return canUserViewProject(
+              currentUser,
+              t.project as unknown as Project,
+              memberProjectIds.has(t.project_id)
+            );
+          });
+        setTasks(normalizedTasks.slice(0, 8));
         setProfiles((profRes.data as SearchProfile[]) ?? []);
         setActiveIndex(0);
       } catch {

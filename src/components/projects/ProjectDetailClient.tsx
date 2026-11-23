@@ -43,10 +43,18 @@ import {
   Lock,
   Layers,
   FolderArchive,
+  AlertTriangle,
+  Filter,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { hasProjectPermission, PROJECT_PERMISSIONS } from "@/lib/permissions";
+import {
+  getProjectPermissionsMap,
+  isProjectPrivilegedUser,
+  shouldRestrictTasksToAssignee,
+} from "@/lib/permissions";
+import { logTaskActivity } from "@/lib/activity-logger";
 import { ProjectUpdatesTab } from "./ProjectUpdatesTab";
 import ProjectPhasesTab from "./ProjectPhasesTab";
 import ProjectFilesTab from "./ProjectFilesTab";
@@ -492,6 +500,9 @@ export default function ProjectDetailClient({
   const [priorityFilter, setPriorityFilter] = useState<"all" | TaskPriority>(
     "all"
   );
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [phaseFilter, setPhaseFilter] = useState<string>("all");
+  const [overdueOnly, setOverdueOnly] = useState<boolean>(false);
   const [collapsedStatusIds, setCollapsedStatusIds] = useState<
     Record<string, boolean>
   >({});
@@ -562,37 +573,33 @@ export default function ProjectDetailClient({
     [members, currentUser.id]
   );
 
-  const canCreateTasks = useMemo(
-    () =>
-      hasProjectPermission(
-        currentUser,
-        project,
-        currentMember,
-        PROJECT_PERMISSIONS.CREATE_TASKS
-      ),
+  const permissionsMap = useMemo(
+    () => getProjectPermissionsMap(currentUser, project, currentMember),
     [currentUser, project, currentMember]
   );
 
-  const canChangeStatus = useMemo(
-    () =>
-      hasProjectPermission(
-        currentUser,
-        project,
-        currentMember,
-        PROJECT_PERMISSIONS.CHANGE_STATUS
-      ),
+  const isPrivileged = useMemo(
+    () => isProjectPrivilegedUser(currentUser, project, currentMember),
     [currentUser, project, currentMember]
   );
 
-  const canManageMembers = useMemo(
-    () =>
-      hasProjectPermission(
-        currentUser,
-        project,
-        currentMember,
-        PROJECT_PERMISSIONS.MANAGE_MEMBERS
-      ),
-    [currentUser, project, currentMember]
+  const canCreateTasks = permissionsMap.canCreateTasks;
+  const canChangeStatus = permissionsMap.canChangeStatus;
+  const canManageMembers = permissionsMap.canManageMembers;
+  const canAssignTasks = useMemo(() => {
+    if (!permissionsMap.canEditAllTasks && !permissionsMap.canEditOwnTasks)
+      return false;
+    if (project.restrict_task_assignment && !isPrivileged) return false;
+    return true;
+  }, [
+    permissionsMap.canEditAllTasks,
+    permissionsMap.canEditOwnTasks,
+    project.restrict_task_assignment,
+    isPrivileged,
+  ]);
+  const canManageProjectSettings = useMemo(
+    () => isPrivileged || permissionsMap.canManageMembers,
+    [isPrivileged, permissionsMap.canManageMembers]
   );
 
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
@@ -604,6 +611,7 @@ export default function ProjectDetailClient({
     useState<TaskPriority>("medium");
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
   const [newTaskPhaseId, setNewTaskPhaseId] = useState<string>("");
+  const [newTaskAssigneeIds, setNewTaskAssigneeIds] = useState<string[]>([]);
   const [creatingTask, setCreatingTask] = useState(false);
 
   const doneStatus = useMemo(
@@ -650,8 +658,35 @@ export default function ProjectDetailClient({
       }
     }
 
+    const restrictToAssignee = shouldRestrictTasksToAssignee(
+      currentUser,
+      project,
+      currentMember
+    );
+
+    const parentIdsWithAssignedSubtask = new Set<string>();
+    if (restrictToAssignee) {
+      for (const r of rows) {
+        if (
+          r.parent_id &&
+          (r.created_by === currentUser.id ||
+            (r.task_assignees ?? []).some((a) => a.user_id === currentUser.id))
+        ) {
+          parentIdsWithAssignedSubtask.add(r.parent_id);
+        }
+      }
+    }
+
     const topLevel: Task[] = rows
-      .filter((r) => !r.parent_id)
+      .filter((r) => {
+        if (r.parent_id) return false;
+        if (!restrictToAssignee) return true;
+        return (
+          r.created_by === currentUser.id ||
+          (r.task_assignees ?? []).some((a) => a.user_id === currentUser.id) ||
+          parentIdsWithAssignedSubtask.has(r.id)
+        );
+      })
       .map((r) => {
         const sub = subtaskCountMap.get(r.id) ?? { total: 0, done: 0 };
         const assignees: Profile[] = (r.task_assignees ?? [])
@@ -666,9 +701,54 @@ export default function ProjectDetailClient({
       });
 
     setTasks(topLevel);
-  }, [supabase, project.id, doneStatus, profilesMap]);
+  }, [supabase, project, currentUser, currentMember, doneStatus, profilesMap]);
 
-  // Supabase Realtime subscription on public.tasks for this project
+  // Refetch custom fields and their values (scoped to current project's custom fields)
+  const fetchCustomFieldsAndValues = useCallback(async () => {
+    const { data: fieldsData } = await supabase
+      .from("project_custom_fields")
+      .select("*")
+      .eq("project_id", project.id)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    const fList = (fieldsData ?? []) as ProjectCustomField[];
+    setCustomFields(fList);
+    setVisibleColumnIds((prev) => {
+      if (prev.size === 0 && fList.length > 0) {
+        return new Set(fList.map((f) => f.id));
+      }
+      return prev;
+    });
+
+    if (fList.length === 0) {
+      setCustomValuesMap({});
+      return;
+    }
+
+    const { data: valuesData } = await supabase
+      .from("task_custom_field_values")
+      .select("task_id, field_id, value")
+      .in(
+        "field_id",
+        fList.map((f) => f.id)
+      );
+
+    if (valuesData) {
+      const map: Record<string, Record<string, string>> = {};
+      for (const row of valuesData as {
+        task_id: string;
+        field_id: string;
+        value: string;
+      }[]) {
+        if (!map[row.task_id]) map[row.task_id] = {};
+        map[row.task_id][row.field_id] = row.value;
+      }
+      setCustomValuesMap(map);
+    }
+  }, [supabase, project.id]);
+
+  // Supabase Realtime subscription on tasks, task_assignees, and task_custom_field_values
   useEffect(() => {
     const channel = supabase
       .channel(`project-tasks-${project.id}`)
@@ -684,12 +764,34 @@ export default function ProjectDetailClient({
           fetchTasks();
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "alpha_lite",
+          table: "task_assignees",
+        },
+        () => {
+          fetchTasks();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "alpha_lite",
+          table: "task_custom_field_values",
+        },
+        () => {
+          fetchCustomFieldsAndValues();
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase, project.id, fetchTasks]);
+  }, [supabase, project.id, fetchTasks, fetchCustomFieldsAndValues]);
 
   // Refetch all project phases
   const fetchPhases = useCallback(async () => {
@@ -730,45 +832,6 @@ export default function ProjectDetailClient({
     };
   }, [supabase, project.id, fetchPhases]);
 
-  // Refetch custom fields and their values
-  const fetchCustomFieldsAndValues = useCallback(async () => {
-    const [{ data: fieldsData }, { data: valuesData }] = await Promise.all([
-      supabase
-        .from("project_custom_fields")
-        .select("*")
-        .eq("project_id", project.id)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("task_custom_field_values")
-        .select("task_id, field_id, value"),
-    ]);
-
-    if (fieldsData) {
-      const fList = fieldsData as ProjectCustomField[];
-      setCustomFields(fList);
-      setVisibleColumnIds((prev) => {
-        if (prev.size === 0) {
-          return new Set(fList.map((f) => f.id));
-        }
-        return prev;
-      });
-    }
-
-    if (valuesData) {
-      const map: Record<string, Record<string, string>> = {};
-      for (const row of valuesData as {
-        task_id: string;
-        field_id: string;
-        value: string;
-      }[]) {
-        if (!map[row.task_id]) map[row.task_id] = {};
-        map[row.task_id][row.field_id] = row.value;
-      }
-      setCustomValuesMap(map);
-    }
-  }, [supabase, project.id]);
-
   useEffect(() => {
     fetchCustomFieldsAndValues();
   }, [fetchCustomFieldsAndValues]);
@@ -808,11 +871,29 @@ export default function ProjectDetailClient({
       return;
     }
 
+    const createdTask = data as Task;
+    let initialAssignees: Profile[] = [];
+    if (project.assign_tasks_to_creator) {
+      await supabase.from("task_assignees").insert({
+        task_id: createdTask.id,
+        user_id: currentUser.id,
+        assigned_by: currentUser.id,
+      });
+      initialAssignees = [currentUser];
+    }
+
+    logTaskActivity(supabase, {
+      taskId: createdTask.id,
+      actorId: currentUser.id,
+      action: "created",
+      details: { new_value: trimmed },
+    });
+
     setTasks((prev) => [
       ...prev,
       {
-        ...(data as Task),
-        assignees: [],
+        ...createdTask,
+        assignees: initialAssignees,
         subtasks_count: 0,
         subtasks_done: 0,
       },
@@ -834,6 +915,10 @@ export default function ProjectDetailClient({
   }, [project.id, router]);
 
   async function handleProjectStatusChange(newStatus: ProjectStatus) {
+    if (!canManageProjectSettings) {
+      toast.error("Bạn không có quyền thay đổi trạng thái dự án.");
+      return;
+    }
     const prev = project.status;
     setProject((p) => ({ ...p, status: newStatus }));
     const { error } = await supabase
@@ -879,11 +964,29 @@ export default function ProjectDetailClient({
       return;
     }
 
+    const createdTask = data as Task;
+    let initialAssignees: Profile[] = [];
+    if (project.assign_tasks_to_creator) {
+      await supabase.from("task_assignees").insert({
+        task_id: createdTask.id,
+        user_id: currentUser.id,
+        assigned_by: currentUser.id,
+      });
+      initialAssignees = [currentUser];
+    }
+
+    logTaskActivity(supabase, {
+      taskId: createdTask.id,
+      actorId: currentUser.id,
+      action: "created",
+      details: { new_value: trimmed },
+    });
+
     setTasks((prev) => [
       ...prev,
       {
-        ...(data as Task),
-        assignees: [],
+        ...createdTask,
+        assignees: initialAssignees,
         subtasks_count: 0,
         subtasks_done: 0,
       },
@@ -923,11 +1026,77 @@ export default function ProjectDetailClient({
 
       if (error || !data) throw new Error(error?.message);
 
+      const createdTask = data as Task;
+      const effectiveAssigneeIds =
+        newTaskAssigneeIds.length > 0
+          ? newTaskAssigneeIds
+          : project.assign_tasks_to_creator
+          ? [currentUser.id]
+          : [];
+
+      const initialAssignees: Profile[] = [];
+      if (effectiveAssigneeIds.length > 0) {
+        await supabase.from("task_assignees").insert(
+          effectiveAssigneeIds.map((uid) => ({
+            task_id: createdTask.id,
+            user_id: uid,
+            assigned_by: currentUser.id,
+          }))
+        );
+
+        for (const uid of effectiveAssigneeIds) {
+          const prof = profilesMap.get(uid);
+          if (prof) initialAssignees.push(prof);
+
+          // Auto-add to project_members if not yet a member
+          if (!memberIds.has(uid)) {
+            await supabase.from("project_members").upsert(
+              {
+                project_id: project.id,
+                user_id: uid,
+                role: "member",
+              },
+              { onConflict: "project_id,user_id", ignoreDuplicates: true }
+            );
+          }
+
+          if (uid !== currentUser.id) {
+            await supabase.from("notifications").insert({
+              user_id: uid,
+              actor_id: currentUser.id,
+              type: "task_assigned",
+              title: `Bạn được giao việc mới: ${trimmed}`,
+              body: `${currentUser.full_name} đã giao cho bạn "${trimmed}" trong dự án ${project.name}.`,
+              link: `/projects/${project.id}?task=${createdTask.id}`,
+            });
+
+            fetch("/api/webhooks/dispatch", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                event: "task_assigned",
+                projectId: project.id,
+                title: `Giao việc mới: ${trimmed}`,
+                body: `${currentUser.full_name} đã giao "${trimmed}" cho ${prof?.full_name || "nhân sự"}.`,
+                link: `/projects/${project.id}?task=${createdTask.id}`,
+              }),
+            }).catch(() => {});
+          }
+        }
+      }
+
+      logTaskActivity(supabase, {
+        taskId: createdTask.id,
+        actorId: currentUser.id,
+        action: "created",
+        details: { new_value: trimmed },
+      });
+
       setTasks((prev) => [
         ...prev,
         {
-          ...(data as Task),
-          assignees: [],
+          ...createdTask,
+          assignees: initialAssignees,
           subtasks_count: 0,
           subtasks_done: 0,
         },
@@ -936,6 +1105,7 @@ export default function ProjectDetailClient({
       setNewTaskTitle("");
       setNewTaskDueDate("");
       setNewTaskPhaseId("");
+      setNewTaskAssigneeIds([]);
       setShowAddTaskModal(false);
     } catch {
       toast.error("Không thể tạo công việc");
@@ -949,6 +1119,25 @@ export default function ProjectDetailClient({
       toast.error("Bạn không có quyền thay đổi trạng thái công việc trong dự án này.");
       return;
     }
+    if (project.enable_phase_assignees && task.phase_id) {
+      const taskPhase = phases.find((p) => p.id === task.phase_id);
+      if (taskPhase?.assignee_id) {
+        const isPhaseOwnerOrAdmin =
+          currentUser.id === taskPhase.assignee_id ||
+          currentUser.role === "admin" ||
+          currentUser.role === "manager" ||
+          project.project_manager_id === currentUser.id;
+        if (!isPhaseOwnerOrAdmin) {
+          const ownerName =
+            profilesMap.get(taskPhase.assignee_id)?.full_name ||
+            "Người phụ trách giai đoạn";
+          toast.error(
+            `Giai đoạn "${taskPhase.name}" do ${ownerName} phụ trách. Chỉ người phụ trách giai đoạn hoặc Quản lý mới được chuyển trạng thái!`
+          );
+          return;
+        }
+      }
+    }
     if (task.status_id === targetStatusId) return;
     const targetStatus = statuses.find((s) => s.id === targetStatusId);
     if (!targetStatus) return;
@@ -956,6 +1145,56 @@ export default function ProjectDetailClient({
     const prevStatus = statuses.find((s) => s.id === task.status_id);
     const movingToDone = targetStatus.category === "done";
     const wasDone = prevStatus?.category === "done";
+
+    // Dependency Blocker Check when completing a task
+    if (movingToDone && !wasDone) {
+      const { data: depRows } = await supabase
+        .from("task_dependencies")
+        .select(
+          "id, dependency_type, source_task_id, target_task_id, source:tasks!task_dependencies_source_task_id_fkey(id, title, completed_at), target:tasks!task_dependencies_target_task_id_fkey(id, title, completed_at)"
+        )
+        .or(`source_task_id.eq.${task.id},target_task_id.eq.${task.id}`);
+
+      if (depRows && depRows.length > 0) {
+        const unresolvedTitles: string[] = [];
+        for (const row of depRows as unknown as {
+          dependency_type: string;
+          source_task_id: string;
+          target_task_id: string;
+          source?: { id: string; title: string; completed_at: string | null } | null;
+          target?: { id: string; title: string; completed_at: string | null } | null;
+        }[]) {
+          // 1) source --blocked_by--> target (where source is current task)
+          if (
+            row.source_task_id === task.id &&
+            row.dependency_type === "blocked_by" &&
+            row.target &&
+            !row.target.completed_at
+          ) {
+            unresolvedTitles.push(row.target.title);
+          }
+          // 2) blocker --blocks--> current task (where target is current task)
+          if (
+            row.target_task_id === task.id &&
+            row.dependency_type === "blocks" &&
+            row.source &&
+            !row.source.completed_at
+          ) {
+            unresolvedTitles.push(row.source.title);
+          }
+        }
+
+        if (unresolvedTitles.length > 0) {
+          const confirmed = window.confirm(
+            `Cảnh báo phụ thuộc: Công việc "${task.title}" đang chờ ${unresolvedTitles.length} công việc tiên quyết chưa hoàn thành:\n\n` +
+              unresolvedTitles.map((t) => `• ${t}`).join("\n") +
+              `\n\nBạn có chắc chắn vẫn muốn đánh dấu hoàn thành công việc này?`
+          );
+          if (!confirmed) return;
+        }
+      }
+    }
+
     const completed_at = movingToDone
       ? new Date().toISOString()
       : wasDone
@@ -982,6 +1221,16 @@ export default function ProjectDetailClient({
       toast.error("Không thể di chuyển công việc");
       return;
     }
+
+    logTaskActivity(supabase, {
+      taskId: task.id,
+      actorId: currentUser.id,
+      action: "status_changed",
+      details: {
+        old_value: prevStatus?.name || "Chưa rõ",
+        new_value: targetStatus.name,
+      },
+    });
 
     if (movingToDone && !wasDone) {
       fetch("/api/webhooks/dispatch", {
@@ -1029,6 +1278,46 @@ export default function ProjectDetailClient({
     if (!doneStatus || !todoStatus) return;
     const isDone = Boolean(task.completed_at) || task.status_id === doneStatus.id;
     await moveTaskToStatus(task, isDone ? todoStatus.id : doneStatus.id);
+  }
+
+  async function handleInlinePriorityChange(
+    task: Task,
+    nextPriority: TaskPriority
+  ) {
+    const prev = tasks;
+    setTasks((curr) =>
+      curr.map((t) =>
+        t.id === task.id ? { ...t, priority: nextPriority } : t
+      )
+    );
+    const { error } = await supabase
+      .from("tasks")
+      .update({ priority: nextPriority })
+      .eq("id", task.id);
+    if (error) {
+      setTasks(prev);
+      toast.error("Không thể cập nhật mức độ ưu tiên");
+    }
+  }
+
+  async function handleInlineDueDateChange(
+    task: Task,
+    nextDueDate: string | null
+  ) {
+    const prev = tasks;
+    setTasks((curr) =>
+      curr.map((t) =>
+        t.id === task.id ? { ...t, due_date: nextDueDate } : t
+      )
+    );
+    const { error } = await supabase
+      .from("tasks")
+      .update({ due_date: nextDueDate })
+      .eq("id", task.id);
+    if (error) {
+      setTasks(prev);
+      toast.error("Không thể cập nhật hạn hoàn thành");
+    }
   }
 
   // Member management
@@ -1103,16 +1392,57 @@ export default function ProjectDetailClient({
     }
   }
 
-  // Filtered tasks
+  // Filtered tasks (with Vietnamese NFD accent-insensitive search + Assignee + Phase + Overdue filters)
   const filteredTasks = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const normalizeVi = (str: string) =>
+      str
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d");
+
+    const q = normalizeVi(search.trim());
     return tasks.filter((t) => {
       if (priorityFilter !== "all" && t.priority !== priorityFilter)
         return false;
-      if (q && !t.title.toLowerCase().includes(q)) return false;
+
+      if (assigneeFilter === "unassigned") {
+        if (t.assignees && t.assignees.length > 0) return false;
+      } else if (assigneeFilter !== "all") {
+        const hasAssignee = (t.assignees ?? []).some(
+          (a) => a.id === assigneeFilter
+        );
+        if (!hasAssignee) return false;
+      }
+
+      if (phaseFilter === "unassigned") {
+        if (t.phase_id) return false;
+      } else if (phaseFilter !== "all") {
+        if (t.phase_id !== phaseFilter) return false;
+      }
+
+      if (overdueOnly) {
+        if (!isOverdue(t.due_date, t.completed_at)) return false;
+      }
+
+      if (q && !normalizeVi(t.title).includes(q)) return false;
       return true;
     });
-  }, [tasks, search, priorityFilter]);
+  }, [
+    tasks,
+    search,
+    priorityFilter,
+    assigneeFilter,
+    phaseFilter,
+    overdueOnly,
+  ]);
+
+  const hasActiveFilters =
+    Boolean(search.trim()) ||
+    priorityFilter !== "all" ||
+    assigneeFilter !== "all" ||
+    phaseFilter !== "all" ||
+    overdueOnly;
 
   // Calendar days calculation (Mon-Sun grid)
   const calendarDays = useMemo(() => {
@@ -1175,253 +1505,310 @@ export default function ProjectDetailClient({
   }, [members, profilesMap, allProfiles]);
 
   return (
-    <div className="flex flex-col space-y-5">
-      {/* Project Header */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <Link
-              href="/projects"
-              className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 transition hover:text-brand dark:text-slate-400"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Tất cả dự án
-            </Link>
+    <div className="flex flex-col space-y-3">
+      {/* ====================================================================
+       * 1. WORKLENZ SINGLE-LINE PROJECT VIEW HEADER (project-view-header.tsx)
+       * ==================================================================== */}
+      <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between border-b border-[#e8e8e8] dark:border-[#303030] pb-2.5">
+        {/* Left: Back Arrow + Project Title + Category Tag + Confidence Badge + Client */}
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <Link
+            href="/projects"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-[#e0e0e0] dark:border-[#333333] text-slate-500 hover:border-brand hover:text-brand transition shrink-0"
+            title="Quay lại Danh sách dự án"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+          </Link>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span
-                className="h-3.5 w-3.5 shrink-0 rounded-full"
-                style={{ backgroundColor: project.color || "#F26522" }}
-              />
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                {project.code}
-              </span>
-              {project.category && (
-                <span className="rounded-md bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">
-                  {project.category}
-                </span>
-              )}
-              <h1 className="truncate text-xl font-bold text-slate-900 dark:text-slate-100">
-                {project.name}
-              </h1>
-            </div>
+          <span
+            className="h-3 w-3 shrink-0 rounded-full"
+            style={{ backgroundColor: project.color || "#F47830" }}
+          />
+          <span className="rounded-[4px] bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700 dark:bg-[#2a2a2a] dark:text-slate-300">
+            {project.code}
+          </span>
+          <h1 className="truncate text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+            {project.name}
+          </h1>
 
-            <div className="mt-2 flex flex-wrap items-center gap-2.5">
-              {/* Delivery confidence badge */}
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                  conf.badgeClass
-                )}
-                title={project.confidence_note || conf.desc}
-              >
-                <span className={cn("h-1.5 w-1.5 rounded-full", conf.dotClass)} />
-                {conf.label}
-              </span>
+          {project.category && (
+            <span className="rounded-[4px] bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">
+              {project.category}
+            </span>
+          )}
 
-              {project.client_name && (
-                <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
-                  Tác giả/Đối tác: <strong>{project.client_name}</strong>
-                </span>
-              )}
-
-              {project.confidence_note && (
-                <span className="text-xs italic text-slate-500 dark:text-slate-400">
-                  — &quot;{project.confidence_note}&quot;
-                </span>
-              )}
-            </div>
-
-            {project.description && (
-              <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
-                {project.description}
-              </p>
+          {/* Delivery confidence badge */}
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-[4px] border px-2 py-0.5 text-[11px] font-medium",
+              conf.badgeClass
             )}
-          </div>
+            title={project.confidence_note || conf.desc}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", conf.dotClass)} />
+            {conf.label.split(" (")[0]}
+          </span>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Project Settings button */}
-            <button
-              type="button"
-              onClick={() => setShowSettingsModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
-              title="Cài đặt dự án, danh mục, sức khỏe và tiến độ"
-            >
-              <Settings className="h-4 w-4 text-slate-500" />
-              <span>Cài đặt dự án</span>
-            </button>
+          {project.client_name && (
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              • Tác giả: <strong className="text-slate-700 dark:text-slate-200">{project.client_name}</strong>
+            </span>
+          )}
+        </div>
 
-            {/* Project Status Selector */}
-            <select
-              value={project.status}
-              onChange={(e) =>
-                handleProjectStatusChange(e.target.value as ProjectStatus)
-              }
-              aria-label="Trạng thái dự án"
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              <option value="active">Đang hoạt động</option>
-              <option value="completed">Hoàn thành</option>
-              <option value="archived">Lưu trữ</option>
-            </select>
+        {/* Right: Compact Action Icon Buttons + Members + Primary Create Task CTA */}
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+          {/* Status quick dropdown */}
+          <select
+            value={project.status}
+            disabled={!canManageProjectSettings}
+            onChange={(e) =>
+              handleProjectStatusChange(e.target.value as ProjectStatus)
+            }
+            aria-label="Trạng thái dự án"
+            className="h-[30px] rounded-[6px] border border-[#d9d9d9] bg-[#fafafa] px-2 text-xs font-medium text-slate-700 focus:border-brand focus:outline-none disabled:opacity-60 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-slate-200 cursor-pointer"
+          >
+            <option value="active">Đang hoạt động</option>
+            <option value="completed">Hoàn thành</option>
+            <option value="archived">Lưu trữ</option>
+          </select>
 
-            {/* Members button */}
-            <button
-              type="button"
-              onClick={() => setShowMembersModal(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
-            >
-              <Users className="h-4 w-4 text-slate-500" />
-              <span>Thành viên ({members.length})</span>
-            </button>
-
-            {/* Project Roles & Permissions button */}
-            <button
-              type="button"
-              onClick={() => setShowProjectRolesModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
-              title="Phân vai trò và kiểm soát 10 quyền hạn trong dự án"
-            >
-              <ShieldCheck className="h-4 w-4 text-brand" />
-              <span>Phân quyền dự án</span>
-            </button>
-
-            {/* Custom fields button */}
+          {/* Custom fields icon button */}
+          {canManageProjectSettings && (
             <button
               type="button"
               onClick={() => setShowCustomFieldsModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+              className="inline-flex h-[30px] items-center gap-1 rounded-[6px] border border-[#d9d9d9] bg-white px-2.5 text-xs font-medium text-slate-700 hover:border-brand hover:text-brand dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200 cursor-pointer"
+              title="Tùy biến trường dữ liệu xuất bản"
             >
-              <Sliders className="h-4 w-4 text-brand" />
-              <span>Tùy biến cột / Trường xuất bản</span>
+              <Sliders className="h-3.5 w-3.5 text-brand" />
+              <span className="hidden xl:inline">Trường xuất bản</span>
             </button>
+          )}
 
-            {/* Add task button - conditionally hidden if !canCreateTasks */}
-            {canCreateTasks && (
-              <button
-                type="button"
-                onClick={() => setShowAddTaskModal(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-brand-hover cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                Thêm công việc
-              </button>
-            )}
-          </div>
+          {/* Project Roles & Permissions icon button */}
+          <button
+            type="button"
+            onClick={() => setShowProjectRolesModal(true)}
+            className="inline-flex h-[30px] items-center gap-1 rounded-[6px] border border-[#d9d9d9] bg-white px-2.5 text-xs font-medium text-slate-700 hover:border-brand hover:text-brand dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200 cursor-pointer"
+            title="Phân quyền & Vai trò trong dự án"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-brand" />
+            <span className="hidden xl:inline">Phân quyền</span>
+          </button>
+
+          {/* Project Settings circle icon button */}
+          {canManageProjectSettings && (
+            <button
+              type="button"
+              onClick={() => setShowSettingsModal(true)}
+              className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[6px] border border-[#d9d9d9] bg-white text-slate-600 hover:border-brand hover:text-brand dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-300 cursor-pointer"
+              title="Cài đặt dự án"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {/* Members button */}
+          <button
+            type="button"
+            onClick={() => setShowMembersModal(true)}
+            className="inline-flex h-[30px] items-center gap-1.5 rounded-[6px] border border-[#d9d9d9] bg-white px-2.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200 cursor-pointer"
+          >
+            <Users className="h-3.5 w-3.5 text-slate-500" />
+            <span>Thành viên ({members.length})</span>
+          </button>
+
+          {/* Primary CTA: Add task button */}
+          {canCreateTasks && (
+            <button
+              type="button"
+              onClick={() => setShowAddTaskModal(true)}
+              className="inline-flex h-[30px] items-center gap-1.5 rounded-[6px] bg-brand px-3 text-xs font-semibold text-white shadow-2xs transition hover:bg-brand-hover cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Thêm công việc</span>
+            </button>
+          )}
         </div>
+      </div>
 
-        {/* View Tabs + Filters */}
-        <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+      {/* ====================================================================
+       * 2. WORKLENZ UNDERLINE TABS (project-view-tabs)
+       * ==================================================================== */}
+      <div className="flex items-center justify-between border-b border-[#e8e8e8] dark:border-[#303030]">
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {(
+            [
+              { key: "list", label: "Danh sách công việc", icon: List, count: tasks.length },
+              { key: "kanban", label: "Bảng Kanban", icon: Kanban },
+              { key: "phases", label: "Giai đoạn", icon: Layers, count: phases.length },
+              { key: "calendar", label: "Lịch", icon: CalendarIcon },
+              { key: "files", label: "Tài liệu & Tệp", icon: FolderArchive },
+              { key: "updates", label: "Thảo luận & Cập nhật", icon: MessageSquare },
+            ] as const
+          ).map((tab) => {
+            const Icon = tab.icon;
+            const active = viewMode === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setViewMode(tab.key)}
+                className={cn(
+                  "relative inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium transition cursor-pointer whitespace-nowrap border-b-2",
+                  active
+                    ? "border-brand text-brand font-semibold"
+                    : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span>{tab.label}</span>
+                {"count" in tab && typeof tab.count === "number" && (
+                  <span
+                    className={cn(
+                      "rounded px-1.5 py-0.2 text-[10px]",
+                      active
+                        ? "bg-brand-soft text-brand dark:bg-brand-soft-dark"
+                        : "bg-slate-100 text-slate-500 dark:bg-[#2a2a2a] dark:text-slate-400"
+                    )}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ====================================================================
+       * 3. WORKLENZ DEDICATED 1-LINE TASK FILTER TOOLBAR (ImprovedTaskFilters)
+       * ==================================================================== */}
+      {(viewMode === "list" || viewMode === "kanban" || viewMode === "calendar") && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-[#fafafa] dark:bg-[#181818] px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {viewMode === "list" && (
+              <div className="inline-flex items-center gap-1 text-xs text-slate-500">
+                <span>Nhóm:</span>
+                <div className="inline-flex rounded-[6px] border border-[#d9d9d9] bg-white p-0.5 dark:border-[#3a3a3a] dark:bg-[#1f1f1f]">
+                  <button
+                    type="button"
+                    onClick={() => setListGroupBy("status")}
+                    className={cn(
+                      "rounded-[4px] px-2 py-0.5 text-xs font-medium transition cursor-pointer",
+                      listGroupBy === "status"
+                        ? "bg-brand text-white font-semibold"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
+                    )}
+                  >
+                    Trạng thái
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setListGroupBy("phase")}
+                    className={cn(
+                      "rounded-[4px] px-2 py-0.5 text-xs font-medium transition cursor-pointer",
+                      listGroupBy === "phase"
+                        ? "bg-brand text-white font-semibold"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
+                    )}
+                  >
+                    Giai đoạn
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Quick toggle: Việc của tôi */}
             <button
               type="button"
-              onClick={() => setViewMode("list")}
+              onClick={() =>
+                setAssigneeFilter((prev) =>
+                  prev === currentUser.id ? "all" : currentUser.id
+                )
+              }
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
-                viewMode === "list"
-                  ? "bg-white text-brand shadow-xs dark:bg-slate-900"
-                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                "inline-flex items-center gap-1 rounded-[6px] border px-2.5 py-1 text-xs font-medium transition cursor-pointer",
+                assigneeFilter === currentUser.id
+                  ? "border-brand bg-brand-soft text-brand font-semibold dark:border-brand dark:bg-brand/20"
+                  : "border-[#d9d9d9] bg-white text-slate-700 hover:bg-slate-50 dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200"
               )}
             >
-              <List className="h-3.5 w-3.5" />
-              Danh sách
+              <Filter className="h-3 w-3" />
+              <span>Việc của tôi</span>
             </button>
+
+            {/* Quick toggle: Quá hạn */}
             <button
               type="button"
-              onClick={() => setViewMode("kanban")}
+              onClick={() => setOverdueOnly((prev) => !prev)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
-                viewMode === "kanban"
-                  ? "bg-white text-brand shadow-xs dark:bg-slate-900"
-                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                "inline-flex items-center gap-1 rounded-[6px] border px-2.5 py-1 text-xs font-medium transition cursor-pointer",
+                overdueOnly
+                  ? "border-red-300 bg-red-50 text-red-700 font-semibold dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
+                  : "border-[#d9d9d9] bg-white text-slate-700 hover:bg-slate-50 dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200"
               )}
             >
-              <Kanban className="h-3.5 w-3.5" />
-              Bảng Kanban
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("phases")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
-                viewMode === "phases"
-                  ? "bg-white text-brand shadow-xs dark:bg-slate-900"
-                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-              )}
-            >
-              <Layers className="h-3.5 w-3.5" />
-              Giai đoạn ({phases.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("calendar")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
-                viewMode === "calendar"
-                  ? "bg-white text-brand shadow-xs dark:bg-slate-900"
-                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-              )}
-            >
-              <CalendarIcon className="h-3.5 w-3.5" />
-              Lịch
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("files")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
-                viewMode === "files"
-                  ? "bg-white text-brand shadow-xs dark:bg-slate-900"
-                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-              )}
-            >
-              <FolderArchive className="h-3.5 w-3.5" />
-              Tài liệu & Tệp
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("updates")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer",
-                viewMode === "updates"
-                  ? "bg-white text-brand shadow-xs dark:bg-slate-900"
-                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-              )}
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              Thảo luận & Cập nhật
+              <AlertTriangle className="h-3 w-3" />
+              <span>Quá hạn</span>
             </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {viewMode === "list" && (
-              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setListGroupBy("status")}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 text-xs font-semibold transition cursor-pointer",
-                    listGroupBy === "status"
-                      ? "bg-white text-brand shadow-xs dark:bg-slate-900 dark:text-brand"
-                      : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
-                  )}
-                >
-                  Theo Trạng thái
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setListGroupBy("phase")}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 text-xs font-semibold transition cursor-pointer",
-                    listGroupBy === "phase"
-                      ? "bg-white text-brand shadow-xs dark:bg-slate-900 dark:text-brand"
-                      : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
-                  )}
-                >
-                  Theo Giai đoạn
-                </button>
-              </div>
+            {/* Assignee Filter Dropdown */}
+            <select
+              value={assigneeFilter}
+              onChange={(e) => setAssigneeFilter(e.target.value)}
+              aria-label="Lọc theo người phụ trách"
+              className="rounded-[6px] border border-[#d9d9d9] bg-white px-2 py-1 text-xs text-slate-700 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200"
+            >
+              <option value="all">Mọi người phụ trách</option>
+              <option value={currentUser.id}>Chỉ việc của tôi</option>
+              <option value="unassigned">Chưa giao ai</option>
+              {assignableProfiles
+                .filter((p) => p.id !== currentUser.id)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.full_name}
+                  </option>
+                ))}
+            </select>
+
+            {/* Phase Filter Dropdown */}
+            {phases.length > 0 && (
+              <select
+                value={phaseFilter}
+                onChange={(e) => setPhaseFilter(e.target.value)}
+                aria-label="Lọc theo giai đoạn"
+                className="rounded-[6px] border border-[#d9d9d9] bg-white px-2 py-1 text-xs text-slate-700 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200"
+              >
+                <option value="all">Mọi giai đoạn</option>
+                <option value="unassigned">Chưa phân giai đoạn</option>
+                {phases.map((ph) => (
+                  <option key={ph.id} value={ph.id}>
+                    {ph.name}
+                  </option>
+                ))}
+              </select>
             )}
+
+            {/* Priority Filter Dropdown */}
+            <select
+              value={priorityFilter}
+              onChange={(e) =>
+                setPriorityFilter(e.target.value as "all" | TaskPriority)
+              }
+              aria-label="Lọc theo ưu tiên"
+              className="rounded-[6px] border border-[#d9d9d9] bg-white px-2 py-1 text-xs text-slate-700 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200"
+            >
+              <option value="all">Mọi ưu tiên</option>
+              <option value="urgent">Khẩn cấp</option>
+              <option value="high">Cao</option>
+              <option value="medium">Trung bình</option>
+              <option value="low">Thấp</option>
+            </select>
+
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
@@ -1429,33 +1816,36 @@ export default function ProjectDetailClient({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Tìm công việc..."
-                className="w-48 rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-2.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                className="w-44 rounded-[6px] border border-[#d9d9d9] bg-white py-1 pl-8 pr-2.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-100"
               />
             </div>
 
-            <select
-              value={priorityFilter}
-              onChange={(e) =>
-                setPriorityFilter(e.target.value as "all" | TaskPriority)
-              }
-              aria-label="Lọc theo ưu tiên"
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:border-brand focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              <option value="all">Mọi mức ưu tiên</option>
-              <option value="urgent">Khẩn cấp</option>
-              <option value="high">Cao</option>
-              <option value="medium">Trung bình</option>
-              <option value="low">Thấp</option>
-            </select>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setPriorityFilter("all");
+                  setAssigneeFilter("all");
+                  setPhaseFilter("all");
+                  setOverdueOnly(false);
+                }}
+                className="inline-flex items-center gap-1 rounded-[6px] border border-[#d9d9d9] bg-white px-2 py-1 text-xs font-medium text-brand hover:bg-brand-soft dark:border-[#3a3a3a] dark:bg-[#1f1f1f] cursor-pointer"
+                title="Đặt lại toàn bộ bộ lọc"
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>Xóa lọc</span>
+              </button>
+            )}
 
-            {/* Column Visibility Selector (Only in List View) */}
+            {/* Column Visibility Selector */}
             {viewMode === "list" && (
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowColumnPicker((prev) => !prev)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
-                  title="Tùy chỉnh ẩn/hiện cột tùy biến"
+                  className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#d9d9d9] bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-brand dark:border-[#3a3a3a] dark:bg-[#1f1f1f] dark:text-slate-200 cursor-pointer"
+                  title="Tùy chỉnh ẩn/hiện cột"
                 >
                   <Columns3 className="h-3.5 w-3.5 text-slate-500" />
                   <span>
@@ -1474,7 +1864,7 @@ export default function ProjectDetailClient({
                       className="fixed inset-0 z-30"
                       onClick={() => setShowColumnPicker(false)}
                     />
-                    <div className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900 space-y-3">
+                    <div className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-[8px] border border-[#e8e8e8] bg-white p-3 shadow-xl dark:border-[#303030] dark:bg-[#1f1f1f] space-y-3">
                       <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
                         <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
                           Tùy chọn hiển thị cột
@@ -1491,7 +1881,6 @@ export default function ProjectDetailClient({
                         </button>
                       </div>
 
-                      {/* Cột tiêu chuẩn */}
                       <div className="space-y-1.5">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                           Cột mặc định
@@ -1540,7 +1929,6 @@ export default function ProjectDetailClient({
                         </label>
                       </div>
 
-                      {/* Cột tùy biến xuất bản */}
                       <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                           Trường tùy biến ({customFields.length})
@@ -1588,7 +1976,7 @@ export default function ProjectDetailClient({
             )}
           </div>
         </div>
-      </div>
+      )}
 
       {/* ================================================================
        * VIEW 1: LIST VIEW
@@ -1677,6 +2065,16 @@ export default function ProjectDetailClient({
                         <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                           {doneCount}/{groupTasks.length} việc ({progress}%)
                         </span>
+                        {phase.assignee_id && profilesMap.get(phase.assignee_id) && (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/20 bg-brand-soft/60 px-2 py-0.5 text-[11px] font-medium text-brand dark:border-brand/30 dark:bg-brand/15">
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand text-[8px] font-bold text-white">
+                              {getInitials(profilesMap.get(phase.assignee_id)!.full_name)}
+                            </span>
+                            <span>
+                              Phụ trách: {profilesMap.get(phase.assignee_id)!.full_name}
+                            </span>
+                          </span>
+                        )}
                       </div>
                     </button>
 
@@ -1791,36 +2189,50 @@ export default function ProjectDetailClient({
                                 />
 
                                 {visibleStdColumns.priority && (
-                                  <span
+                                  <select
+                                    value={task.priority}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) =>
+                                      handleInlinePriorityChange(
+                                        task,
+                                        e.target.value as TaskPriority
+                                      )
+                                    }
                                     className={cn(
-                                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                      "rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium focus:outline-none cursor-pointer",
                                       pCfg.bg,
                                       pCfg.color
                                     )}
                                   >
-                                    <span
-                                      className={cn(
-                                        "h-1.5 w-1.5 rounded-full",
-                                        pCfg.dot
-                                      )}
-                                    />
-                                    {pCfg.label}
-                                  </span>
+                                    <option value="low">Thấp</option>
+                                    <option value="medium">Trung bình</option>
+                                    <option value="high">Cao</option>
+                                    <option value="urgent">Khẩn cấp</option>
+                                  </select>
                                 )}
 
                                 {visibleStdColumns.due_date && (
-                                  <span
+                                  <input
+                                    type="date"
+                                    value={
+                                      task.due_date
+                                        ? task.due_date.slice(0, 10)
+                                        : ""
+                                    }
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) =>
+                                      handleInlineDueDateChange(
+                                        task,
+                                        e.target.value || null
+                                      )
+                                    }
                                     className={cn(
-                                      "w-24 text-right text-xs",
+                                      "w-28 rounded-[4px] border border-transparent hover:border-[#d9d9d9] dark:hover:border-[#3a3a3a] bg-transparent px-1 py-0.5 text-right font-mono text-[11.5px] focus:border-brand focus:outline-none cursor-pointer",
                                       overdue
                                         ? "font-semibold text-red-600 dark:text-red-400"
                                         : "text-slate-500 dark:text-slate-400"
                                     )}
-                                  >
-                                    {task.due_date
-                                      ? formatDateVi(task.due_date)
-                                      : "—"}
-                                  </span>
+                                  />
                                 )}
 
                                 {visibleStdColumns.assignees && (
@@ -1849,43 +2261,45 @@ export default function ProjectDetailClient({
                         })}
 
                         {/* Inline Quick-add per phase */}
-                        <form
-                          onSubmit={async (e) => {
-                            e.preventDefault();
-                            if (!quickVal.trim()) return;
-                            await handleQuickAddTaskToPhase(
-                              phase.id,
-                              quickVal
-                            );
-                            setPhaseQuickAdd((prev) => ({
-                              ...prev,
-                              [phase.id]: "",
-                            }));
-                          }}
-                          className="flex items-center gap-2 px-4 py-2"
-                        >
-                          <Plus className="h-4 w-4 text-slate-400" />
-                          <input
-                            type="text"
-                            value={quickVal}
-                            onChange={(e) =>
+                        {canCreateTasks && (
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              if (!quickVal.trim()) return;
+                              await handleQuickAddTaskToPhase(
+                                phase.id,
+                                quickVal
+                              );
                               setPhaseQuickAdd((prev) => ({
                                 ...prev,
-                                [phase.id]: e.target.value,
-                              }))
-                            }
-                            placeholder={`Thêm công việc vào giai đoạn "${phase.name}"...`}
-                            className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
-                          />
-                          {quickVal.trim() && (
-                            <button
-                              type="submit"
-                              className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
-                            >
-                              Thêm
-                            </button>
-                          )}
-                        </form>
+                                [phase.id]: "",
+                              }));
+                            }}
+                            className="flex items-center gap-2 px-4 py-2"
+                          >
+                            <Plus className="h-4 w-4 text-slate-400" />
+                            <input
+                              type="text"
+                              value={quickVal}
+                              onChange={(e) =>
+                                setPhaseQuickAdd((prev) => ({
+                                  ...prev,
+                                  [phase.id]: e.target.value,
+                                }))
+                              }
+                              placeholder={`Thêm công việc vào giai đoạn "${phase.name}"...`}
+                              className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
+                            />
+                            {quickVal.trim() && (
+                              <button
+                                type="submit"
+                                className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
+                              >
+                                Thêm
+                              </button>
+                            )}
+                          </form>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2063,36 +2477,50 @@ export default function ProjectDetailClient({
                                 />
 
                                 {visibleStdColumns.priority && (
-                                  <span
+                                  <select
+                                    value={task.priority}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) =>
+                                      handleInlinePriorityChange(
+                                        task,
+                                        e.target.value as TaskPriority
+                                      )
+                                    }
                                     className={cn(
-                                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                      "rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium focus:outline-none cursor-pointer",
                                       pCfg.bg,
                                       pCfg.color
                                     )}
                                   >
-                                    <span
-                                      className={cn(
-                                        "h-1.5 w-1.5 rounded-full",
-                                        pCfg.dot
-                                      )}
-                                    />
-                                    {pCfg.label}
-                                  </span>
+                                    <option value="low">Thấp</option>
+                                    <option value="medium">Trung bình</option>
+                                    <option value="high">Cao</option>
+                                    <option value="urgent">Khẩn cấp</option>
+                                  </select>
                                 )}
 
                                 {visibleStdColumns.due_date && (
-                                  <span
+                                  <input
+                                    type="date"
+                                    value={
+                                      task.due_date
+                                        ? task.due_date.slice(0, 10)
+                                        : ""
+                                    }
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) =>
+                                      handleInlineDueDateChange(
+                                        task,
+                                        e.target.value || null
+                                      )
+                                    }
                                     className={cn(
-                                      "w-24 text-right text-xs",
+                                      "w-28 rounded-[4px] border border-transparent hover:border-[#d9d9d9] dark:hover:border-[#3a3a3a] bg-transparent px-1 py-0.5 text-right font-mono text-[11.5px] focus:border-brand focus:outline-none cursor-pointer",
                                       overdue
                                         ? "font-semibold text-red-600 dark:text-red-400"
                                         : "text-slate-500 dark:text-slate-400"
                                     )}
-                                  >
-                                    {task.due_date
-                                      ? formatDateVi(task.due_date)
-                                      : "—"}
-                                  </span>
+                                  />
                                 )}
 
                                 {visibleStdColumns.assignees && (
@@ -2121,40 +2549,42 @@ export default function ProjectDetailClient({
                         })}
 
                         {/* Inline Quick-add for unassigned */}
-                        <form
-                          onSubmit={async (e) => {
-                            e.preventDefault();
-                            if (!quickVal.trim()) return;
-                            await handleQuickAddTaskToPhase(null, quickVal);
-                            setPhaseQuickAdd((prev) => ({
-                              ...prev,
-                              unassigned: "",
-                            }));
-                          }}
-                          className="flex items-center gap-2 px-4 py-2"
-                        >
-                          <Plus className="h-4 w-4 text-slate-400" />
-                          <input
-                            type="text"
-                            value={quickVal}
-                            onChange={(e) =>
+                        {canCreateTasks && (
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              if (!quickVal.trim()) return;
+                              await handleQuickAddTaskToPhase(null, quickVal);
                               setPhaseQuickAdd((prev) => ({
                                 ...prev,
-                                unassigned: e.target.value,
-                              }))
-                            }
-                            placeholder="Thêm công việc chưa phân giai đoạn..."
-                            className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
-                          />
-                          {quickVal.trim() && (
-                            <button
-                              type="submit"
-                              className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
-                            >
-                              Thêm
-                            </button>
-                          )}
-                        </form>
+                                unassigned: "",
+                              }));
+                            }}
+                            className="flex items-center gap-2 px-4 py-2"
+                          >
+                            <Plus className="h-4 w-4 text-slate-400" />
+                            <input
+                              type="text"
+                              value={quickVal}
+                              onChange={(e) =>
+                                setPhaseQuickAdd((prev) => ({
+                                  ...prev,
+                                  unassigned: e.target.value,
+                                }))
+                              }
+                              placeholder="Thêm công việc chưa phân giai đoạn..."
+                              className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
+                            />
+                            {quickVal.trim() && (
+                              <button
+                                type="submit"
+                                className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
+                              >
+                                Thêm
+                              </button>
+                            )}
+                          </form>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2327,34 +2757,50 @@ export default function ProjectDetailClient({
                             />
 
                             {visibleStdColumns.priority && (
-                              <span
+                              <select
+                                value={task.priority}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) =>
+                                  handleInlinePriorityChange(
+                                    task,
+                                    e.target.value as TaskPriority
+                                  )
+                                }
                                 className={cn(
-                                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                  "rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium focus:outline-none cursor-pointer",
                                   pCfg.bg,
                                   pCfg.color
                                 )}
                               >
-                                <span
-                                  className={cn(
-                                    "h-1.5 w-1.5 rounded-full",
-                                    pCfg.dot
-                                  )}
-                                />
-                                {pCfg.label}
-                              </span>
+                                <option value="low">Thấp</option>
+                                <option value="medium">Trung bình</option>
+                                <option value="high">Cao</option>
+                                <option value="urgent">Khẩn cấp</option>
+                              </select>
                             )}
 
                             {visibleStdColumns.due_date && (
-                              <span
+                              <input
+                                type="date"
+                                value={
+                                  task.due_date
+                                    ? task.due_date.slice(0, 10)
+                                    : ""
+                                }
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) =>
+                                  handleInlineDueDateChange(
+                                    task,
+                                    e.target.value || null
+                                  )
+                                }
                                 className={cn(
-                                  "w-24 text-right text-xs",
+                                  "w-28 rounded-[4px] border border-transparent hover:border-[#d9d9d9] dark:hover:border-[#3a3a3a] bg-transparent px-1 py-0.5 text-right font-mono text-[11.5px] focus:border-brand focus:outline-none cursor-pointer",
                                   overdue
                                     ? "font-semibold text-red-600 dark:text-red-400"
                                     : "text-slate-500 dark:text-slate-400"
                                 )}
-                              >
-                                {task.due_date ? formatDateVi(task.due_date) : "—"}
-                              </span>
+                              />
                             )}
 
                             {visibleStdColumns.assignees && (
@@ -2382,37 +2828,39 @@ export default function ProjectDetailClient({
                     })}
 
                     {/* Inline Quick-add */}
-                    <form
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        if (!quickVal.trim()) return;
-                        await handleQuickAddTask(st.id, quickVal);
-                        setListQuickAdd((prev) => ({ ...prev, [st.id]: "" }));
-                      }}
-                      className="flex items-center gap-2 px-4 py-2"
-                    >
-                      <Plus className="h-4 w-4 text-slate-400" />
-                      <input
-                        type="text"
-                        value={quickVal}
-                        onChange={(e) =>
-                          setListQuickAdd((prev) => ({
-                            ...prev,
-                            [st.id]: e.target.value,
-                          }))
-                        }
-                        placeholder={`Thêm công việc vào "${st.name}"...`}
-                        className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
-                      />
-                      {quickVal.trim() && (
-                        <button
-                          type="submit"
-                          className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
-                        >
-                          Thêm
-                        </button>
-                      )}
-                    </form>
+                    {canCreateTasks && (
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!quickVal.trim()) return;
+                          await handleQuickAddTask(st.id, quickVal);
+                          setListQuickAdd((prev) => ({ ...prev, [st.id]: "" }));
+                        }}
+                        className="flex items-center gap-2 px-4 py-2"
+                      >
+                        <Plus className="h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={quickVal}
+                          onChange={(e) =>
+                            setListQuickAdd((prev) => ({
+                              ...prev,
+                              [st.id]: e.target.value,
+                            }))
+                          }
+                          placeholder={`Thêm công việc vào "${st.name}"...`}
+                          className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
+                        />
+                        {quickVal.trim() && (
+                          <button
+                            type="submit"
+                            className="rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover cursor-pointer"
+                          >
+                            Thêm
+                          </button>
+                        )}
+                      </form>
+                    )}
                   </div>
                 )}
               </div>
@@ -2439,6 +2887,8 @@ export default function ProjectDetailClient({
                 tasks={filteredTasks.filter((t) => t.status_id === st.id)}
                 onOpenTask={openTaskDrawer}
                 onQuickAdd={handleQuickAddTask}
+                canChangeStatus={canChangeStatus}
+                canCreateTasks={canCreateTasks}
               />
             ))}
           </div>
@@ -2578,6 +3028,7 @@ export default function ProjectDetailClient({
           project={project}
           currentUser={currentUser}
           allProfiles={allProfiles}
+          canPostUpdates={permissionsMap.canPostUpdates}
         />
       )}
 
@@ -2588,14 +3039,18 @@ export default function ProjectDetailClient({
         <ProjectPhasesTab
           projectId={project.id}
           projectName={project.name}
+          project={project}
           phases={phases}
           tasks={tasks}
           statuses={statuses}
           members={allProfiles}
           currentUser={currentUser}
+          canManagePhases={permissionsMap.canManagePhases}
+          canCreateTasks={permissionsMap.canCreateTasks}
           onSelectTask={openTaskDrawer}
           onPhasesUpdated={fetchPhases}
           onTasksUpdated={fetchTasks}
+          onProjectUpdated={(updated) => setProject(updated)}
         />
       )}
 
@@ -2608,6 +3063,7 @@ export default function ProjectDetailClient({
           projectName={project.name}
           tasks={tasks}
           currentUser={currentUser}
+          canManageFiles={permissionsMap.canManageFiles}
           onOpenTask={openTaskDrawer}
         />
       )}
@@ -2722,6 +3178,44 @@ export default function ProjectDetailClient({
                   ))}
                 </select>
               </div>
+
+              {canAssignTasks && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Người phụ trách ({newTaskAssigneeIds.length})
+                  </label>
+                  <div className="max-h-36 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 p-2 space-y-1 dark:border-slate-700 dark:bg-slate-800/60">
+                    {assignableProfiles.map((prof) => {
+                      const checked = newTaskAssigneeIds.includes(prof.id);
+                      return (
+                        <label
+                          key={prof.id}
+                          className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              setNewTaskAssigneeIds((prev) =>
+                                e.target.checked
+                                  ? [...prev, prof.id]
+                                  : prev.filter((id) => id !== prof.id)
+                              );
+                            }}
+                            className="h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-brand accent-brand"
+                          />
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[9px] font-bold text-brand dark:bg-brand/20">
+                            {getInitials(prof.full_name)}
+                          </span>
+                          <span className="truncate font-medium">
+                            {prof.full_name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-2.5 border-t border-slate-100 pt-4 dark:border-slate-800">
                 <button
@@ -2891,6 +3385,9 @@ export default function ProjectDetailClient({
         <TaskDrawer
           taskId={selectedTaskId}
           projectId={project.id}
+          project={project}
+          currentMember={currentMember}
+          permissions={permissionsMap}
           statuses={statuses}
           members={assignableProfiles}
           allProfiles={allProfiles}
@@ -2908,6 +3405,9 @@ export default function ProjectDetailClient({
        * BULK ACTION BAR
        * ============================================================== */}
       <BulkActionBar
+        projectId={project.id}
+        project={project}
+        permissions={permissionsMap}
         selectedTaskIds={Array.from(selectedTaskIds)}
         selectedTasks={tasks.filter((t) => selectedTaskIds.has(t.id))}
         statuses={statuses}
