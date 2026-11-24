@@ -34,7 +34,7 @@ export interface ResolvedDependency {
 
 interface TaskDependenciesSectionProps {
   taskId: string;
-  projectId: string;
+  projectId?: string | null;
   currentUser: Profile;
   statuses: TaskStatus[];
   canEditTask?: boolean;
@@ -77,12 +77,19 @@ export default function TaskDependenciesSection({
         { data: outgoingDeps, error: outErr },
         { data: incomingDeps, error: inErr },
       ] = await Promise.all([
-        supabase
-          .from("tasks")
-          .select("id, project_id, title, status_id, priority, due_date, completed_at")
-          .eq("project_id", projectId)
-          .neq("id", taskId)
-          .order("title", { ascending: true }),
+        (projectId
+          ? supabase
+              .from("tasks")
+              .select("id, project_id, title, status_id, priority, due_date, completed_at")
+              .eq("project_id", projectId)
+              .neq("id", taskId)
+              .order("title", { ascending: true })
+          : supabase
+              .from("tasks")
+              .select("id, project_id, title, status_id, priority, due_date, completed_at")
+              .is("project_id", null)
+              .neq("id", taskId)
+              .order("title", { ascending: true })),
         supabase
           .from("task_dependencies")
           .select("*")

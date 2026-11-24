@@ -96,6 +96,8 @@ export interface ProjectPhase {
   assignee?: Pick<Profile, "id" | "full_name" | "email" | "avatar_url" | "job_title"> | null;
 }
 
+export type ProjectType = "publishing" | "operational";
+
 export interface Project {
   id: string;
   name: string;
@@ -103,6 +105,7 @@ export interface Project {
   description: string | null;
   color: string;
   status: ProjectStatus;
+  project_type?: ProjectType;
   department_id: string | null;
   category?: string | null;
   delivery_confidence?: DeliveryConfidence;
@@ -138,7 +141,7 @@ export interface ProjectMember {
 
 export interface TaskStatus {
   id: string;
-  project_id: string;
+  project_id: string | null;
   name: string;
   color: string;
   category: TaskStatusCategory;
@@ -147,7 +150,7 @@ export interface TaskStatus {
 
 export interface Label {
   id: string;
-  project_id: string;
+  project_id: string | null;
   name: string;
   color: string;
 }
@@ -185,7 +188,7 @@ export interface TaskRecurringRule {
 
 export interface Task {
   id: string;
-  project_id: string;
+  project_id: string | null;
   parent_id: string | null;
   status_id: string | null;
   phase_id?: string | null;

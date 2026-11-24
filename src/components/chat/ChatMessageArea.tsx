@@ -54,6 +54,9 @@ import {
   Quote,
   Link2,
   Code,
+  Maximize2,
+  Minimize2,
+  AtSign,
 } from "lucide-react";
 import { toast } from "sonner";
 import { MediaLightboxModal } from "@/components/chat/MediaLightboxModal";
@@ -154,6 +157,7 @@ export function ChatMessageArea({
   const mentionTextareaRef = useRef<MentionTextareaRef | null>(null);
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isComposerExpanded, setIsComposerExpanded] = useState(false);
 
   const insertFormatting = (
     prefix: string,
@@ -1265,7 +1269,91 @@ export function ChatMessageArea({
 
         {/* Composer Input Box */}
         <div className="relative rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/30 focus-within:border-brand focus-within:ring-1 focus-within:ring-brand transition shadow-2xs">
+          {/* Lark Rich Text Formatting Bar (Ảnh 1) */}
+          {showFormattingToolbar && (
+            <div className="flex items-center gap-0.5 px-2.5 py-1.5 border-b border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 rounded-t-2xl overflow-x-auto no-scrollbar">
+              <button
+                type="button"
+                onClick={() => insertFormatting("**", "**", "in đậm")}
+                title="In đậm (Bold - **text**)"
+                className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded-md transition"
+              >
+                <Bold className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => insertFormatting("~~", "~~", "gạch ngang")}
+                title="Gạch ngang (Strikethrough - ~~text~~)"
+                className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded-md transition"
+              >
+                <Strikethrough className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => insertFormatting("*", "*", "in nghiêng")}
+                title="In nghiêng (Italic - *text*)"
+                className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded-md transition"
+              >
+                <Italic className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => insertFormatting("<u>", "</u>", "gạch chân")}
+                title="Gạch chân (Underline)"
+                className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded-md transition"
+              >
+                <Underline className="h-3.5 w-3.5" />
+              </button>
+
+              <div className="h-3.5 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
+
+              <button
+                type="button"
+                onClick={() => insertFormatting("1. ", "", "nội dung")}
+                title="Danh sách số"
+                className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded-md transition"
+              >
+                <ListOrdered className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => insertFormatting("- ", "", "nội dung")}
+                title="Danh sách gạch đầu dòng"
+                className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded-md transition"
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => insertFormatting("> ", "", "trích dẫn")}
+                title="Trích dẫn (Quote)"
+                className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded-md transition"
+              >
+                <Quote className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  insertFormatting("[", "](https://...)", "tiêu đề liên kết")
+                }
+                title="Chèn liên kết (Link)"
+                className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded-md transition"
+              >
+                <Link2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => insertFormatting("`", "`", "code")}
+                title="Đoạn mã (Code)"
+                className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded-md transition"
+              >
+                <Code className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
           <MentionTextarea
+            ref={mentionTextareaRef}
             profiles={allProfiles}
             value={inputText}
             onChange={(val) => {
@@ -1283,9 +1371,12 @@ export function ChatMessageArea({
             placeholder={
               editingMessage
                 ? "Sửa tin nhắn... (Enter để lưu, Esc để hủy)"
-                : "Nhập tin nhắn, gõ @ để nhắc tên đồng nghiệp (Enter để gửi, Shift+Enter xuống dòng)..."
+                : "Nhập @ nhắc tên, tin nhắn (Enter để gửi, Shift+Enter xuống dòng, Ctrl+V dán ảnh)..."
             }
-            className="w-full bg-transparent px-3.5 pt-2.5 pb-9 text-xs focus:outline-none resize-none"
+            className={cn(
+              "w-full bg-transparent px-3.5 pt-2.5 pb-9 text-xs focus:outline-none resize-none transition-all",
+              isComposerExpanded ? "min-h-[140px]" : "min-h-[44px]"
+            )}
           />
 
           {/* Bottom Toolbar inside textarea */}
@@ -1313,22 +1404,106 @@ export function ChatMessageArea({
             >
               <ImageIcon className="h-4 w-4" />
             </button>
+
+            {/* Lark Emoji Picker Button & Popup (Ảnh 2) */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowEmojiPicker((prev) => !prev)}
+                title="Chèn biểu tượng cảm xúc (Emoji)"
+                className={cn(
+                  "p-1 transition rounded-md",
+                  showEmojiPicker
+                    ? "text-brand bg-orange-100 dark:bg-orange-950/60"
+                    : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800"
+                )}
+              >
+                <Smile className="h-4 w-4" />
+              </button>
+
+              {showEmojiPicker && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowEmojiPicker(false)}
+                  />
+                  <div className="absolute bottom-full mb-2 left-0 z-50">
+                    <LarkEmojiPicker
+                      onSelectEmoji={handleInsertEmoji}
+                      onClose={() => setShowEmojiPicker(false)}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Send Button */}
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={(!inputText.trim() && !pendingFile) || isSending}
-            className={cn(
-              "absolute right-2 bottom-2 flex h-7 w-7 items-center justify-center rounded-xl transition shadow-xs",
-              inputText.trim() || pendingFile
-                ? "bg-brand text-white hover:bg-brand/90 cursor-pointer"
-                : "bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
-            )}
-          >
-            <Send className="h-3.5 w-3.5" />
-          </button>
+          {/* Right Action Buttons: Aa, @, Expand/Collapse & Send */}
+          <div className="absolute right-2 bottom-2 flex items-center gap-1">
+            {/* Aa Formatting Toggle (Ảnh 1) */}
+            <button
+              type="button"
+              onClick={() => setShowFormattingToolbar((prev) => !prev)}
+              title={
+                showFormattingToolbar
+                  ? "Ẩn định dạng (Aa)"
+                  : "Hiện định dạng (Aa)"
+              }
+              className={cn(
+                "flex h-7 px-2 items-center justify-center rounded-xl transition text-xs font-serif font-bold shadow-2xs cursor-pointer",
+                showFormattingToolbar
+                  ? "bg-brand text-white font-extrabold"
+                  : "bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700"
+              )}
+            >
+              Aa
+            </button>
+
+            {/* @ Mention Shortcut (Ảnh 1) */}
+            <button
+              type="button"
+              onClick={() => {
+                setInputText((prev) => prev + "@");
+              }}
+              title="Nhắc đến ai đó (@)"
+              className="flex h-7 w-7 items-center justify-center rounded-xl transition text-xs font-bold bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 shadow-2xs cursor-pointer"
+            >
+              <AtSign className="h-3.5 w-3.5" />
+            </button>
+
+            {/* Expand / Collapse Textarea Toggle (Ảnh 1 & 2) */}
+            <button
+              type="button"
+              onClick={() => setIsComposerExpanded((p) => !p)}
+              title={
+                isComposerExpanded
+                  ? "Thu nhỏ khung soạn thảo"
+                  : "Mở rộng khung soạn thảo"
+              }
+              className="flex h-7 w-7 items-center justify-center rounded-xl transition text-xs bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 shadow-2xs cursor-pointer"
+            >
+              {isComposerExpanded ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+
+            {/* Send Button */}
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={(!inputText.trim() && !pendingFile) || isSending}
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-xl transition shadow-xs",
+                inputText.trim() || pendingFile
+                  ? "bg-brand text-white hover:bg-brand/90 cursor-pointer"
+                  : "bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
+              )}
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       </footer>
 
@@ -1416,9 +1591,9 @@ function renderInlineMarkdown(
   text: string,
   profiles: Profile[]
 ): React.ReactNode {
-  // Split tokens for bold, italic, strike, underline, code
+  // Split tokens for bold, italic, strike, underline, code, links
   const tokenRegex =
-    /(\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~|`[^`]+`|<u>[^<]+<\/u>)/g;
+    /(\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~|`[^`]+`|<u>[^<]+<\/u>|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/g;
   const parts = text.split(tokenRegex);
 
   return parts.map((part, idx) => {
@@ -1459,6 +1634,23 @@ function renderInlineMarkdown(
           {renderContentWithMentions(part.slice(3, -4), profiles)}
         </span>
       );
+    }
+    if (part.startsWith("[") && part.includes("](") && part.endsWith(")")) {
+      const match = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+      if (match) {
+        return (
+          <a
+            key={idx}
+            href={match[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-brand hover:underline font-medium inline-flex items-center gap-0.5"
+          >
+            {match[1]}
+            <ExternalLink className="h-2.5 w-2.5 opacity-60 inline" />
+          </a>
+        );
+      }
     }
     return renderContentWithMentions(part, profiles);
   });

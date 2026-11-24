@@ -134,6 +134,8 @@ export function ChatContainer({
        * ==================================================================== */}
       <ChatSidebar
         conversations={conversations}
+        allConversations={rawConversations}
+        currentUser={currentUser}
         activeConversationId={activeConversationId}
         onSelectConversation={handleSelectConversation}
         activeFilter={activeFilter}

@@ -158,6 +158,7 @@ export default function ProjectsListClient({
 
   // Modal create state
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [projectType, setProjectType] = useState<"publishing" | "operational">("publishing");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -300,6 +301,7 @@ export default function ProjectsListClient({
   }
 
   function resetForm() {
+    setProjectType("publishing");
     setSelectedTemplateId("");
     setName("");
     setCode("");
@@ -358,8 +360,9 @@ export default function ProjectsListClient({
         .insert({
           name: trimmedName,
           code: trimmedCode,
-          category,
-          client_name: clientName.trim() || null,
+          project_type: projectType,
+          category: projectType === "operational" ? "Vận hành" : category,
+          client_name: projectType === "operational" ? null : (clientName.trim() || null),
           delivery_confidence: deliveryConfidence,
           description: description.trim() || null,
           color,
@@ -507,6 +510,11 @@ export default function ProjectsListClient({
             <span className="truncate text-[13.5px] font-semibold text-slate-900 dark:text-slate-100 group-hover:text-brand">
               {project.name}
             </span>
+            {project.project_type === "operational" && (
+              <span className="shrink-0 rounded-[4px] bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 text-[10px] font-medium px-1.5 py-0.5">
+                Vận hành
+              </span>
+            )}
           </div>
         </td>
 
@@ -1071,50 +1079,94 @@ export default function ProjectsListClient({
               </button>
             </div>
 
-            <form onSubmit={handleCreateProject} className="mt-4 space-y-3.5">
-              <div>
-                <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  <Sparkles className="h-3.5 w-3.5 text-brand" />
-                  Chọn mẫu quy trình (tùy chọn)
-                </label>
-                <select
-                  value={selectedTemplateId}
-                  onChange={(e) => handleTemplateChange(e.target.value)}
-                  className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
-                >
-                  <option value="">— Dự án trống (không dùng mẫu) —</option>
-                  {templates.map((tpl) => (
-                    <option key={tpl.id} value={tpl.id}>
-                      [{tpl.category}] {tpl.name} ({tpl.tasks?.length ?? 0} công việc)
-                    </option>
-                  ))}
-                </select>
-                {selectedTemplate && (
-                  <p className="mt-1.5 rounded-[6px] bg-brand-soft px-3 py-1.5 text-xs text-brand dark:bg-brand/15">
-                    Sẽ tự động tạo{" "}
-                    <strong>{selectedTemplate.tasks?.length ?? 0} công việc</strong>{" "}
-                    mẫu với hạn hoàn thành tính từ ngày bắt đầu dự án.
-                  </p>
+            {/* Project Type Toggle (Xuất bản vs Vận hành / Danh sách công việc) */}
+            <div className="flex rounded-lg bg-slate-100 p-1 dark:bg-[#181818] mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectType("publishing");
+                  if (category === "Vận hành") setCategory("Sách Quản trị & Kinh doanh");
+                }}
+                className={cn(
+                  "flex-1 rounded-md py-1.5 text-xs font-semibold transition cursor-pointer",
+                  projectType === "publishing"
+                    ? "bg-white text-brand shadow-xs dark:bg-[#252525] dark:text-brand"
+                    : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
                 )}
-              </div>
+              >
+                📚 Dự án Xuất bản (Đầu sách)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectType("operational");
+                  setColor("#3B82F6");
+                  setSelectedTemplateId("");
+                }}
+                className={cn(
+                  "flex-1 rounded-md py-1.5 text-xs font-semibold transition cursor-pointer",
+                  projectType === "operational"
+                    ? "bg-white text-brand shadow-xs dark:bg-[#252525] dark:text-brand"
+                    : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                )}
+              >
+                📋 Danh sách việc / Vận hành
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateProject} className="mt-4 space-y-3.5">
+              {projectType === "publishing" && (
+                <div>
+                  <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <Sparkles className="h-3.5 w-3.5 text-brand" />
+                    Chọn mẫu quy trình (tùy chọn)
+                  </label>
+                  <select
+                    value={selectedTemplateId}
+                    onChange={(e) => handleTemplateChange(e.target.value)}
+                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
+                  >
+                    <option value="">— Dự án trống (không dùng mẫu) —</option>
+                    {templates.map((tpl) => (
+                      <option key={tpl.id} value={tpl.id}>
+                        [{tpl.category}] {tpl.name} ({tpl.tasks?.length ?? 0} công việc)
+                      </option>
+                    ))}
+                  </select>
+                  {selectedTemplate && (
+                    <p className="mt-1.5 rounded-[6px] bg-brand-soft px-3 py-1.5 text-xs text-brand dark:bg-brand/15">
+                      Sẽ tự động tạo{" "}
+                      <strong>{selectedTemplate.tasks?.length ?? 0} công việc</strong>{" "}
+                      mẫu với hạn hoàn thành tính từ ngày bắt đầu dự án.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="sm:col-span-2">
                   <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Tên dự án / Đầu sách <span className="text-red-500">*</span>
+                    {projectType === "operational"
+                      ? "Tên danh sách công việc / Team"
+                      : "Tên dự án / Đầu sách"}{" "}
+                    <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
                     value={name}
                     onChange={(e) => handleNameChange(e.target.value)}
-                    placeholder="VD: Ra mắt sách Tư Duy Nhanh & Chậm"
+                    placeholder={
+                      projectType === "operational"
+                        ? "VD: Task Ecom 2026, Task CSKH, Vận hành Marketing..."
+                        : "VD: Ra mắt sách Tư Duy Nhanh & Chậm"
+                    }
                     className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Mã dự án
+                    Mã định danh
                   </label>
                   <input
                     type="text"
@@ -1124,43 +1176,45 @@ export default function ProjectsListClient({
                       setCodeManuallyEdited(true);
                     }}
                     maxLength={12}
-                    placeholder="VD: TDNC"
+                    placeholder={projectType === "operational" ? "VD: ECOM" : "VD: TDNC"}
                     className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs uppercase text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Phân loại danh mục
-                  </label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
-                  >
-                    {PROJECT_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {projectType === "publishing" && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Phân loại danh mục
+                    </label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
+                    >
+                      {PROJECT_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Tác giả / Đối tác giữ bản quyền
-                  </label>
-                  <input
-                    type="text"
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
-                    placeholder="VD: Daniel Kahneman"
-                    className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
-                  />
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Tác giả / Đối tác giữ bản quyền
+                    </label>
+                    <input
+                      type="text"
+                      value={clientName}
+                      onChange={(e) => setClientName(e.target.value)}
+                      placeholder="VD: Daniel Kahneman"
+                      className="w-full rounded-[6px] border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-brand focus:outline-none dark:border-[#3a3a3a] dark:bg-[#141414] dark:text-slate-100"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">

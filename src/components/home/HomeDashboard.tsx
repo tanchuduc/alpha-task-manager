@@ -223,7 +223,7 @@ export function HomeDashboard({
   // In-place TaskDrawer state (so clicking any task opens the Drawer immediately on Home without navigating away!)
   const [activeDrawerTask, setActiveDrawerTask] = useState<{
     taskId: string;
-    projectId: string;
+    projectId: string | null;
   } | null>(null);
 
   // Calendar state
@@ -488,7 +488,7 @@ export function HomeDashboard({
       let color = "#94A3B8";
 
       if (groupBy === "project") {
-        key = t.project_id;
+        key = t.project_id || "no_project";
         label = t.project
           ? `[${t.project.code}] ${t.project.name}`
           : "Dự án chung";
@@ -522,7 +522,7 @@ export function HomeDashboard({
   async function handleInlineToggleDone(task: Task, e: React.MouseEvent) {
     e.stopPropagation();
     const projectStatuses = allStatuses.filter(
-      (s) => s.project_id === task.project_id
+      (s) => (task.project_id ? s.project_id === task.project_id : !s.project_id)
     );
     const doneStatus = projectStatuses.find((s) => s.category === "done");
     const todoStatus =
@@ -683,10 +683,13 @@ export function HomeDashboard({
   // Statuses for the currently opened task in TaskDrawer
   const drawerProjectStatuses = useMemo(() => {
     if (!activeDrawerTask) return [];
+    if (!activeDrawerTask.projectId) {
+      return allStatuses.filter((s) => !s.project_id);
+    }
     const list = allStatuses.filter(
       (s) => s.project_id === activeDrawerTask.projectId
     );
-    return list;
+    return list.length > 0 ? list : allStatuses.filter((s) => !s.project_id);
   }, [activeDrawerTask, allStatuses]);
 
   // Shared High-Density Worklenz Task Table Renderer
@@ -2305,7 +2308,10 @@ export function HomeDashboard({
             members={allProfiles}
             allProfiles={allProfiles}
             currentUser={profile}
-            taskList={filteredTasks.map((t) => ({ id: t.id, projectId: t.project_id }))}
+            taskList={filteredTasks.map((t) => ({
+              id: t.id,
+              projectId: t.project_id || undefined,
+            }))}
             currentIndex={currentTaskIdx >= 0 ? currentTaskIdx : undefined}
             onNavigateTask={(nextTaskId) => {
               const targetTask = tasks.find((t) => t.id === nextTaskId);

@@ -23,7 +23,7 @@ import type {
 
 interface TaskRecurringConfigProps {
   taskId: string;
-  projectId: string;
+  projectId?: string | null;
   canEdit: boolean;
   initialRule: TaskRecurringRule | null;
   onRuleUpdated: (rule: TaskRecurringRule | null) => void;
@@ -140,7 +140,7 @@ export default function TaskRecurringConfig({
 
       const payload = {
         task_id: taskId,
-        project_id: projectId,
+        project_id: projectId || null,
         frequency,
         interval_value: intervalValue,
         days_of_week: frequency === "weekly" ? daysOfWeek : [],

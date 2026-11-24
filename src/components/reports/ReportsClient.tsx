@@ -182,7 +182,7 @@ export function ReportsClient({
         status?.category ?? (task.completed_at ? "done" : "todo");
       const isDone = category === "done" || Boolean(task.completed_at);
       const overdue = !isDone && isOverdue(task.due_date, task.completed_at);
-      const project = projectMap.get(task.project_id) ?? null;
+      const project = task.project_id ? projectMap.get(task.project_id) ?? null : null;
       const department = project?.department_id
         ? departmentMap.get(project.department_id) ?? null
         : null;
@@ -237,6 +237,7 @@ export function ReportsClient({
     >();
 
     for (const item of enrichedTasks) {
+      if (!item.task.project_id) continue;
       const stats = byProject.get(item.task.project_id) ?? {
         total: 0,
         todo: 0,

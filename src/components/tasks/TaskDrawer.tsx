@@ -75,7 +75,7 @@ import type {
 
 export interface TaskDrawerProps {
   taskId: string;
-  projectId: string;
+  projectId?: string | null;
   project?: Project;
   initialTask?: Task | null;
   projectPhases?: ProjectPhase[];
@@ -470,7 +470,9 @@ export default function TaskDrawer({
       }
       try {
         const fetchPhasesPromise =
-          projectPhases && projectPhases.length > 0
+          !projectId
+            ? Promise.resolve({ data: [] })
+            : projectPhases && projectPhases.length > 0
             ? Promise.resolve({ data: projectPhases })
             : supabase
                 .from("project_phases")
@@ -479,7 +481,9 @@ export default function TaskDrawer({
                 .order("position", { ascending: true });
 
         const fetchCustomFieldsPromise =
-          projectCustomFields && projectCustomFields.length > 0
+          !projectId
+            ? Promise.resolve({ data: [] })
+            : projectCustomFields && projectCustomFields.length > 0
             ? Promise.resolve({ data: projectCustomFields })
             : supabase
                 .from("project_custom_fields")
@@ -606,7 +610,7 @@ export default function TaskDrawer({
 
   function fireWebhook(payload: {
     event: string;
-    projectId: string;
+    projectId?: string | null;
     title: string;
     body: string;
     link: string;
@@ -757,10 +761,10 @@ export default function TaskDrawer({
     if (movingToDone && !wasDone) {
       fireWebhook({
         event: "task_completed",
-        projectId,
+        projectId: projectId ?? undefined,
         title: `Hoàn thành công việc: ${task.title}`,
         body: `${currentUser.full_name} đã chuyển công việc "${task.title}" sang trạng thái "${targetStatus.name}".`,
-        link: `/projects/${projectId}?task=${task.id}`,
+        link: projectId ? `/projects/${projectId}?task=${task.id}` : `/home?task=${task.id}`,
       });
     }
   }
@@ -940,7 +944,7 @@ export default function TaskDrawer({
       if (member.id !== currentUser.id) {
         const notifTitle = `${currentUser.full_name} đã giao việc cho bạn`;
         const notifBody = `Công việc: "${task.title}"`;
-        const link = `/projects/${projectId}?task=${task.id}`;
+        const link = projectId ? `/projects/${projectId}?task=${task.id}` : `/home?task=${task.id}`;
 
         await supabase.from("notifications").insert({
           user_id: member.id,
@@ -1088,7 +1092,7 @@ export default function TaskDrawer({
     setUploadingFile(true);
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const storagePath = `${projectId}/${task.id}/${Date.now()}-${safeName}`;
+      const storagePath = `${projectId || "general"}/${task.id}/${Date.now()}-${safeName}`;
 
       const { error: uploadError } = await supabase.storage
         .from("attachments")
@@ -1340,7 +1344,7 @@ export default function TaskDrawer({
       setMentionedUserIds([]);
       setShowMentionBar(false);
 
-      const link = `/projects/${projectId}?task=${task.id}`;
+      const link = projectId ? `/projects/${projectId}?task=${task.id}` : `/home?task=${task.id}`;
       const targetsToNotify = activeMentionIds.filter(
         (uid) => uid !== currentUser.id
       );

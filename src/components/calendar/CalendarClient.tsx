@@ -107,7 +107,7 @@ export default function CalendarClient({
   // Active TaskDrawer
   const [activeDrawerTask, setActiveDrawerTask] = useState<{
     taskId: string;
-    projectId: string;
+    projectId: string | null;
   } | null>(null);
 
   // Day Overflow Modal state (when user clicks "+X việc nữa" in month cell)
@@ -283,7 +283,9 @@ export default function CalendarClient({
       const isAssignedToMe = (t.assignees ?? []).some(
         (a) => a.id === profile.id
       );
-      const isProjectSelected = selectedProjectIds.has(t.project_id);
+      const isProjectSelected = Boolean(
+        t.project_id && selectedProjectIds.has(t.project_id)
+      );
       const isAssignedToSelectedColleague =
         selectedColleagueIds.size > 0 &&
         (t.assignees ?? []).some((a) => selectedColleagueIds.has(a.id));
@@ -603,7 +605,8 @@ export default function CalendarClient({
       const targetCategory = isDone ? "todo" : "done";
       const targetStatus = allStatuses.find(
         (s) =>
-          s.project_id === task.project_id && s.category === targetCategory
+          (task.project_id ? s.project_id === task.project_id : !s.project_id) &&
+          s.category === targetCategory
       );
 
       const nextCompletedAt = isDone ? null : new Date().toISOString();
@@ -678,9 +681,13 @@ export default function CalendarClient({
   // Statuses for TaskDrawer
   const drawerProjectStatuses = useMemo(() => {
     if (!activeDrawerTask) return [];
-    return allStatuses.filter(
+    if (!activeDrawerTask.projectId) {
+      return allStatuses.filter((s) => !s.project_id);
+    }
+    const list = allStatuses.filter(
       (s) => s.project_id === activeDrawerTask.projectId
     );
+    return list.length > 0 ? list : allStatuses.filter((s) => !s.project_id);
   }, [activeDrawerTask, allStatuses]);
 
   return (

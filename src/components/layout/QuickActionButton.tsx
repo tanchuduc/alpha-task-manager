@@ -51,6 +51,7 @@ interface SimpleProject {
   name: string;
   code: string;
   color: string;
+  project_type?: "publishing" | "operational";
 }
 
 interface UnassignedTaskItem {
@@ -117,6 +118,7 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
   // ==========================================
   // PROJECT CREATION STATE
   // ==========================================
+  const [quickProjType, setQuickProjType] = useState<"publishing" | "operational">("operational");
   const [projName, setProjName] = useState("");
   const [projCode, setProjCode] = useState("");
   const [projDueDate, setProjDueDate] = useState("");
@@ -158,7 +160,7 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
       const [{ data: pData }, { data: uData }] = await Promise.all([
         supabase
           .from("projects")
-          .select("id, name, code, color")
+          .select("id, name, code, color, project_type")
           .eq("status", "active")
           .order("name", { ascending: true }),
         supabase
@@ -173,7 +175,7 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
       if (pData) {
         const list = pData as SimpleProject[];
         setProjects(list);
-        if (list.length > 0 && !selectedProjectId) {
+        if (list.length > 0 && !selectedProjectId && taskTab === "unassigned") {
           setSelectedProjectId(list[0].id);
         }
       }
@@ -292,14 +294,22 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
   // ==========================================
   async function handleCreateQuickTask(e: React.FormEvent) {
     e.preventDefault();
-    if (!taskTitle.trim() || !selectedProjectId) return;
+    if (!taskTitle.trim()) return;
     setSubmitting(true);
     try {
-      const { data: statusData } = await supabase
-        .from("task_statuses")
-        .select("*")
-        .eq("project_id", selectedProjectId)
-        .order("position", { ascending: true });
+      const statusQuery = selectedProjectId
+        ? supabase
+            .from("task_statuses")
+            .select("*")
+            .eq("project_id", selectedProjectId)
+            .order("position", { ascending: true })
+        : supabase
+            .from("task_statuses")
+            .select("*")
+            .is("project_id", null)
+            .order("position", { ascending: true });
+
+      const { data: statusData } = await statusQuery;
 
       const statuses = (statusData ?? []) as TaskStatus[];
       const todoStatus =
@@ -308,7 +318,7 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
       const { data: newTask, error } = await supabase
         .from("tasks")
         .insert({
-          project_id: selectedProjectId,
+          project_id: selectedProjectId || null,
           status_id: todoStatus?.id ?? null,
           title: taskTitle.trim(),
           priority: taskPriority,
@@ -330,23 +340,27 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
         }));
         await supabase.from("task_assignees").insert(assigneeRows);
 
-        // Auto-add assignees to project_members if not yet in project
-        for (const u of selectedAssignees) {
-          await supabase.from("project_members").upsert(
-            {
-              project_id: selectedProjectId,
-              user_id: u.id,
-              role: "member",
-            },
-            { onConflict: "project_id,user_id" }
-          );
+        // Auto-add assignees to project_members only if task is part of a project
+        if (selectedProjectId) {
+          for (const u of selectedAssignees) {
+            await supabase.from("project_members").upsert(
+              {
+                project_id: selectedProjectId,
+                user_id: u.id,
+                role: "member",
+              },
+              { onConflict: "project_id,user_id" }
+            );
+          }
         }
       }
 
       const enrichedTask: Task = {
         ...(newTask as Task),
         status: todoStatus,
-        project: projects.find((p) => p.id === selectedProjectId) ?? null,
+        project: selectedProjectId
+          ? (projects.find((p) => p.id === selectedProjectId) ?? null)
+          : null,
         assignees: selectedAssignees,
       };
 
@@ -437,9 +451,10 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
         .insert({
           name: trimmed,
           code,
-          category: "Sách Quản trị & Kinh doanh",
+          project_type: quickProjType,
+          category: quickProjType === "operational" ? "Vận hành" : "Sách Quản trị & Kinh doanh",
           delivery_confidence: "on_track",
-          color: "#F47830",
+          color: quickProjType === "operational" ? "#3B82F6" : "#F47830",
           status: "active",
           department_id: currentUser.department_id || null,
           start_date: new Date().toISOString().slice(0, 10),
@@ -637,18 +652,23 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
               <form onSubmit={handleCreateQuickTask} className="mt-4 space-y-3.5">
                 {/* Project Selection */}
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Dự án <span className="text-red-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Dự án / Danh sách việc
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      {selectedProjectId ? "Gắn vào dự án" : "Việc độc lập / Giao nhanh"}
+                    </span>
+                  </div>
                   <select
-                    required
                     value={selectedProjectId}
                     onChange={(e) => setSelectedProjectId(e.target.value)}
-                    className="w-full rounded-md border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#141414] px-3 py-2 text-xs font-medium text-slate-900 dark:text-slate-100 focus:border-brand focus:outline-none"
+                    className="w-full rounded-md border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#141414] px-3 py-2 text-xs font-medium text-slate-900 dark:text-slate-100 focus:border-brand focus:outline-none cursor-pointer"
                   >
+                    <option value="">-- Không thuộc dự án (Việc độc lập / Giao việc nhanh) --</option>
                     {projects.map((p) => (
                       <option key={p.id} value={p.id}>
-                        [{p.code}] {p.name}
+                        [{p.code}] {p.name} {p.project_type === "operational" ? "📋 (Vận hành)" : "📚 (Xuất bản)"}
                       </option>
                     ))}
                   </select>
@@ -833,18 +853,23 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
               >
                 {/* Project Selection */}
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Dự án <span className="text-red-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Dự án / Danh sách việc
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      {selectedProjectId ? "Gắn vào dự án" : "Việc độc lập / Giao nhanh"}
+                    </span>
+                  </div>
                   <select
-                    required
                     value={selectedProjectId}
                     onChange={(e) => setSelectedProjectId(e.target.value)}
-                    className="w-full rounded-md border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#141414] px-3 py-2 text-xs font-medium text-slate-900 dark:text-slate-100 focus:border-brand focus:outline-none"
+                    className="w-full rounded-md border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#141414] px-3 py-2 text-xs font-medium text-slate-900 dark:text-slate-100 focus:border-brand focus:outline-none cursor-pointer"
                   >
+                    <option value="">-- Không thuộc dự án (Việc độc lập / Giao việc nhanh) --</option>
                     {projects.map((p) => (
                       <option key={p.id} value={p.id}>
-                        [{p.code}] {p.name}
+                        [{p.code}] {p.name} {p.project_type === "operational" ? "📋 (Vận hành)" : "📚 (Xuất bản)"}
                       </option>
                     ))}
                   </select>
@@ -1103,9 +1128,38 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
             </div>
 
             <form onSubmit={handleCreateQuickProject} className="mt-4 space-y-3">
+              {/* Project Type Toggle */}
+              <div className="flex rounded-lg bg-slate-100 p-1 dark:bg-[#181818]">
+                <button
+                  type="button"
+                  onClick={() => setQuickProjType("operational")}
+                  className={`flex-1 rounded-md py-1 text-xs font-semibold transition ${
+                    quickProjType === "operational"
+                      ? "bg-white text-brand shadow-xs dark:bg-[#252525] dark:text-brand"
+                      : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  📋 Vận hành / Team
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickProjType("publishing")}
+                  className={`flex-1 rounded-md py-1 text-xs font-semibold transition ${
+                    quickProjType === "publishing"
+                      ? "bg-white text-brand shadow-xs dark:bg-[#252525] dark:text-brand"
+                      : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  📚 Dự án Xuất bản
+                </button>
+              </div>
+
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-                  Tên dự án / Đầu sách <span className="text-red-500">*</span>
+                  {quickProjType === "operational"
+                    ? "Tên danh sách công việc / Team"
+                    : "Tên dự án / Đầu sách"}{" "}
+                  <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1116,7 +1170,11 @@ export function QuickActionButton({ currentUser }: QuickActionButtonProps) {
                     setProjName(e.target.value);
                     setProjCode(generateProjectCode(e.target.value));
                   }}
-                  placeholder="VD: Tư Duy Nhanh Và Chậm"
+                  placeholder={
+                    quickProjType === "operational"
+                      ? "VD: Task Ecom 2026, Task CSKH, Vận hành Marketing..."
+                      : "VD: Tư Duy Nhanh Và Chậm"
+                  }
                   className="w-full rounded-md border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#141414] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:border-brand focus:outline-none"
                 />
               </div>

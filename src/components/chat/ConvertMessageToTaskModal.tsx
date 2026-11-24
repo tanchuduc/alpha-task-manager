@@ -124,15 +124,23 @@ export function ConvertMessageToTaskModal({
 
   // Load phases and statuses when selectedProjectId changes
   useEffect(() => {
-    if (!selectedProjectId) {
-      setPhases([]);
-      setStatuses([]);
-      setSelectedPhaseId("");
-      return;
-    }
-
     let isMounted = true;
     async function loadProjectMeta() {
+      if (!selectedProjectId) {
+        const { data: stData } = await supabase
+          .from("task_statuses")
+          .select("*")
+          .is("project_id", null)
+          .order("position", { ascending: true });
+
+        if (isMounted) {
+          setPhases([]);
+          setStatuses((stData as TaskStatus[]) || []);
+          setSelectedPhaseId("");
+        }
+        return;
+      }
+
       const [phasesRes, statusesRes] = await Promise.all([
         supabase
           .from("project_phases")
@@ -171,10 +179,6 @@ export function ConvertMessageToTaskModal({
       toast.error("Vui lòng nhập tên công việc.");
       return;
     }
-    if (!selectedProjectId) {
-      toast.error("Vui lòng chọn dự án.");
-      return;
-    }
 
     setIsSubmitting(true);
     try {
@@ -184,9 +188,9 @@ export function ConvertMessageToTaskModal({
       const { data: createdTask, error: taskError } = await supabase
         .from("tasks")
         .insert({
-          project_id: selectedProjectId,
+          project_id: selectedProjectId || null,
           status_id: todoStatus?.id || null,
-          phase_id: selectedPhaseId || null,
+          phase_id: selectedProjectId ? (selectedPhaseId || null) : null,
           title: trimmedTitle,
           description: description.trim() || null,
           priority,
@@ -208,14 +212,14 @@ export function ConvertMessageToTaskModal({
 
         // Notify assignee if different from current user
         if (assigneeId !== currentUser.id) {
-          const projectObj = projects.find((p) => p.id === selectedProjectId);
+          const projectObj = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) : null;
           await supabase.from("notifications").insert({
             user_id: assigneeId,
             actor_id: currentUser.id,
             type: "task_assigned",
             title: `${currentUser.full_name} đã giao việc cho bạn từ Trò chuyện`,
-            body: `${trimmedTitle} (${projectObj?.name || "Dự án"})`,
-            link: `/projects/${selectedProjectId}?task=${createdTask.id}`,
+            body: `${trimmedTitle} (${projectObj?.name || "Việc độc lập"})`,
+            link: selectedProjectId ? `/projects/${selectedProjectId}?task=${createdTask.id}` : `/home?task=${createdTask.id}`,
             is_read: false,
           });
         }
@@ -245,9 +249,9 @@ export function ConvertMessageToTaskModal({
         });
       }
 
-      const projectObj = projects.find((p) => p.id === selectedProjectId);
+      const projectObj = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) : null;
       toast.success("Đã chuyển tin nhắn thành công việc!", {
-        description: `${trimmedTitle} • ${projectObj?.name || ""}`,
+        description: `${trimmedTitle}${projectObj ? ` • ${projectObj.name}` : " • Việc độc lập"}`,
       });
 
       if (createdTask) {
@@ -255,7 +259,7 @@ export function ConvertMessageToTaskModal({
           taskId: createdTask.id,
           taskTitle: trimmedTitle,
           projectId: selectedProjectId,
-          projectName: projectObj?.name || "Dự án",
+          projectName: projectObj?.name || "Việc độc lập",
         });
       }
       onClose();
@@ -315,23 +319,19 @@ export function ConvertMessageToTaskModal({
             <div>
               <label className="flex items-center gap-1 text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 <FolderKanban className="h-3.5 w-3.5 text-brand" />
-                <span>Dự án <span className="text-red-500">*</span></span>
+                <span>Dự án / Danh sách việc</span>
               </label>
               <select
-                required
                 value={selectedProjectId}
                 onChange={(e) => setSelectedProjectId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
               >
-                {projects.length === 0 ? (
-                  <option value="">Chưa có dự án đang hoạt động</option>
-                ) : (
-                  projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      [{p.code}] {p.name}
-                    </option>
-                  ))
-                )}
+                <option value="">-- Không thuộc dự án (Việc độc lập) --</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    [{p.code}] {p.name}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -443,7 +443,7 @@ export function ConvertMessageToTaskModal({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !title.trim() || !selectedProjectId}
+              disabled={isSubmitting || !title.trim()}
               className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-brand-hover cursor-pointer disabled:opacity-50"
             >
               <CheckSquare className="h-3.5 w-3.5" />
