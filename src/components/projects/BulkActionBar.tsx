@@ -14,7 +14,12 @@ import {
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { logTaskActivity } from "@/lib/activity-logger";
-import { canUserEditTask, type ProjectPermissionsMap } from "@/lib/permissions";
+import {
+  canUserEditTask,
+  isProjectPrivilegedUser,
+  isTeamLeadOrManager,
+  type ProjectPermissionsMap,
+} from "@/lib/permissions";
 import { PRIORITY_CONFIG } from "@/lib/utils";
 import type {
   Profile,
@@ -87,10 +92,8 @@ export default function BulkActionBar({
     if (!canEditSelected) return false;
     if (project?.restrict_task_assignment) {
       return (
-        currentUser.role === "admin" ||
-        currentUser.role === "manager" ||
-        project.created_by === currentUser.id ||
-        project.project_manager_id === currentUser.id
+        isTeamLeadOrManager(currentUser) ||
+        isProjectPrivilegedUser(currentUser, project, undefined)
       );
     }
     return true;

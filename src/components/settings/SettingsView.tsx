@@ -4,7 +4,12 @@ import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { hasSystemPermission, SYSTEM_PERMISSIONS } from "@/lib/permissions";
+import {
+  hasSystemPermission,
+  isDirectorOrAdmin,
+  isTeamLeadOrManager,
+  SYSTEM_PERMISSIONS,
+} from "@/lib/permissions";
 import { cn, getInitials, ROLE_LABELS, formatDateVi } from "@/lib/utils";
 import type {
   Department,
@@ -110,9 +115,8 @@ export function SettingsView({
 }: SettingsViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isAdmin = currentProfile.role === "admin";
-  const isManagerOrAdmin =
-    currentProfile.role === "admin" || currentProfile.role === "manager";
+  const isAdmin = isDirectorOrAdmin(currentProfile);
+  const isManagerOrAdmin = isTeamLeadOrManager(currentProfile);
   const canManageDepartments = hasSystemPermission(
     currentProfile,
     SYSTEM_PERMISSIONS.MANAGE_DEPARTMENTS

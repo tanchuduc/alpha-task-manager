@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   SYSTEM_PERMISSION_DEFINITIONS,
+  isDirectorOrAdmin,
   type SystemPermissionKey,
 } from "@/lib/permissions";
 import type { Profile, SystemRole } from "@/types/database";
@@ -38,7 +39,7 @@ export function PermissionsManagerPanel({
   staffList,
   onStaffUpdated,
 }: PermissionsManagerPanelProps) {
-  const isAdmin = currentProfile.role === "admin";
+  const isAdmin = isDirectorOrAdmin(currentProfile);
   const [roles, setRoles] = useState<SystemRole[]>(initialRoles);
   const [selectedRoleId, setSelectedRoleId] = useState<string>(
     initialRoles[0]?.id || ""

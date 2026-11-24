@@ -25,6 +25,7 @@ import {
   generateProjectCode,
   getDepartmentDisplayName,
 } from "@/lib/utils";
+import { isTeamLeadOrManager } from "@/lib/permissions";
 import type {
   Department,
   Profile,
@@ -88,8 +89,7 @@ export default function TemplatesManagerClient({
 }: TemplatesManagerClientProps) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
-  const canDelete =
-    currentUser.role === "admin" || currentUser.role === "manager";
+  const canDelete = isTeamLeadOrManager(currentUser);
 
   const [templates, setTemplates] =
     useState<ProjectTemplate[]>(initialTemplates);

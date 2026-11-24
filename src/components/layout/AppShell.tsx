@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn, getInitials, ROLE_LABELS } from "@/lib/utils";
+import { hasSystemPermission, SYSTEM_PERMISSIONS } from "@/lib/permissions";
 import type { Profile } from "@/types/database";
 import { GlobalSearchModal } from "./GlobalSearchModal";
 import { NavRail, type NavRailItemConfig } from "./NavRail";
@@ -70,6 +71,17 @@ export function AppShell({
   const [pinnedViews, setPinnedViews] = useState<Record<string, string>>({});
 
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const canViewReports = hasSystemPermission(
+    profile,
+    SYSTEM_PERMISSIONS.VIEW_REPORTS
+  );
+  const visibleTopNavItems = useMemo(() => {
+    return TOP_NAV_ITEMS.filter((item) => {
+      if (item.key === "reports") return canViewReports;
+      return true;
+    });
+  }, [canViewReports]);
 
   // Sync theme and rail preferences on mount
   useEffect(() => {
@@ -396,7 +408,7 @@ export function AppShell({
             </Link>
 
             <nav className="hidden md:flex items-center gap-0.5">
-              {TOP_NAV_ITEMS.map((item) => {
+              {visibleTopNavItems.map((item) => {
                 const isActive = isTopItemActive(item.key);
                 const isChat = item.key === "chat";
 
@@ -612,7 +624,7 @@ export function AppShell({
         {/* Mobile Nav Drawer */}
         {mobileNavOpen && (
           <div className="md:hidden border-t border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] px-4 py-3 space-y-1 shadow-lg">
-            {TOP_NAV_ITEMS.map((item) => {
+            {visibleTopNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = isTopItemActive(item.key);
               const isChat = item.key === "chat";

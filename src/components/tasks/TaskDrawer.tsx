@@ -34,6 +34,9 @@ import {
   Clock,
   Sparkles,
   RotateCw,
+  FileCheck2,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -41,6 +44,7 @@ import { cn, PRIORITY_CONFIG, getInitials, isOverdue, getTaskKey } from "@/lib/u
 
 import {
   canUserEditTask,
+  canUserReviewTask,
   isProjectPrivilegedUser,
   type ProjectPermissionsMap,
 } from "@/lib/permissions";
@@ -304,6 +308,92 @@ export default function TaskDrawer({
   const canDelete = effectivePerms.canDeleteTasks;
   const canComment = effectivePerms.canPostUpdates;
   const canManageTaskFiles = canEdit && effectivePerms.canManageFiles;
+
+  const canReview = useMemo(() => {
+    return canUserReviewTask(
+      currentUser,
+      project,
+      currentMember,
+      task as any
+    );
+  }, [currentUser, project, currentMember, task]);
+
+  const isAssignee = useMemo(() => {
+    return assigneeIds.includes(currentUser.id);
+  }, [assigneeIds, currentUser.id]);
+
+  async function handleRequestReview() {
+    if (!task) return;
+    try {
+      await updateTaskFields({ review_status: "pending_review" } as any);
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "updated",
+        details: {
+          field: "review_status",
+          new_value: "pending_review",
+          description: "Gửi yêu cầu nghiệm thu công việc",
+        },
+      });
+      toast.success("Đã gửi yêu cầu nghiệm thu cho quản lý / người giao việc.");
+    } catch {
+      toast.error("Không thể gửi yêu cầu nghiệm thu lúc này.");
+    }
+  }
+
+  async function handleApproveTask() {
+    if (!task) return;
+    try {
+      const now = new Date().toISOString();
+      const updates: Record<string, any> = {
+        review_status: "approved",
+        reviewed_by: currentUser.id,
+        reviewed_at: now,
+      };
+      if (doneStatus) {
+        updates.status_id = doneStatus.id;
+        updates.completed_at = now;
+      }
+      await updateTaskFields(updates);
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "status_changed",
+        details: {
+          field: "review_status",
+          new_value: "approved",
+          description: "Đã duyệt nghiệm thu và xác nhận hoàn thành công việc",
+        },
+      });
+      toast.success("Đã nghiệm thu và xác nhận hoàn thành công việc!");
+    } catch {
+      toast.error("Không thể nghiệm thu lúc này.");
+    }
+  }
+
+  async function handleRejectTask() {
+    if (!task) return;
+    try {
+      await updateTaskFields({
+        review_status: "rejected",
+        completed_at: null,
+      } as any);
+      await logTaskActivity(supabase, {
+        taskId: task.id,
+        actorId: currentUser.id,
+        action: "updated",
+        details: {
+          field: "review_status",
+          new_value: "rejected",
+          description: "Yêu cầu chỉnh sửa lại công việc trước khi nghiệm thu",
+        },
+      });
+      toast.info("Đã gửi yêu cầu chỉnh sửa lại cho người thực hiện.");
+    } catch {
+      toast.error("Không thể từ chối lúc này.");
+    }
+  }
 
   // All active staff available for assignment (project members prioritized first)
   const assignableCandidateProfiles = useMemo(() => {
@@ -1435,6 +1525,99 @@ export default function TaskDrawer({
             </button>
           </div>
         </div>
+
+        {/* Sign-off / Task Approval Gate Banner */}
+        {task && (
+          <>
+            {task.review_status === "pending_review" && (
+              <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50/80 px-4 py-2.5 dark:border-amber-900/50 dark:bg-amber-950/40">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileCheck2 className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <div className="min-w-0 text-xs">
+                    <p className="font-semibold text-amber-900 dark:text-amber-200">
+                      Công việc đang chờ Nghiệm thu
+                    </p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 truncate">
+                      Người thực hiện đã hoàn thành công việc và gửi yêu cầu phê duyệt.
+                    </p>
+                  </div>
+                </div>
+
+                {canReview ? (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleApproveTask}
+                      className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition cursor-pointer"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Duyệt hoàn thành
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRejectTask}
+                      className="inline-flex items-center gap-1 rounded border border-red-300 dark:border-red-800 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Yêu cầu sửa
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-[11px] italic text-amber-700 dark:text-amber-400 shrink-0">
+                    Chờ Quản lý duyệt
+                  </span>
+                )}
+              </div>
+            )}
+
+            {task.review_status === "approved" && (
+              <div className="flex items-center justify-between border-b border-emerald-200 bg-emerald-50/70 px-4 py-2 dark:border-emerald-900/40 dark:bg-emerald-950/30">
+                <div className="flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>
+                    Công việc đã được <strong>Nghiệm thu & Xác nhận đạt chuẩn</strong>.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {task.review_status === "rejected" && (
+              <div className="flex items-center justify-between border-b border-red-200 bg-red-50/70 px-4 py-2 dark:border-red-900/40 dark:bg-red-950/30">
+                <div className="flex items-center gap-2 text-xs text-red-800 dark:text-red-300">
+                  <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  <span>
+                    Công việc bị <strong>Yêu cầu chỉnh sửa lại</strong> trước khi nghiệm thu.
+                  </span>
+                </div>
+                {isAssignee && (
+                  <button
+                    type="button"
+                    onClick={handleRequestReview}
+                    className="rounded bg-brand px-2 py-0.5 text-xs font-semibold text-white hover:bg-brand-hover transition cursor-pointer"
+                  >
+                    Gửi lại yêu cầu
+                  </button>
+                )}
+              </div>
+            )}
+
+            {(!task.review_status || task.review_status === "none") && isAssignee && (
+              <div className="flex items-center justify-between border-b border-[#f0f0f0] bg-slate-50/70 px-4 py-1.5 dark:border-[#2a2a2a] dark:bg-[#1a1a1a]">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Bạn là người thực hiện công việc này.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleRequestReview}
+                  className="inline-flex items-center gap-1 rounded border border-brand/50 bg-brand-soft/70 px-2.5 py-0.5 text-[11px] font-semibold text-brand hover:bg-brand hover:text-white transition cursor-pointer dark:bg-brand-soft-dark/50"
+                >
+                  <FileCheck2 className="h-3 w-3" />
+                  Gửi yêu cầu nghiệm thu
+                </button>
+              </div>
+            )}
+          </>
+        )}
 
 
         {/* Body */}

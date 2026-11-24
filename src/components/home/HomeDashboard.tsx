@@ -30,6 +30,7 @@ import type {
 import {
   AlertTriangle,
   ArrowRight,
+  BarChart3,
   Calendar as CalendarIcon,
   Check,
   CheckCircle2,
@@ -50,11 +51,41 @@ import {
   ListFilter,
   UserX,
   CalendarOff,
+  CheckSquare,
+  TrendingUp,
+  BookOpen,
+  Crown,
+  Zap,
+  Sparkles,
+  Users2,
+  FileCheck2,
 } from "lucide-react";
 
 import { toast } from "sonner";
+import { isDirectorOrAdmin, isTeamLeadOrManager } from "@/lib/permissions";
 
-interface HomeDashboardProps {
+export interface ExecutiveProjectSummary {
+  id: string;
+  name: string;
+  code: string;
+  color: string;
+  totalTasks: number;
+  completedTasks: number;
+  overdueTasks: number;
+  completionRate: number;
+}
+
+export interface ExecutiveStats {
+  totalProjects: number;
+  activeProjects: number;
+  totalCompanyTasks: number;
+  completedCompanyTasks: number;
+  overdueCompanyTasks: number;
+  urgentTasks: Task[];
+  projectsSummary: ExecutiveProjectSummary[];
+}
+
+export interface HomeDashboardProps {
   profile: Profile;
   initialTasks: Task[];
   explicitlyDelegatedTaskIds?: string[];
@@ -62,6 +93,7 @@ interface HomeDashboardProps {
   projects?: Array<{ id: string; name: string; code: string; color: string }>;
   allProfiles?: Profile[];
   allStatuses?: TaskStatus[];
+  executiveStats?: ExecutiveStats;
 }
 
 export type HomeViewMode =
@@ -123,10 +155,20 @@ export function HomeDashboard({
   projects = [],
   allProfiles = [],
   allStatuses = [],
+  executiveStats,
 }: HomeDashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+
+  const isExecutiveUser = isDirectorOrAdmin(profile);
+  const isLeadUser = isTeamLeadOrManager(profile);
+  const [executiveMode, setExecutiveMode] = useState<boolean>(
+    Boolean(isExecutiveUser && executiveStats)
+  );
+  const [delegatedSubTab, setDelegatedSubTab] = useState<
+    "list" | "workload" | "review"
+  >("list");
 
   // Sync active mode from Left NavRail (?view=overview | my-tasks | delegated | calendar | todo)
   const [activeView, setActiveView] = useState<HomeViewMode>("overview");
@@ -267,6 +309,58 @@ export function HomeDashboard({
       noDueDateTasksCount: noDueDateCount,
     };
   }, [tasks, profile.id, explicitlyDelegatedTaskIds]);
+
+  // Cân bằng tải nhân sự phòng ban (Team Workload Balancing)
+  const workloadByAssignee = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        profile: Profile;
+        total: number;
+        open: number;
+        overdue: number;
+        completed: number;
+        tasks: Task[];
+      }
+    >();
+
+    for (const t of assignedByMeTasks) {
+      const isDone = t.status?.category === "done" || Boolean(t.completed_at);
+      const isTaskOverdue = !isDone && isOverdue(t.due_date, t.completed_at);
+      const assignees = t.assignees || [];
+
+      for (const a of assignees) {
+        const entry = map.get(a.id) ?? {
+          profile: a,
+          total: 0,
+          open: 0,
+          overdue: 0,
+          completed: 0,
+          tasks: [],
+        };
+        entry.total += 1;
+        if (isDone) {
+          entry.completed += 1;
+        } else {
+          entry.open += 1;
+          if (isTaskOverdue) entry.overdue += 1;
+        }
+        entry.tasks.push(t);
+        map.set(a.id, entry);
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.open - a.open);
+  }, [assignedByMeTasks]);
+
+  // Hàng chờ công việc cần nghiệm thu (Sign-off Queue)
+  const reviewQueueTasks = useMemo(() => {
+    return assignedByMeTasks.filter(
+      (t) =>
+        t.review_status === "pending_review" ||
+        (Boolean(t.completed_at) && t.review_status !== "approved")
+    );
+  }, [assignedByMeTasks]);
 
   const activeScopeTasks = useMemo(() => {
     if (activeView === "delegated") return assignedByMeTasks;
@@ -950,7 +1044,7 @@ export function HomeDashboard({
     <div className="space-y-4">
       {/* Compact Greeting & Context Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-[#e8e8e8] dark:border-[#303030] pb-3">
-        <div className="flex flex-wrap items-baseline gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
             {getGreeting()}, {profile.full_name}
           </h1>
@@ -958,10 +1052,53 @@ export function HomeDashboard({
             {getTodayDateVi()}
             {profile.job_title ? ` • ${profile.job_title}` : ""}
           </span>
+          {isExecutiveUser && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60">
+              <Crown className="h-3 w-3" />
+              Lãnh đạo BOD
+            </span>
+          )}
+          {!isExecutiveUser && isLeadUser && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60">
+              <Users2 className="h-3 w-3" />
+              Trưởng phòng / Quản lý
+            </span>
+          )}
         </div>
 
-        {/* Mode Title Pill + Go to Projects */}
-        <div className="flex items-center gap-2">
+        {/* View Switcher for BOD & Action buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          {isExecutiveUser && executiveStats && activeView === "overview" && (
+            <div className="inline-flex items-center rounded-lg border border-[#e0e0e0] dark:border-[#333333] bg-[#fafafa] dark:bg-[#1a1a1a] p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setExecutiveMode(true)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition cursor-pointer",
+                  executiveMode
+                    ? "bg-brand text-white shadow-xs font-semibold"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                )}
+              >
+                <Crown className="h-3.5 w-3.5" />
+                <span>Chỉ huy xuất bản</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setExecutiveMode(false)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition cursor-pointer",
+                  !executiveMode
+                    ? "bg-brand text-white shadow-xs font-semibold"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                )}
+              >
+                <CheckSquare className="h-3.5 w-3.5" />
+                <span>Việc cá nhân của tôi</span>
+              </button>
+            </div>
+          )}
+
           <Link
             href="/projects"
             className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] bg-white dark:bg-[#1f1f1f] hover:border-brand px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 transition"
@@ -978,7 +1115,275 @@ export function HomeDashboard({
        * ==================================================================== */}
       {activeView === "overview" && (
         <div className="space-y-4">
-          {/* 4 Compact Stat Cards (Worklenz HomeStatCards) */}
+          {isExecutiveUser && executiveMode && executiveStats ? (
+            /* ==========================================================
+             * BAN GIÁM ĐỐC (BOD) — BÀN CHỈ HUY XUẤT BẢN TOÀN CÔNG TY
+             * ========================================================== */
+            <div className="space-y-4">
+              {/* 4 Chỉ số Điều hành cấp cao */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Dự án & Đầu sách xuất bản
+                    </p>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-brand-soft dark:bg-brand-soft-dark text-brand">
+                      <BookOpen className="h-4 w-4" />
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="font-mono text-2xl font-bold text-slate-900 dark:text-slate-100">
+                      {executiveStats.activeProjects}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      / {executiveStats.totalProjects} tổng dự án
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    Đang triển khai vận hành
+                  </p>
+                </div>
+
+                <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Tiến độ tổng thể công ty
+                    </p>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                      <TrendingUp className="h-4 w-4" />
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                      {executiveStats.totalCompanyTasks > 0
+                        ? Math.round(
+                            (executiveStats.completedCompanyTasks /
+                              executiveStats.totalCompanyTasks) *
+                              100
+                          )
+                        : 0}
+                      %
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      ({executiveStats.completedCompanyTasks}/{executiveStats.totalCompanyTasks} việc)
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-[#2a2a2a]">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                      style={{
+                        width: `${
+                          executiveStats.totalCompanyTasks > 0
+                            ? Math.round(
+                                (executiveStats.completedCompanyTasks /
+                                  executiveStats.totalCompanyTasks) *
+                                  100
+                              )
+                            : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Công việc Quá hạn
+                    </p>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400">
+                      <AlertTriangle className="h-4 w-4" />
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span
+                      className={cn(
+                        "font-mono text-2xl font-bold",
+                        executiveStats.overdueCompanyTasks > 0
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-slate-900 dark:text-slate-100"
+                      )}
+                    >
+                      {executiveStats.overdueCompanyTasks}
+                    </span>
+                    <span className="text-xs text-slate-400">cần đốc thúc</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Toàn bộ các phòng ban nội bộ
+                  </p>
+                </div>
+
+                <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Nhiệm vụ Khẩn cấp / Critical
+                    </p>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
+                      <Zap className="h-4 w-4" />
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="font-mono text-2xl font-bold text-amber-600 dark:text-amber-400">
+                      {executiveStats.urgentTasks.length}
+                    </span>
+                    <span className="text-xs text-slate-400">ưu tiên cao nhất</span>
+                  </div>
+                  <Link
+                    href="/reports"
+                    className="mt-1 inline-flex items-center gap-1 text-[11px] text-brand hover:underline font-medium"
+                  >
+                    Mở Báo cáo Toàn diện <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </div>
+              </div>
+
+              {/* 2 Khối Lớn: Danh mục Sách Trọng điểm & Điểm nóng Nhiệm vụ */}
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+                {/* Bảng Danh mục Sách & Dự án Trọng điểm (2 Cột) */}
+                <div className="xl:col-span-2 rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4 space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-[#f0f0f0] dark:border-[#2a2a2a]">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-brand" />
+                      <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                        Danh mục Dự án Xuất bản Sách Trọng điểm
+                      </h2>
+                    </div>
+                    <Link
+                      href="/projects"
+                      className="text-xs text-brand hover:underline flex items-center gap-1 font-medium"
+                    >
+                      Xem tất cả <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </div>
+
+                  <div className="divide-y divide-[#f0f0f0] dark:divide-[#2a2a2a] overflow-x-auto">
+                    {executiveStats.projectsSummary.length === 0 ? (
+                      <p className="py-6 text-center text-xs text-slate-400">
+                        Chưa có dự án nào trong hệ thống.
+                      </p>
+                    ) : (
+                      executiveStats.projectsSummary.map((p) => (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between py-2.5 px-1 hover:bg-slate-50 dark:hover:bg-[#242424] rounded-md transition"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 pr-3">
+                            <span
+                              className="h-3 w-3 rounded-full shrink-0"
+                              style={{ backgroundColor: p.color || "#F26522" }}
+                            />
+                            <div className="min-w-0">
+                              <Link
+                                href={`/projects/${p.id}`}
+                                className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100 hover:text-brand block"
+                              >
+                                [{p.code}] {p.name}
+                              </Link>
+                              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                                <span>{p.totalTasks} công việc</span>
+                                {p.overdueTasks > 0 && (
+                                  <span className="text-red-500 font-medium">
+                                    • {p.overdueTasks} việc quá hạn
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4 shrink-0">
+                            <div className="w-28 text-right">
+                              <div className="flex items-center justify-between text-[11px] font-mono mb-1">
+                                <span className="text-slate-400">Tiến độ</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">
+                                  {p.completionRate}%
+                                </span>
+                              </div>
+                              <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-[#303030] overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-brand transition-all"
+                                  style={{ width: `${p.completionRate}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            <Link
+                              href={`/projects/${p.id}`}
+                              className="rounded border border-[#e0e0e0] dark:border-[#333333] px-2 py-1 text-[11px] text-slate-600 dark:text-slate-300 hover:border-brand hover:text-brand transition"
+                            >
+                              Mở
+                            </Link>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Khối Điểm nóng & Nhiệm vụ Khẩn cấp Toàn công ty (1 Cột) */}
+                <div className="rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] p-4 space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-[#f0f0f0] dark:border-[#2a2a2a]">
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-amber-500" />
+                      <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                        Nhiệm vụ Khẩn cấp Toàn công ty
+                      </h2>
+                    </div>
+                  </div>
+
+                  {executiveStats.urgentTasks.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-slate-400">
+                      <CheckCircle2 className="mx-auto h-6 w-6 text-emerald-500 mb-1" />
+                      Không có công việc khẩn cấp nào tồn đọng!
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {executiveStats.urgentTasks.map((t) => (
+                        <div
+                          key={t.id}
+                          onClick={() =>
+                            setActiveDrawerTask({
+                              taskId: t.id,
+                              projectId: t.project_id,
+                            })
+                          }
+                          className="rounded-lg border border-[#f0f0f0] dark:border-[#2a2a2a] p-2.5 hover:border-brand/50 hover:bg-slate-50 dark:hover:bg-[#252525] transition cursor-pointer"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100 hover:text-brand">
+                              {t.title}
+                            </span>
+                            <span className="shrink-0 rounded px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400">
+                              {t.priority}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between text-[11px] text-slate-400">
+                            <span className="truncate">
+                              {t.project ? `[${t.project.code}]` : ""}
+                            </span>
+                            <span className="font-mono text-amber-600 dark:text-amber-400">
+                              {t.due_date ? formatDateVi(t.due_date) : "Không hạn"}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-[#f0f0f0] dark:border-[#2a2a2a]">
+                    <Link
+                      href="/reports?tab=executive"
+                      className="w-full flex items-center justify-center gap-1.5 rounded-md bg-brand-soft dark:bg-brand-soft-dark py-2 text-xs font-semibold text-brand hover:opacity-90 transition"
+                    >
+                      <BarChart3 className="h-3.5 w-3.5" />
+                      Báo cáo Phân tích Toàn diện
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* 4 Compact Stat Cards (Worklenz HomeStatCards) */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <button
               type="button"
@@ -1270,6 +1675,8 @@ export function HomeDashboard({
           </div>
         </div>
       )}
+    </div>
+  )}
 
       {/* ====================================================================
        * MODE 2: MY TASKS (Worklenz SubSidebar VIEWS + 4 KPI Cards + Dense Table)
@@ -1432,19 +1839,286 @@ export function HomeDashboard({
 
 
       {/* ====================================================================
-       * MODE 3: DELEGATED BY ME (Full-width Assigned by me)
+       * MODE 3: DELEGATED BY ME & TEAM WORKLOAD (Worklenz Delegated / Manager View)
        * ==================================================================== */}
       {activeView === "delegated" && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#e8e8e8] dark:border-[#303030]">
             <div className="flex items-center gap-2">
               <Send className="h-4 w-4 text-brand" />
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Công việc tôi đã giao cho đồng nghiệp ({assignedByMeTasks.length})
+                Quản lý Công việc đã giao ({assignedByMeTasks.length})
               </h2>
             </div>
+
+            {/* 3 Sub-tabs: List | Workload Balancing | Review Queue */}
+            <div className="inline-flex items-center rounded-lg border border-[#e0e0e0] dark:border-[#333333] bg-[#fafafa] dark:bg-[#1a1a1a] p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setDelegatedSubTab("list")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition cursor-pointer",
+                  delegatedSubTab === "list"
+                    ? "bg-brand text-white shadow-xs font-semibold"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                )}
+              >
+                <CheckSquare className="h-3.5 w-3.5" />
+                <span>Danh sách chi tiết</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDelegatedSubTab("workload")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition cursor-pointer",
+                  delegatedSubTab === "workload"
+                    ? "bg-brand text-white shadow-xs font-semibold"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                )}
+              >
+                <Users2 className="h-3.5 w-3.5" />
+                <span>Cân bằng tải ({workloadByAssignee.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDelegatedSubTab("review")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition cursor-pointer",
+                  delegatedSubTab === "review"
+                    ? "bg-brand text-white shadow-xs font-semibold"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                )}
+              >
+                <FileCheck2 className="h-3.5 w-3.5" />
+                <span>Chờ nghiệm thu</span>
+                {reviewQueueTasks.length > 0 && (
+                  <span
+                    className={cn(
+                      "ml-0.5 rounded-full px-1.5 py-0.2 text-[10px] font-bold",
+                      delegatedSubTab === "review"
+                        ? "bg-white text-brand"
+                        : "bg-brand text-white"
+                    )}
+                  >
+                    {reviewQueueTasks.length}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
-          {renderDenseTaskTable(true)}
+
+          {/* SubTab 1: Dense Task Table */}
+          {delegatedSubTab === "list" && renderDenseTaskTable(true)}
+
+          {/* SubTab 2: Team Workload Balancing Cards */}
+          {delegatedSubTab === "workload" && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Thống kê tải công việc theo từng nhân viên được giao việc. Cảnh báo khi nhân sự gánh từ 4 việc chưa xong.
+              </p>
+
+              {workloadByAssignee.length === 0 ? (
+                <div className="py-12 text-center rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] text-slate-400 text-xs">
+                  Chưa có phân công việc nào cho nhân sự.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {workloadByAssignee.map(({ profile: person, total, open, overdue, completed, tasks: pTasks }) => {
+                    const isOverloaded = open >= 4;
+                    const isLight = open === 0;
+
+                    return (
+                      <div
+                        key={person.id}
+                        className={cn(
+                          "rounded-[8px] border bg-white dark:bg-[#1f1f1f] p-4 space-y-3 transition",
+                          isOverloaded
+                            ? "border-red-300 dark:border-red-900/60 shadow-2xs"
+                            : "border-[#e8e8e8] dark:border-[#303030]"
+                        )}
+                      >
+                        {/* Header: Avatar, Name, Job title, Status badge */}
+                        <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[#f0f0f0] dark:border-[#2a2a2a]">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {person.avatar_url ? (
+                              <img
+                                src={person.avatar_url}
+                                alt={person.full_name}
+                                className="h-8 w-8 rounded-full object-cover shrink-0"
+                              />
+                            ) : (
+                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white shrink-0">
+                                {getInitials(person.full_name)}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">
+                                {person.full_name}
+                              </p>
+                              <p className="truncate text-[11px] text-slate-400">
+                                {person.job_title || person.email}
+                              </p>
+                            </div>
+                          </div>
+
+                          <span
+                            className={cn(
+                              "shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                              isOverloaded
+                                ? "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400"
+                                : isLight
+                                ? "bg-slate-100 text-slate-600 dark:bg-[#2b2b2b] dark:text-slate-400"
+                                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400"
+                            )}
+                          >
+                            {isOverloaded
+                              ? "⚠️ Quá tải"
+                              : isLight
+                              ? "Rảnh việc"
+                              : "Tải ổn định"}
+                          </span>
+                        </div>
+
+                        {/* Numbers grid */}
+                        <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                          <div className="rounded bg-slate-50 dark:bg-[#252525] p-1.5">
+                            <span className="text-slate-400 block text-[10px]">Đang làm</span>
+                            <span className="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">
+                              {open}
+                            </span>
+                          </div>
+                          <div className="rounded bg-slate-50 dark:bg-[#252525] p-1.5">
+                            <span className="text-slate-400 block text-[10px]">Quá hạn</span>
+                            <span
+                              className={cn(
+                                "font-mono text-sm font-bold",
+                                overdue > 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "text-slate-800 dark:text-slate-200"
+                              )}
+                            >
+                              {overdue}
+                            </span>
+                          </div>
+                          <div className="rounded bg-slate-50 dark:bg-[#252525] p-1.5">
+                            <span className="text-slate-400 block text-[10px]">Đã xong</span>
+                            <span className="font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                              {completed}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Recent Tasks */}
+                        <div className="space-y-1.5 pt-1">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            Việc gần nhất:
+                          </p>
+                          {pTasks.slice(0, 3).map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() =>
+                                setActiveDrawerTask({
+                                  taskId: t.id,
+                                  projectId: t.project_id,
+                                })
+                              }
+                              className="w-full flex items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs hover:bg-slate-50 dark:hover:bg-[#252525] transition cursor-pointer"
+                            >
+                              <span className="truncate text-slate-700 dark:text-slate-300">
+                                {t.title}
+                              </span>
+                              <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                                {t.due_date ? formatDateVi(t.due_date) : "—"}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SubTab 3: Review Queue */}
+          {delegatedSubTab === "review" && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Các đầu việc nhân viên báo đã hoàn thành hoặc gửi yêu cầu nghiệm thu cần bạn kiểm tra và xác nhận.
+              </p>
+
+              {reviewQueueTasks.length === 0 ? (
+                <div className="py-12 text-center rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f] text-slate-400 text-xs">
+                  <CheckCircle2 className="mx-auto h-7 w-7 text-emerald-500 mb-1" />
+                  Hàng chờ nghiệm thu đang trống. Toàn bộ công việc đã được xử lý!
+                </div>
+              ) : (
+                <div className="divide-y divide-[#e8e8e8] dark:divide-[#303030] rounded-[8px] border border-[#e8e8e8] dark:border-[#303030] bg-white dark:bg-[#1f1f1f]">
+                  {reviewQueueTasks.map((t) => (
+                    <div
+                      key={t.id}
+                      className="flex items-center justify-between p-3.5 hover:bg-slate-50/70 dark:hover:bg-[#252525] transition"
+                    >
+                      <div className="min-w-0 pr-3 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">
+                            {t.title}
+                          </span>
+                          <span
+                            className={cn(
+                              "rounded px-2 py-0.2 text-[10px] font-bold uppercase tracking-wider",
+                              t.review_status === "pending_review"
+                                ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
+                                : "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400"
+                            )}
+                          >
+                            {t.review_status === "pending_review"
+                              ? "Yêu cầu nghiệm thu"
+                              : "Đã làm xong"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                          {t.project && (
+                            <span className="font-semibold text-slate-600 dark:text-slate-300">
+                              [{t.project.code}] {t.project.name}
+                            </span>
+                          )}
+                          <span>•</span>
+                          <span>
+                            Người làm:{" "}
+                            {(t.assignees ?? []).map((a) => a.full_name).join(", ") ||
+                              "Chưa gán"}
+                          </span>
+                          {t.due_date && (
+                            <>
+                              <span>•</span>
+                              <span>Hạn: {formatDateVi(t.due_date)}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveDrawerTask({
+                            taskId: t.id,
+                            projectId: t.project_id,
+                          })
+                        }
+                        className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-brand-hover transition cursor-pointer shrink-0"
+                      >
+                        Mở nghiệm thu
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

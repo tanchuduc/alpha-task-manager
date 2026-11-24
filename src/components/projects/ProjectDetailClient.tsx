@@ -53,6 +53,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   getProjectPermissionsMap,
   isProjectPrivilegedUser,
+  isTeamLeadOrManager,
   shouldRestrictTasksToAssignee,
 } from "@/lib/permissions";
 import { logTaskActivity } from "@/lib/activity-logger";
@@ -1340,8 +1341,7 @@ export default function ProjectDetailClient({
       if (taskPhase?.assignee_id) {
         const isPhaseOwnerOrAdmin =
           currentUser.id === taskPhase.assignee_id ||
-          currentUser.role === "admin" ||
-          currentUser.role === "manager" ||
+          isTeamLeadOrManager(currentUser) ||
           project.project_manager_id === currentUser.id;
         if (!isPhaseOwnerOrAdmin) {
           const ownerName =

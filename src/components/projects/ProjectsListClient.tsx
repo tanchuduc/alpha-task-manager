@@ -24,7 +24,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { hasSystemPermission, SYSTEM_PERMISSIONS } from "@/lib/permissions";
+import {
+  hasSystemPermission,
+  isDirectorOrAdmin,
+  SYSTEM_PERMISSIONS,
+} from "@/lib/permissions";
 import {
   cn,
   formatDateVi,
@@ -183,7 +187,7 @@ export default function ProjectsListClient({
   );
 
   function canEditProjectSettings(proj: Project): boolean {
-    if (currentUser.role === "admin") return true;
+    if (isDirectorOrAdmin(currentUser)) return true;
     if (proj.created_by === currentUser.id) return true;
     if (proj.project_manager_id === currentUser.id) return true;
     return hasSystemPermission(currentUser, SYSTEM_PERMISSIONS.MANAGE_SETTINGS);

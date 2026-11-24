@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn, getInitials, formatDateVi } from "@/lib/utils";
+import { isTeamLeadOrManager } from "@/lib/permissions";
 import type {
   Project,
   Profile,
@@ -1040,8 +1041,7 @@ export function ProjectUpdatesTab({
 
             const isAuthorOrAdmin =
               currentUser.id === update.author_id ||
-              currentUser.role === "admin" ||
-              currentUser.role === "manager";
+              isTeamLeadOrManager(currentUser);
 
             // Group reactions by emoji
             const reactionCounts = AVAILABLE_EMOJIS.map(({ emoji, label }) => {

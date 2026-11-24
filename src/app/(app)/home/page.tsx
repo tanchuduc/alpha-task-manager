@@ -1,8 +1,8 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { HomeDashboard } from "@/components/home/HomeDashboard";
-import { canUserViewProject } from "@/lib/permissions";
+import { HomeDashboard, type ExecutiveStats } from "@/components/home/HomeDashboard";
+import { canUserViewProject, isDirectorOrAdmin } from "@/lib/permissions";
 import type {
   PersonalTodo,
   Profile,
@@ -152,6 +152,129 @@ export default async function HomePage() {
     });
   }
 
+  // Nếu người dùng là Ban Giám Đốc (BOD) hoặc Quản trị viên (Admin), tải thêm dữ liệu điều hành toàn công ty
+  const isExecutive = isDirectorOrAdmin(profile);
+  let executiveStats: ExecutiveStats | undefined;
+
+  if (isExecutive) {
+    const [allCompanyTasksRes, urgentTasksRes] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("id, project_id, completed_at, due_date, status:task_statuses(category)")
+        .is("parent_id", null),
+      supabase
+        .from("tasks")
+        .select(`
+          *,
+          status:task_statuses(*),
+          project:projects(id, name, code, color),
+          task_assignees(
+            user_id,
+            profile:profiles!task_assignees_user_id_fkey(id, full_name, email, avatar_url, job_title)
+          )
+        `)
+        .in("priority", ["urgent", "high"])
+        .is("completed_at", null)
+        .order("due_date", { ascending: true, nullsFirst: false })
+        .limit(6),
+    ]);
+
+    type CompanyTaskRow = {
+      id: string;
+      project_id: string;
+      completed_at: string | null;
+      due_date: string | null;
+      status: { category: string } | { category: string }[] | null;
+    };
+
+    const companyTasks = (allCompanyTasksRes.data ?? []) as CompanyTaskRow[];
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const projectTaskMap = new Map<
+      string,
+      { total: number; completed: number; overdue: number }
+    >();
+    const totalCompanyTasks = companyTasks.length;
+    let completedCompanyTasks = 0;
+    let overdueCompanyTasks = 0;
+
+    for (const ct of companyTasks) {
+      const statusCat = Array.isArray(ct.status)
+        ? ct.status[0]?.category
+        : ct.status?.category;
+      const isDone = Boolean(ct.completed_at) || statusCat === "done";
+      const isOverdue =
+        !isDone && Boolean(ct.due_date && ct.due_date < todayStr);
+
+      if (isDone) completedCompanyTasks += 1;
+      if (isOverdue) overdueCompanyTasks += 1;
+
+      const pEntry = projectTaskMap.get(ct.project_id) ?? {
+        total: 0,
+        completed: 0,
+        overdue: 0,
+      };
+      pEntry.total += 1;
+      if (isDone) pEntry.completed += 1;
+      if (isOverdue) pEntry.overdue += 1;
+      projectTaskMap.set(ct.project_id, pEntry);
+    }
+
+    const projectsSummary = visibleProjects.map((p) => {
+      const pStats = projectTaskMap.get(p.id) ?? {
+        total: 0,
+        completed: 0,
+        overdue: 0,
+      };
+      const rate =
+        pStats.total > 0
+          ? Math.round((pStats.completed / pStats.total) * 100)
+          : 0;
+      return {
+        id: p.id,
+        name: p.name,
+        code: p.code,
+        color: p.color,
+        totalTasks: pStats.total,
+        completedTasks: pStats.completed,
+        overdueTasks: pStats.overdue,
+        completionRate: rate,
+      };
+    });
+
+    type RawUrgent = Omit<Task, "status" | "project" | "assignees"> & {
+      status: Task["status"] | Array<NonNullable<Task["status"]>>;
+      project: Task["project"] | Array<NonNullable<Task["project"]>>;
+      task_assignees?: Array<{
+        user_id: string;
+        profile?: Profile | Profile[];
+      }>;
+    };
+    const rawUrgent = (urgentTasksRes.data ?? []) as unknown as RawUrgent[];
+    const urgentTasks: Task[] = rawUrgent.map((t) => {
+      const assignees: Profile[] = (t.task_assignees ?? [])
+        .map((ta) => (Array.isArray(ta.profile) ? ta.profile[0] : ta.profile))
+        .filter((p): p is Profile => Boolean(p));
+      return {
+        ...t,
+        status: Array.isArray(t.status) ? t.status[0] ?? null : t.status,
+        project: Array.isArray(t.project) ? t.project[0] ?? null : t.project,
+        assignees,
+      };
+    });
+
+    executiveStats = {
+      totalProjects: visibleProjects.length,
+      activeProjects: visibleProjects.filter((p) => p.status === "active")
+        .length,
+      totalCompanyTasks,
+      completedCompanyTasks,
+      overdueCompanyTasks,
+      urgentTasks,
+      projectsSummary,
+    };
+  }
+
   return (
     <Suspense fallback={null}>
       <HomeDashboard
@@ -162,6 +285,7 @@ export default async function HomePage() {
         projects={visibleProjects}
         allProfiles={(allProfilesData as Profile[]) ?? []}
         allStatuses={(allStatusesData as TaskStatus[]) ?? []}
+        executiveStats={executiveStats}
       />
     </Suspense>
   );

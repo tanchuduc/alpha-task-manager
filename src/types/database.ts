@@ -15,6 +15,7 @@ export type WebhookProvider = "telegram" | "lark";
 export type CustomFieldType = "text" | "number" | "dropdown" | "date" | "people";
 export type DependencyType = "blocked_by" | "blocking" | "relates_to";
 export type PhaseStatus = "pending" | "in_progress" | "completed";
+export type TaskReviewStatus = "none" | "pending_review" | "approved" | "rejected";
 export type DeliveryConfidence = "on_track" | "at_risk" | "off_track";
 export type ProgressMode = "auto" | "manual";
 
@@ -201,6 +202,10 @@ export interface Task {
   is_recurring?: boolean;
   recurring_rule_id?: string | null;
   recurring_source_task_id?: string | null;
+  review_status?: TaskReviewStatus | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  reviewer?: Profile | null;
   // Joined optional fields
   status?: TaskStatus | null;
   phase?: ProjectPhase | null;
