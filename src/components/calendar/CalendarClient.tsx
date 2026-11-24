@@ -1943,7 +1943,7 @@ export default function CalendarClient({
             currentUser={profile}
             taskList={filteredTasks.map((t) => ({
               id: t.id,
-              projectId: t.project_id,
+              projectId: t.project_id ?? undefined,
             }))}
             currentIndex={currentTaskIdx >= 0 ? currentTaskIdx : undefined}
             onClose={() => setActiveDrawerTask(null)}
