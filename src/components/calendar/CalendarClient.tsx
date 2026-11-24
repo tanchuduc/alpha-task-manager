@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Calendar as CalendarIcon,
@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   Circle,
   Flag,
+  UserPlus,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -128,21 +129,24 @@ export default function CalendarClient({
   // Sidebar visibility toggle (Lark-like collapsible left pane)
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Filters state
+  // Streamlined Feeds (Sidebar Toggles)
   const [showMyTasks, setShowMyTasks] = useState(true);
   const [showPersonalTodos, setShowPersonalTodos] = useState(true);
-  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(
-    () => new Set(projects.map((p) => p.id))
-  );
-  const [selectedDeptIds, setSelectedDeptIds] = useState<Set<string>>(
-    () => new Set()
-  );
+  const [showTeamTasks, setShowTeamTasks] = useState(true);
+
+  // Top Bar Dropdown Filters
+  const [selectedDeptId, setSelectedDeptId] = useState<string>("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Search-on-demand for Colleagues
   const [selectedColleagueIds, setSelectedColleagueIds] = useState<Set<string>>(
     () => new Set()
   );
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [searchQuery, setSearchQuery] = useState("");
   const [colleagueSearch, setColleagueSearch] = useState("");
+  const [colleagueDropdownOpen, setColleagueDropdownOpen] = useState(false);
+  const colleagueSearchRef = useRef<HTMLDivElement>(null);
 
   const todayKey = useMemo(() => toDateKey(new Date()), []);
 
@@ -150,6 +154,36 @@ export default function CalendarClient({
   const isCurrentToday = useMemo(() => {
     return toDateKey(currentDate) === todayKey;
   }, [currentDate, todayKey]);
+
+  // Handle outside click for colleague search dropdown
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        colleagueSearchRef.current &&
+        !colleagueSearchRef.current.contains(e.target as Node)
+      ) {
+        setColleagueDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Filter projects by selected department
+  const filteredProjects = useMemo(() => {
+    if (!selectedDeptId) return projects;
+    return projects.filter((p) => p.department_id === selectedDeptId);
+  }, [projects, selectedDeptId]);
+
+  // Reset selected project if it no longer belongs to chosen department
+  useEffect(() => {
+    if (selectedDeptId && selectedProjectId) {
+      const exists = filteredProjects.some((p) => p.id === selectedProjectId);
+      if (!exists) {
+        setSelectedProjectId("");
+      }
+    }
+  }, [selectedDeptId, selectedProjectId, filteredProjects]);
 
   // Navigate functions
   const handleGoToday = useCallback(() => {
@@ -203,53 +237,45 @@ export default function CalendarClient({
     });
   }, []);
 
-  // Toggle Project selection
-  const handleToggleProject = useCallback((projectId: string) => {
-    setSelectedProjectIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-      }
-      return next;
-    });
+  // Colleagues autocomplete results (search-on-demand)
+  const colleagueSearchResults = useMemo(() => {
+    if (!colleagueSearch.trim()) return [];
+    const q = colleagueSearch.toLowerCase();
+    return allProfiles
+      .filter((p) => {
+        if (p.id === profile.id) return false;
+        if (selectedColleagueIds.has(p.id)) return false;
+        return (
+          p.full_name.toLowerCase().includes(q) ||
+          p.email.toLowerCase().includes(q) ||
+          (p.job_title && p.job_title.toLowerCase().includes(q))
+        );
+      })
+      .slice(0, 6);
+  }, [allProfiles, profile.id, selectedColleagueIds, colleagueSearch]);
+
+  // List of currently selected colleagues
+  const selectedColleaguesList = useMemo(() => {
+    return allProfiles.filter((p) => selectedColleagueIds.has(p.id));
+  }, [allProfiles, selectedColleagueIds]);
+
+  const handleAddColleague = useCallback((id: string) => {
+    setSelectedColleagueIds((prev) => new Set(prev).add(id));
+    setColleagueSearch("");
+    setColleagueDropdownOpen(false);
   }, []);
 
-  const handleSelectAllProjects = useCallback(() => {
-    setSelectedProjectIds(new Set(projects.map((p) => p.id)));
-  }, [projects]);
-
-  const handleDeselectAllProjects = useCallback(() => {
-    setSelectedProjectIds(new Set());
-  }, []);
-
-  // Toggle Colleague selection
-  const handleToggleColleague = useCallback((userId: string) => {
+  const handleRemoveColleague = useCallback((id: string) => {
     setSelectedColleagueIds((prev) => {
       const next = new Set(prev);
-      if (next.has(userId)) {
-        next.delete(userId);
-      } else {
-        next.add(userId);
-      }
+      next.delete(id);
       return next;
     });
   }, []);
 
-  // Filter Colleagues list
-  const filteredColleagues = useMemo(() => {
-    return allProfiles.filter((p) => {
-      if (p.id === profile.id) return false;
-      if (!colleagueSearch.trim()) return true;
-      const q = colleagueSearch.toLowerCase();
-      return (
-        p.full_name.toLowerCase().includes(q) ||
-        p.email.toLowerCase().includes(q) ||
-        (p.job_title && p.job_title.toLowerCase().includes(q))
-      );
-    });
-  }, [allProfiles, profile.id, colleagueSearch]);
+  const handleClearAllColleagues = useCallback(() => {
+    setSelectedColleagueIds(new Set());
+  }, []);
 
   // Multi-layer filter logic
   const filteredTasks = useMemo(() => {
@@ -271,33 +297,30 @@ export default function CalendarClient({
         if (isDone || !isOverdue(t.due_date, t.completed_at)) return false;
       }
 
-      // 3. Department Filter (if selected)
-      if (selectedDeptIds.size > 0) {
+      // 3. Department Filter (Top Bar)
+      if (selectedDeptId) {
         const proj = projects.find((p) => p.id === t.project_id);
-        if (!proj?.department_id || !selectedDeptIds.has(proj.department_id)) {
+        if (!proj?.department_id || proj.department_id !== selectedDeptId) {
           return false;
         }
       }
 
-      // 4. Layer Matching (Personal, Project, Colleague)
+      // 4. Project Filter (Top Bar)
+      if (selectedProjectId && t.project_id !== selectedProjectId) {
+        return false;
+      }
+
+      // 5. User Layer Matching
       const isAssignedToMe = (t.assignees ?? []).some(
         (a) => a.id === profile.id
       );
-      const isProjectSelected = Boolean(
-        t.project_id && selectedProjectIds.has(t.project_id)
-      );
-      const isAssignedToSelectedColleague =
+      const isAssignedToFollowed =
         selectedColleagueIds.size > 0 &&
         (t.assignees ?? []).some((a) => selectedColleagueIds.has(a.id));
 
-      // Case A: Assigned to me
       if (isAssignedToMe && showMyTasks) return true;
-
-      // Case B: In selected project
-      if (isProjectSelected) return true;
-
-      // Case C: Assigned to selected colleague
-      if (isAssignedToSelectedColleague) return true;
+      if (isAssignedToFollowed) return true;
+      if (showTeamTasks) return true;
 
       return false;
     });
@@ -305,17 +328,21 @@ export default function CalendarClient({
     tasks,
     searchQuery,
     statusFilter,
-    selectedDeptIds,
+    selectedDeptId,
+    selectedProjectId,
     projects,
     profile.id,
     showMyTasks,
-    selectedProjectIds,
+    showTeamTasks,
     selectedColleagueIds,
   ]);
 
   // Filtered Personal Todos
   const filteredTodos = useMemo(() => {
     if (!showPersonalTodos) return [];
+    // If a specific project or department is picked, hide personal todos or keep only if no project filter
+    if (selectedProjectId || selectedDeptId) return [];
+
     return todos.filter((td) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -328,7 +355,7 @@ export default function CalendarClient({
       }
       return true;
     });
-  }, [todos, showPersonalTodos, searchQuery, statusFilter]);
+  }, [todos, showPersonalTodos, selectedProjectId, selectedDeptId, searchQuery, statusFilter]);
 
   // Group tasks by Date (YYYY-MM-DD)
   const tasksByDate = useMemo(() => {
@@ -605,8 +632,7 @@ export default function CalendarClient({
       const targetCategory = isDone ? "todo" : "done";
       const targetStatus = allStatuses.find(
         (s) =>
-          (task.project_id ? s.project_id === task.project_id : !s.project_id) &&
-          s.category === targetCategory
+          s.project_id === task.project_id && s.category === targetCategory
       );
 
       const nextCompletedAt = isDone ? null : new Date().toISOString();
@@ -693,25 +719,25 @@ export default function CalendarClient({
   return (
     <div className="flex-1 flex overflow-hidden bg-[#f8f9fa] dark:bg-[#121212] select-none">
       {/* ====================================================================
-       * 1. LEFT SIDEBAR: LARK-LIKE MULTI-LAYER CHECKLIST & MINI PICKER
+       * 1. LEFT SIDEBAR: ULTRA-CLEAN STREAMLINED CALENDAR CONTROLS
        * ==================================================================== */}
       <aside
         className={cn(
           "shrink-0 border-r border-[#e8e8e8] dark:border-[#2b2b2b] bg-white dark:bg-[#181818] transition-all duration-200 flex flex-col z-20",
-          sidebarOpen ? "w-[290px] xl:w-[320px]" : "w-0 overflow-hidden border-none"
+          sidebarOpen ? "w-[270px] xl:w-[280px]" : "w-0 overflow-hidden border-none"
         )}
       >
         <div className="p-3.5 border-b border-[#f0f0f0] dark:border-[#262626] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CalendarIcon className="h-4 w-4 text-brand" />
             <span className="text-sm font-bold text-slate-800 dark:text-slate-100">
-              Bộ lọc & Danh mục Lịch
+              Bộ lọc Lịch
             </span>
           </div>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
-            title="Thu gọn bảng điều khiển"
+            title="Thu gọn thanh bên"
             className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
           >
             <PanelLeftClose className="h-4 w-4" />
@@ -791,16 +817,15 @@ export default function CalendarClient({
             </div>
           </div>
 
-          {/* B. LAYER 1: LỊCH CÁ NHÂN (PERSONAL LAYER) */}
+          {/* B. NGUỒN HIỂN THỊ (CALENDAR FEEDS - ULTRA CLEAN) */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Lịch Cá Nhân
-              </span>
-            </div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Nguồn Hiển Thị
+            </span>
 
-            <label className="flex items-center justify-between p-1.5 rounded-[6px] hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer transition">
-              <div className="flex items-center gap-2 min-w-0">
+            {/* Feed 1: My tasks */}
+            <label className="flex items-center justify-between p-2 rounded-[6px] hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer transition">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <input
                   type="checkbox"
                   checked={showMyTasks}
@@ -821,8 +846,9 @@ export default function CalendarClient({
               </span>
             </label>
 
-            <label className="flex items-center justify-between p-1.5 rounded-[6px] hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer transition">
-              <div className="flex items-center gap-2 min-w-0">
+            {/* Feed 2: Personal Todos */}
+            <label className="flex items-center justify-between p-2 rounded-[6px] hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer transition">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <input
                   type="checkbox"
                   checked={showPersonalTodos}
@@ -838,180 +864,155 @@ export default function CalendarClient({
                 {todos.length}
               </span>
             </label>
-          </div>
 
-          {/* C. LAYER 2: LỊCH ĐỘI NHÓM / DỰ ÁN (PROJECTS LAYER) */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Lịch Dự Án ({selectedProjectIds.size}/{projects.length})
-              </span>
-              <div className="flex items-center gap-1.5 text-[10px]">
-                <button
-                  type="button"
-                  onClick={handleSelectAllProjects}
-                  className="text-brand hover:underline cursor-pointer"
-                >
-                  Tất cả
-                </button>
-                <span className="text-slate-300 dark:text-slate-600">|</span>
-                <button
-                  type="button"
-                  onClick={handleDeselectAllProjects}
-                  className="text-slate-400 hover:underline cursor-pointer"
-                >
-                  Bỏ chọn
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-0.5 max-h-[170px] overflow-y-auto pr-1">
-              {projects.map((p) => {
-                const isChecked = selectedProjectIds.has(p.id);
-                const count = tasks.filter((t) => t.project_id === p.id).length;
-                return (
-                  <label
-                    key={p.id}
-                    className="flex items-center justify-between p-1.5 rounded-[6px] hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer transition text-xs"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleToggleProject(p.id)}
-                        className="rounded border-slate-300 text-brand focus:ring-brand h-3.5 w-3.5"
-                      />
-                      <span
-                        className="h-2.5 w-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: p.color || "#F47830" }}
-                      />
-                      <span className="truncate text-slate-700 dark:text-slate-300">
-                        <span className="font-semibold text-slate-900 dark:text-slate-100 mr-1">
-                          [{p.code}]
-                        </span>
-                        {p.name}
-                      </span>
-                    </div>
-                    {count > 0 && (
-                      <span className="text-[10px] text-slate-400 shrink-0">
-                        {count}
-                      </span>
-                    )}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* D. LAYER 3: LỊCH PHÒNG BAN (DEPARTMENTS) */}
-          {departments.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                  Phòng Ban
+            {/* Feed 3: All Project & Team Tasks */}
+            <label className="flex items-center justify-between p-2 rounded-[6px] hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer transition">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <input
+                  type="checkbox"
+                  checked={showTeamTasks}
+                  onChange={(e) => setShowTeamTasks(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <span className="h-2.5 w-2.5 rounded-full bg-blue-500 shrink-0" />
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                  Lịch chung Dự án
                 </span>
-                {selectedDeptIds.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDeptIds(new Set())}
-                    className="text-[10px] text-slate-400 hover:text-brand cursor-pointer"
-                  >
-                    Xóa lọc
-                  </button>
-                )}
               </div>
-              <div className="flex flex-wrap gap-1">
-                {departments.map((dept) => {
-                  const active = selectedDeptIds.has(dept.id);
-                  return (
-                    <button
-                      key={dept.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedDeptIds((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(dept.id)) next.delete(dept.id);
-                          else next.add(dept.id);
-                          return next;
-                        });
-                      }}
-                      className={cn(
-                        "px-2 py-1 rounded-[5px] text-[11px] font-medium transition cursor-pointer border",
-                        active
-                          ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 border-transparent shadow-xs"
-                          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200"
-                      )}
-                    >
-                      {dept.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                {tasks.length}
+              </span>
+            </label>
+          </div>
 
-          {/* E. LAYER 4: THEO DÕI ĐỒNG NGHIỆP (FOLLOWING) */}
-          <div className="space-y-2">
+          {/* C. THEO DÕI ĐỒNG NGHIỆP: SEARCH-ON-DEMAND ONLY (LARK / GOOGLE CALENDAR STYLE) */}
+          <div className="space-y-2 pt-2 border-t border-[#f0f0f0] dark:border-[#262626]">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Theo Dõi Đồng Nghiệp ({selectedColleagueIds.size})
+                Theo Dõi Đồng Nghiệp
               </span>
-              {selectedColleagueIds.size > 0 && (
+              {selectedColleaguesList.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setSelectedColleagueIds(new Set())}
-                  className="text-[10px] text-slate-400 hover:text-brand cursor-pointer"
+                  onClick={handleClearAllColleagues}
+                  className="text-[10px] text-slate-400 hover:text-red-500 cursor-pointer"
                 >
-                  Bỏ chọn
+                  Xóa tất cả
                 </button>
               )}
             </div>
 
-            <div className="relative">
-              <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Tìm nhân sự..."
-                value={colleagueSearch}
-                onChange={(e) => setColleagueSearch(e.target.value)}
-                className="w-full pl-7 pr-2 py-1 text-xs rounded-[6px] border border-[#d9d9d9] dark:border-[#333] bg-[#fbfbfb] dark:bg-[#1a1a1a] text-slate-800 dark:text-slate-200 focus:outline-none focus:border-brand"
-              />
+            {/* Search Input with Autocomplete Popover */}
+            <div className="relative" ref={colleagueSearchRef}>
+              <div className="relative flex items-center">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Gõ tên để tìm & thêm..."
+                  value={colleagueSearch}
+                  onFocus={() => setColleagueDropdownOpen(true)}
+                  onChange={(e) => {
+                    setColleagueSearch(e.target.value);
+                    setColleagueDropdownOpen(true);
+                  }}
+                  className="w-full pl-8 pr-7 py-1.5 text-xs rounded-[6px] border border-[#d9d9d9] dark:border-[#333] bg-[#fbfbfb] dark:bg-[#1a1a1a] text-slate-800 dark:text-slate-200 focus:outline-none focus:border-brand"
+                />
+                {colleagueSearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setColleagueSearch("");
+                      setColleagueDropdownOpen(false);
+                    }}
+                    className="absolute right-2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Floating Dropdown Results */}
+              {colleagueDropdownOpen && colleagueSearch.trim().length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-30 rounded-[8px] border border-[#e8e8e8] dark:border-[#333] bg-white dark:bg-[#1c1c1c] shadow-lg overflow-hidden max-h-52 overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
+                  {colleagueSearchResults.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-slate-400">
+                      Không tìm thấy nhân sự nào
+                    </div>
+                  ) : (
+                    <div className="p-1 space-y-0.5">
+                      {colleagueSearchResults.map((user) => (
+                        <button
+                          key={user.id}
+                          type="button"
+                          onClick={() => handleAddColleague(user.id)}
+                          className="w-full flex items-center justify-between p-2 rounded-[6px] hover:bg-slate-100 dark:hover:bg-slate-800 text-left text-xs transition cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="h-6 w-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-700 dark:text-slate-200 shrink-0">
+                              {getInitials(user.full_name)}
+                            </div>
+                            <div className="truncate">
+                              <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                {user.full_name}
+                              </div>
+                              {user.job_title && (
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  {user.job_title}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <Plus className="h-3.5 w-3.5 text-brand shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="space-y-1 max-h-[140px] overflow-y-auto pr-1">
-              {filteredColleagues.slice(0, 15).map((colleague) => {
-                const isSelected = selectedColleagueIds.has(colleague.id);
-                const assignedCount = tasks.filter((t) =>
-                  (t.assignees ?? []).some((a) => a.id === colleague.id)
-                ).length;
+            {/* Selected Colleagues Chips */}
+            <div className="space-y-1.5 pt-1">
+              {selectedColleaguesList.length === 0 ? (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 italic px-1">
+                  Chưa có đồng nghiệp nào được chọn. Gõ tên ở trên để xem thêm lịch của họ.
+                </p>
+              ) : (
+                selectedColleaguesList.map((colleague) => {
+                  const assignedCount = tasks.filter((t) =>
+                    (t.assignees ?? []).some((a) => a.id === colleague.id)
+                  ).length;
 
-                return (
-                  <label
-                    key={colleague.id}
-                    className="flex items-center justify-between p-1 rounded-[6px] hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer text-xs"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => handleToggleColleague(colleague.id)}
-                        className="rounded border-slate-300 text-brand focus:ring-brand h-3.5 w-3.5"
-                      />
-                      <div className="h-5 w-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[9px] font-bold text-slate-700 dark:text-slate-200 shrink-0">
-                        {getInitials(colleague.full_name)}
+                  return (
+                    <div
+                      key={colleague.id}
+                      className="flex items-center justify-between p-1.5 rounded-[6px] bg-slate-50 dark:bg-[#202020] border border-slate-200 dark:border-[#333] text-xs transition"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="h-5 w-5 rounded-full bg-brand-soft text-brand dark:bg-brand-soft-dark flex items-center justify-center text-[9px] font-bold shrink-0">
+                          {getInitials(colleague.full_name)}
+                        </div>
+                        <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                          {colleague.full_name}
+                        </span>
+                        {assignedCount > 0 && (
+                          <span className="text-[10px] text-slate-400 shrink-0">
+                            ({assignedCount})
+                          </span>
+                        )}
                       </div>
-                      <span className="truncate text-slate-700 dark:text-slate-300">
-                        {colleague.full_name}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveColleague(colleague.id)}
+                        title="Bỏ theo dõi lịch"
+                        className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    {assignedCount > 0 && (
-                      <span className="text-[10px] text-slate-400">
-                        {assignedCount} việc
-                      </span>
-                    )}
-                  </label>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -1021,7 +1022,7 @@ export default function CalendarClient({
        * 2. MAIN CALENDAR WORKSPACE
        * ==================================================================== */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-white dark:bg-[#151515]">
-        {/* TOP TOOLBAR: LARK-LIKE TOP CONTROLS */}
+        {/* TOP TOOLBAR: TIDY DROPDOWNS & CONTROLS */}
         <header className="h-[54px] shrink-0 border-b border-[#e8e8e8] dark:border-[#2b2b2b] px-4 flex items-center justify-between gap-3 bg-white dark:bg-[#181818]">
           {/* Left: Sidebar Toggle + Today + Prev/Next + Dynamic Title */}
           <div className="flex items-center gap-2.5 min-w-0">
@@ -1071,14 +1072,56 @@ export default function CalendarClient({
             </h1>
           </div>
 
-          {/* Right: Search + Status Filter + View Switcher (Ngày | Tuần | Tháng) */}
-          <div className="flex items-center gap-2.5">
+          {/* Right: Cascade Dropdowns (Phòng ban -> Dự án) + Status + Search + View Switcher */}
+          <div className="flex items-center gap-2">
+            {/* Department Dropdown */}
+            {departments.length > 0 && (
+              <select
+                value={selectedDeptId}
+                onChange={(e) => setSelectedDeptId(e.target.value)}
+                className="hidden lg:block text-xs rounded-[6px] border border-[#d9d9d9] dark:border-[#383838] bg-white dark:bg-[#202020] px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:border-brand cursor-pointer max-w-[150px] truncate"
+              >
+                <option value="">Tất cả phòng ban</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Project Dropdown */}
+            <select
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="text-xs rounded-[6px] border border-[#d9d9d9] dark:border-[#383838] bg-white dark:bg-[#202020] px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:border-brand cursor-pointer max-w-[170px] truncate"
+            >
+              <option value="">Tất cả dự án ({filteredProjects.length})</option>
+              {filteredProjects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  [{p.code}] {p.name}
+                </option>
+              ))}
+            </select>
+
+            {/* Status Filter Dropdown */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              className="hidden sm:block text-xs rounded-[6px] border border-[#d9d9d9] dark:border-[#383838] bg-white dark:bg-[#202020] px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:border-brand cursor-pointer"
+            >
+              <option value="all">Tất cả trạng thái</option>
+              <option value="in_progress">Đang làm</option>
+              <option value="overdue">Quá hạn</option>
+              <option value="done">Đã hoàn thành</option>
+            </select>
+
             {/* Search Box */}
-            <div className="relative hidden md:block w-48 lg:w-56">
+            <div className="relative hidden xl:block w-44">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Tìm việc, dự án..."
+                placeholder="Tìm việc..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-7 py-1 text-xs rounded-[6px] border border-[#d9d9d9] dark:border-[#383838] bg-[#f9f9f9] dark:bg-[#202020] text-slate-800 dark:text-slate-200 focus:outline-none focus:border-brand"
@@ -1094,19 +1137,7 @@ export default function CalendarClient({
               )}
             </div>
 
-            {/* Status Filter Dropdown */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-              className="text-xs rounded-[6px] border border-[#d9d9d9] dark:border-[#383838] bg-white dark:bg-[#202020] px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:border-brand cursor-pointer"
-            >
-              <option value="all">Tất cả trạng thái</option>
-              <option value="in_progress">Đang làm</option>
-              <option value="overdue">Quá hạn</option>
-              <option value="done">Đã hoàn thành</option>
-            </select>
-
-            {/* LARK-STYLE VIEW SWITCHER: Ngày | Tuần | Tháng */}
+            {/* VIEW SWITCHER: Ngày | Tuần | Tháng */}
             <div className="inline-flex rounded-[6px] p-0.5 bg-slate-100 dark:bg-[#252525] border border-[#e2e2e2] dark:border-[#333]">
               <button
                 type="button"
@@ -1893,22 +1924,51 @@ export default function CalendarClient({
       {activeDrawerTask && (() => {
         const currentTask =
           tasks.find((t) => t.id === activeDrawerTask.taskId) ?? null;
+        const currentTaskIdx = filteredTasks.findIndex(
+          (t) => t.id === activeDrawerTask.taskId
+        );
+        const targetProject = projects.find(
+          (p) => p.id === activeDrawerTask.projectId
+        );
+
         return (
           <TaskDrawer
             taskId={activeDrawerTask.taskId}
-            projectId={activeDrawerTask.projectId}
+            projectId={activeDrawerTask.projectId ?? ""}
+            project={targetProject}
             initialTask={currentTask}
             statuses={drawerProjectStatuses}
             members={allProfiles}
             allProfiles={allProfiles}
             currentUser={profile}
+            taskList={filteredTasks.map((t) => ({
+              id: t.id,
+              projectId: t.project_id,
+            }))}
+            currentIndex={currentTaskIdx >= 0 ? currentTaskIdx : undefined}
             onClose={() => setActiveDrawerTask(null)}
-            onUpdated={() => {
-              // refresh calendar tasks
-            }}
-            onDeleted={(deletedTaskId: string) => {
-              setTasks((prev) => prev.filter((t) => t.id !== deletedTaskId));
+            onUpdated={() => router.refresh()}
+            onDeleted={(deletedId) => {
+              setTasks((prev) => prev.filter((t) => t.id !== deletedId));
               setActiveDrawerTask(null);
+            }}
+            onOpenTask={(nextTaskId) => {
+              const targetTask = tasks.find((t) => t.id === nextTaskId);
+              if (targetTask) {
+                setActiveDrawerTask({
+                  taskId: targetTask.id,
+                  projectId: targetTask.project_id,
+                });
+              }
+            }}
+            onNavigateTask={(nextTaskId) => {
+              const targetTask = tasks.find((t) => t.id === nextTaskId);
+              if (targetTask) {
+                setActiveDrawerTask({
+                  taskId: targetTask.id,
+                  projectId: targetTask.project_id,
+                });
+              }
             }}
           />
         );
