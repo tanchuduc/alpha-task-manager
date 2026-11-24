@@ -45,6 +45,7 @@ interface AppShellProps {
 
 const TOP_NAV_ITEMS = [
   { href: "/home", key: "home", label: "Trang chủ", icon: Home },
+  { href: "/calendar", key: "calendar", label: "Lịch", icon: Calendar },
   { href: "/projects", key: "projects", label: "Dự án", icon: FolderKanban },
   { href: "/reports", key: "reports", label: "Báo cáo", icon: BarChart3 },
 ];
@@ -298,6 +299,8 @@ export function AppShell({
         onSelect: (key: string) => {
           if (key === "inbox") {
             router.push("/chat");
+          } else if (key === "calendar") {
+            router.push("/calendar");
           } else {
             router.push(`/home?view=${key}`);
           }
@@ -364,6 +367,9 @@ export function AppShell({
           pathname.startsWith("/chat") ||
           pathname === "/inbox"
         );
+      }
+      if (itemKey === "calendar") {
+        return pathname === "/calendar" || pathname.startsWith("/calendar/");
       }
       if (itemKey === "projects") {
         return pathname === "/projects" || pathname.startsWith("/projects/");

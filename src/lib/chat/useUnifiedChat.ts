@@ -1467,6 +1467,55 @@ export function useUnifiedChat({
     [currentUser.id, refreshConversations, activeConversationId]
   );
 
+  // 4. Forward Message to one or more conversations (Lark Forwarding)
+  const forwardMessage = useCallback(
+    async (
+      sourceMessage: UnifiedMessageItem,
+      targetConvIds: string[],
+      additionalComment?: string
+    ) => {
+      for (const targetId of targetConvIds) {
+        const commentPrefix = additionalComment
+          ? `${additionalComment}\n\n`
+          : "";
+        const forwardContent =
+          `${commentPrefix}↪️ [Chuyển tiếp từ ${sourceMessage.senderName}]:\n${sourceMessage.content || ""}`.trim();
+
+        if (targetId.startsWith("dm:")) {
+          const partnerId = targetId.replace("dm:", "");
+          await supabase.from("direct_messages").insert({
+            sender_id: currentUser.id,
+            receiver_id: partnerId,
+            content: forwardContent,
+            attachment_url: sourceMessage.attachmentUrl || null,
+            attachment_name: sourceMessage.attachmentName || null,
+            is_read: false,
+          });
+        } else if (targetId.startsWith("proj:")) {
+          const projectId = targetId.replace("proj:", "");
+          await supabase.from("project_messages").insert({
+            project_id: projectId,
+            author_id: currentUser.id,
+            content: forwardContent,
+            attachment_url: sourceMessage.attachmentUrl || null,
+            attachment_name: sourceMessage.attachmentName || null,
+          });
+        } else {
+          // Group
+          await supabase.from("messages").insert({
+            conversation_id: targetId,
+            sender_id: currentUser.id,
+            content: forwardContent,
+            attachment_url: sourceMessage.attachmentUrl || null,
+            attachment_name: sourceMessage.attachmentName || null,
+          });
+        }
+      }
+      await refreshConversations();
+    },
+    [currentUser.id, supabase, refreshConversations]
+  );
+
   // Filtered & Sorted conversations
   const filteredConversations = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -1568,6 +1617,7 @@ export function useUnifiedChat({
     createGroup,
     addMembersToGroup,
     leaveGroup,
+    forwardMessage,
     requestBrowserNotificationPermission,
     broadcastTyping,
     refreshConversations,

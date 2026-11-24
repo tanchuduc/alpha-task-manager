@@ -2134,28 +2134,38 @@ export function HomeDashboard({
                 Lịch công việc — Tháng {calMonth + 1}/{calYear}
               </span>
             </div>
-            <div className="inline-flex items-center rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] overflow-hidden">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handlePrevMonth}
-                className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                onClick={() => router.push("/calendar")}
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-[6px] bg-brand text-white hover:bg-brand/90 transition shadow-2xs cursor-pointer"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <span>Mở Lịch chuyên sâu</span>
+                <ArrowRight className="h-3.5 w-3.5" />
               </button>
-              <button
-                type="button"
-                onClick={handleGoToday}
-                className="border-x border-[#d9d9d9] dark:border-[#3a3a3a] px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                Hôm nay
-              </button>
-              <button
-                type="button"
-                onClick={handleNextMonth}
-                className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+              <div className="inline-flex items-center rounded-[6px] border border-[#d9d9d9] dark:border-[#3a3a3a] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={handlePrevMonth}
+                  className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGoToday}
+                  className="border-x border-[#d9d9d9] dark:border-[#3a3a3a] px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Hôm nay
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextMonth}
+                  className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
 

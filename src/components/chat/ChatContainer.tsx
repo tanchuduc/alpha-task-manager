@@ -36,6 +36,7 @@ export function ChatContainer({
   // Core Unified Chat Hook
   const {
     conversations,
+    rawConversations,
     activeConversationId,
     activeConversation,
     messages,
@@ -61,6 +62,7 @@ export function ChatContainer({
     createGroup,
     addMembersToGroup,
     leaveGroup,
+    forwardMessage,
     requestBrowserNotificationPermission,
   } = useUnifiedChat({
     currentUser,
@@ -151,6 +153,7 @@ export function ChatContainer({
        * ==================================================================== */}
       <ChatMessageArea
         conversation={activeConversation}
+        conversations={rawConversations}
         messages={messages}
         currentUser={currentUser}
         allProfiles={allProfiles}
@@ -162,6 +165,7 @@ export function ChatContainer({
         onUnsendMessage={unsendMessage}
         onToggleReaction={toggleReaction}
         onTogglePin={togglePin}
+        onForwardMessage={forwardMessage}
         onBroadcastTyping={broadcastTyping}
         onConvertToTask={setConvertModalMessage}
         onOpenThread={(msg) => {

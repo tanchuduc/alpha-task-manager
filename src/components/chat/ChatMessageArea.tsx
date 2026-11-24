@@ -11,6 +11,7 @@ import { cn, getInitials } from "@/lib/utils";
 import {
   MentionTextarea,
   renderContentWithMentions,
+  type MentionTextareaRef,
 } from "@/components/common/MentionAutocomplete";
 import type { SourceChatMessage } from "@/components/chat/ConvertMessageToTaskModal";
 import { TaskCardMessage } from "@/components/chat/TaskCardMessage";
@@ -40,12 +41,28 @@ import {
   ChevronUp,
   ChevronDown,
   MessagesSquare,
+  Forward,
+  Flag,
+  Copy,
+  MoreHorizontal,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  List,
+  ListOrdered,
+  Quote,
+  Link2,
+  Code,
 } from "lucide-react";
 import { toast } from "sonner";
 import { MediaLightboxModal } from "@/components/chat/MediaLightboxModal";
+import { ForwardMessageModal } from "@/components/chat/ForwardMessageModal";
+import { LarkEmojiPicker } from "@/components/chat/LarkEmojiPicker";
 
 interface ChatMessageAreaProps {
   conversation: UnifiedConversationItem | null;
+  conversations?: UnifiedConversationItem[];
   messages: UnifiedMessageItem[];
   currentUser: Profile;
   allProfiles: Profile[];
@@ -64,6 +81,11 @@ interface ChatMessageAreaProps {
   onUnsendMessage: (id: string) => Promise<void>;
   onToggleReaction: (msg: UnifiedMessageItem, emoji: string) => Promise<void>;
   onTogglePin: (msg: UnifiedMessageItem) => Promise<void>;
+  onForwardMessage?: (
+    message: UnifiedMessageItem,
+    targetConvIds: string[],
+    additionalComment?: string
+  ) => Promise<void>;
   onBroadcastTyping: () => void;
   onConvertToTask?: (msg: SourceChatMessage) => void;
   onOpenThread?: (msg: UnifiedMessageItem) => void;
@@ -84,6 +106,7 @@ const QUICK_REACTIONS = [
 
 export function ChatMessageArea({
   conversation,
+  conversations = [],
   messages,
   currentUser,
   allProfiles,
@@ -95,6 +118,7 @@ export function ChatMessageArea({
   onUnsendMessage,
   onToggleReaction,
   onTogglePin,
+  onForwardMessage,
   onBroadcastTyping,
   onConvertToTask,
   onOpenThread,
@@ -115,13 +139,95 @@ export function ChatMessageArea({
   } | null>(null);
   const [isSending, setIsSending] = useState(false);
 
-  // Action states: Reply, Edit, Quick Emoji popover
+  // Action states: Reply, Edit, Quick Emoji popover, Forward, Flags, Context menu
   const [replyingTo, setReplyingTo] = useState<UnifiedMessageItem | null>(null);
   const [editingMessage, setEditingMessage] = useState<UnifiedMessageItem | null>(
     null
   );
+  const [forwardingMessage, setForwardingMessage] =
+    useState<UnifiedMessageItem | null>(null);
+  const [activeMenuMsgId, setActiveMenuMsgId] = useState<string | null>(null);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const [showPinnedQuickBar, setShowPinnedQuickBar] = useState(true);
+
+  // Lark Rich text formatting & Emoji Picker states
+  const mentionTextareaRef = useRef<MentionTextareaRef | null>(null);
+  const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  const insertFormatting = (
+    prefix: string,
+    suffix: string = prefix,
+    defaultPlaceholder: string = "văn bản"
+  ) => {
+    const textarea = mentionTextareaRef.current?.textarea;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? 0;
+    const selected = inputText.substring(start, end) || defaultPlaceholder;
+
+    const replacement = `${prefix}${selected}${suffix}`;
+    const newText =
+      inputText.substring(0, start) + replacement + inputText.substring(end);
+    setInputText(newText);
+
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(
+        start + prefix.length,
+        start + prefix.length + selected.length
+      );
+    }, 0);
+  };
+
+  const handleInsertEmoji = (emoji: string) => {
+    const textarea = mentionTextareaRef.current?.textarea;
+    if (!textarea) {
+      setInputText((prev) => prev + emoji);
+      return;
+    }
+    const start = textarea.selectionStart ?? inputText.length;
+    const end = textarea.selectionEnd ?? inputText.length;
+    const newText =
+      inputText.substring(0, start) + emoji + inputText.substring(end);
+    setInputText(newText);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + emoji.length, start + emoji.length);
+    }, 0);
+  };
+
+  // Flagged messages state (persisted per user in localStorage)
+  const [flaggedMsgIds, setFlaggedMsgIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const saved = localStorage.getItem(`alpha_flagged_msgs_${currentUser.id}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const toggleFlagMessage = (msgId: string) => {
+    setFlaggedMsgIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) {
+        next.delete(msgId);
+        toast.info("Đã bỏ gắn cờ tin nhắn");
+      } else {
+        next.add(msgId);
+        toast.success("Đã gắn cờ tin nhắn quan trọng!");
+      }
+      try {
+        localStorage.setItem(
+          `alpha_flagged_msgs_${currentUser.id}`,
+          JSON.stringify(Array.from(next))
+        );
+      } catch {}
+      return next;
+    });
+  };
 
   // In-Conversation Search & Lightbox state
   const [showInChatSearch, setShowInChatSearch] = useState(false);
@@ -731,9 +837,10 @@ export function ChatMessageArea({
 
                           return (
                             <div>
-                              {renderContentWithMentions(
+                              {renderRichMessageContent(
                                 msg.content,
-                                allProfiles
+                                allProfiles,
+                                msg.isMine
                               )}
                             </div>
                           );
@@ -787,6 +894,9 @@ export function ChatMessageArea({
                             msg.isMine ? "text-white/80" : "text-slate-400"
                           )}
                         >
+                          {flaggedMsgIds.has(msg.id) && !msg.isDeleted && (
+                            <Flag className="h-2.5 w-2.5 text-red-500 fill-red-500" />
+                          )}
                           {msg.isPinned && !msg.isDeleted && (
                             <Pin className="h-2.5 w-2.5 text-amber-400 fill-amber-400" />
                           )}
@@ -848,109 +958,221 @@ export function ChatMessageArea({
                       })()}
                     </div>
 
-                    {/* Quick Hover Action Bar */}
+                    {/* Floating Action Bar (Chuẩn Lark Ảnh 5 & 6) */}
                     {!msg.isDeleted && (
                       <div
                         className={cn(
-                          "hidden group-hover/msg:flex items-center gap-0.5 absolute -top-8 z-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-1 shadow-md text-slate-500",
+                          "hidden group-hover/msg:flex items-center gap-0.5 absolute -top-8 z-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs px-1.5 py-0.5 shadow-lg text-slate-500 animate-in fade-in zoom-in-95 duration-100",
                           msg.isMine ? "right-2" : "left-2"
                         )}
                       >
-                        {/* Quick Reactions */}
-                        <div className="flex items-center border-r border-slate-200 dark:border-slate-700 pr-1 mr-1 gap-0.5">
-                          {QUICK_REACTIONS.map((r) => (
-                            <button
-                              key={r.emoji}
-                              type="button"
-                              onClick={() => onToggleReaction(msg, r.emoji)}
-                              className="hover:scale-125 transition p-0.5 text-xs"
-                              title={r.label}
-                            >
-                              {r.emoji}
-                            </button>
-                          ))}
+                        {/* 1. Quick Like / Emoji Toolbar */}
+                        <div className="relative group/like">
+                          <button
+                            type="button"
+                            onClick={() => onToggleReaction(msg, "👍")}
+                            title="Thích (👍)"
+                            className="flex h-6 w-6 items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-xs hover:scale-110 transition"
+                          >
+                            👍
+                          </button>
+
+                          {/* Hover Popover: 6 quick reactions */}
+                          <div className="hidden group-hover/like:flex items-center gap-0.5 absolute bottom-full mb-1 left-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1 py-0.5 shadow-xl z-30">
+                            {QUICK_REACTIONS.map((r) => (
+                              <button
+                                key={r.emoji}
+                                type="button"
+                                onClick={() => onToggleReaction(msg, r.emoji)}
+                                className="hover:scale-125 transition p-1 text-xs rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                                title={r.label}
+                              >
+                                {r.emoji}
+                              </button>
+                            ))}
+                          </div>
                         </div>
 
-                        {/* Reply */}
+                        <div className="h-3 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+                        {/* 2. Trả lời trực tiếp (Direct Reply / Quote) */}
                         <button
                           type="button"
                           onClick={() => setReplyingTo(msg)}
-                          title="Trả lời trích dẫn"
-                          className="p-1 hover:text-brand transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                          title="Trả lời trực tiếp (↩️)"
+                          className="flex h-6 w-6 items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-brand transition"
                         >
                           <Reply className="h-3.5 w-3.5" />
                         </button>
 
-                        {/* Reply in Thread */}
+                        {/* 3. Chuyển tiếp tin nhắn (Forward - Ảnh 5) */}
+                        <button
+                          type="button"
+                          onClick={() => setForwardingMessage(msg)}
+                          title="Chuyển tiếp tin nhắn (➡️)"
+                          className="flex h-6 w-6 items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-500 transition"
+                        >
+                          <Forward className="h-3.5 w-3.5" />
+                        </button>
+
+                        {/* 4. Trả lời trong chuỗi (Reply in Thread) */}
                         {onOpenThread && (
                           <button
                             type="button"
                             onClick={() => onOpenThread(msg)}
-                            title="Trả lời trong nhánh (Thread)"
-                            className="p-1 hover:text-brand transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                            title="Thảo luận theo chuỗi (💬)"
+                            className="flex h-6 w-6 items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-emerald-500 transition"
                           >
                             <MessagesSquare className="h-3.5 w-3.5" />
                           </button>
                         )}
 
-                        {/* Convert to Task */}
-                        {onConvertToTask && (
+                        {/* 5. Menu mở rộng ... (Chuẩn Lark Ảnh 6) */}
+                        <div className="relative">
                           <button
                             type="button"
                             onClick={() =>
-                              onConvertToTask({
-                                id: msg.id,
-                                content: msg.content,
-                                authorId: msg.senderId,
-                                authorName: msg.senderName,
-                                createdAt: msg.createdAt,
-                                attachmentUrl: msg.attachmentUrl,
-                                attachmentName: msg.attachmentName,
-                              })
+                              setActiveMenuMsgId(
+                                activeMenuMsgId === msg.id ? null : msg.id
+                              )
                             }
-                            title="Tạo công việc từ tin nhắn này"
-                            className="p-1 hover:text-brand transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                            title="Tùy chọn khác (...)"
+                            className="flex h-6 w-6 items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:text-slate-100 transition"
                           >
-                            <CheckSquare className="h-3.5 w-3.5" />
+                            <MoreHorizontal className="h-3.5 w-3.5" />
                           </button>
-                        )}
 
-                        {/* Pin */}
-                        <button
-                          type="button"
-                          onClick={() => onTogglePin(msg)}
-                          title={msg.isPinned ? "Bỏ ghim" : "Ghim tin"}
-                          className="p-1 hover:text-brand transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
-                        >
-                          <Pin className="h-3.5 w-3.5" />
-                        </button>
+                          {activeMenuMsgId === msg.id && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-30"
+                                onClick={() => setActiveMenuMsgId(null)}
+                              />
+                              <div
+                                className={cn(
+                                  "absolute top-full mt-1.5 z-40 w-48 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-1.5 shadow-2xl text-xs space-y-0.5 animate-in fade-in zoom-in-95 duration-100",
+                                  msg.isMine ? "right-0" : "left-0"
+                                )}
+                              >
+                                {/* Gắn cờ (Flag) */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    toggleFlagMessage(msg.id);
+                                    setActiveMenuMsgId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                >
+                                  <Flag
+                                    className={cn(
+                                      "h-3.5 w-3.5",
+                                      flaggedMsgIds.has(msg.id)
+                                        ? "text-red-500 fill-red-500"
+                                        : "text-slate-400"
+                                    )}
+                                  />
+                                  <span>
+                                    {flaggedMsgIds.has(msg.id)
+                                      ? "Bỏ gắn cờ"
+                                      : "Gắn cờ tin nhắn"}
+                                  </span>
+                                </button>
 
-                        {/* Edit (Mine only) */}
-                        {msg.isMine && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingMessage(msg);
-                              setInputText(msg.content);
-                            }}
-                            title="Chỉnh sửa tin nhắn"
-                            className="p-1 hover:text-brand transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                        )}
+                                {/* Ghim tin nhắn */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onTogglePin(msg);
+                                    setActiveMenuMsgId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                >
+                                  <Pin
+                                    className={cn(
+                                      "h-3.5 w-3.5",
+                                      msg.isPinned
+                                        ? "text-amber-500 fill-amber-500"
+                                        : "text-slate-400"
+                                    )}
+                                  />
+                                  <span>
+                                    {msg.isPinned ? "Bỏ ghim tin" : "Ghim tin nhắn"}
+                                  </span>
+                                </button>
 
-                        {/* Unsend (Mine only) */}
-                        {msg.isMine && (
-                          <button
-                            type="button"
-                            onClick={() => onUnsendMessage(msg.id)}
-                            title="Thu hồi tin nhắn"
-                            className="p-1 hover:text-red-500 transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
+                                {/* Sao chép văn bản */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (msg.content) {
+                                      navigator.clipboard.writeText(msg.content);
+                                      toast.success("Đã sao chép nội dung tin nhắn!");
+                                    }
+                                    setActiveMenuMsgId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                >
+                                  <Copy className="h-3.5 w-3.5 text-slate-400" />
+                                  <span>Sao chép nội dung</span>
+                                </button>
+
+                                {/* Thêm nhiệm vụ (Convert to Task) */}
+                                {onConvertToTask && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onConvertToTask({
+                                        id: msg.id,
+                                        content: msg.content,
+                                        authorId: msg.senderId,
+                                        authorName: msg.senderName,
+                                        createdAt: msg.createdAt,
+                                        attachmentUrl: msg.attachmentUrl,
+                                        attachmentName: msg.attachmentName,
+                                      });
+                                      setActiveMenuMsgId(null);
+                                    }}
+                                    className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                  >
+                                    <CheckSquare className="h-3.5 w-3.5 text-emerald-500" />
+                                    <span>Thêm nhiệm vụ (Tạo Task)</span>
+                                  </button>
+                                )}
+
+                                {/* Chỉnh sửa (Nếu là của mình) */}
+                                {msg.isMine && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingMessage(msg);
+                                      setInputText(msg.content);
+                                      setActiveMenuMsgId(null);
+                                    }}
+                                    className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5 text-slate-400" />
+                                    <span>Chỉnh sửa tin nhắn</span>
+                                  </button>
+                                )}
+
+                                {/* Thu hồi (Nếu là của mình) */}
+                                {msg.isMine && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onUnsendMessage(msg.id);
+                                      setActiveMenuMsgId(null);
+                                    }}
+                                    className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition border-t border-slate-100 dark:border-slate-800/60"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <span>Thu hồi tin nhắn</span>
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1118,10 +1340,126 @@ export function ChatMessageArea({
           onClose={() => setLightboxImage(null)}
         />
       )}
+
+      {/* Modal Chuyển Tiếp Tin Nhắn (Lark Forward Modal) */}
+      {forwardingMessage && (
+        <ForwardMessageModal
+          message={forwardingMessage}
+          conversations={conversations}
+          currentUser={currentUser}
+          onClose={() => setForwardingMessage(null)}
+          onForward={async (targetConvIds, comment) => {
+            if (onForwardMessage) {
+              await onForwardMessage(forwardingMessage, targetConvIds, comment);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function hasMyMyReact(userId: string, uids: string[]): boolean {
   return uids.includes(userId);
+}
+
+function renderRichMessageContent(
+  content: string,
+  allProfiles: Profile[],
+  isMine: boolean
+): React.ReactNode {
+  if (!content) return null;
+
+  const lines = content.split("\n");
+  return (
+    <div className="space-y-1">
+      {lines.map((line, lineIdx) => {
+        // 1. Blockquote
+        if (line.startsWith("> ")) {
+          return (
+            <div
+              key={lineIdx}
+              className={cn(
+                "border-l-3 px-2 py-0.5 rounded-r my-1 text-[11px] leading-relaxed",
+                isMine
+                  ? "border-white/60 bg-white/10 text-white/90"
+                  : "border-brand bg-slate-200/60 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300"
+              )}
+            >
+              {renderInlineMarkdown(line.slice(2), allProfiles)}
+            </div>
+          );
+        }
+
+        // 2. Bullet list
+        if (line.startsWith("- ") || line.startsWith("* ")) {
+          return (
+            <div key={lineIdx} className="flex items-start gap-1.5 ml-1">
+              <span className="opacity-60">•</span>
+              <span>{renderInlineMarkdown(line.slice(2), allProfiles)}</span>
+            </div>
+          );
+        }
+
+        // 3. Normal line
+        return (
+          <div key={lineIdx} className="min-h-[1.1rem]">
+            {renderInlineMarkdown(line, allProfiles)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderInlineMarkdown(
+  text: string,
+  profiles: Profile[]
+): React.ReactNode {
+  // Split tokens for bold, italic, strike, underline, code
+  const tokenRegex =
+    /(\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~|`[^`]+`|<u>[^<]+<\/u>)/g;
+  const parts = text.split(tokenRegex);
+
+  return parts.map((part, idx) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return (
+        <strong key={idx} className="font-bold">
+          {renderContentWithMentions(part.slice(2, -2), profiles)}
+        </strong>
+      );
+    }
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      return (
+        <em key={idx} className="italic">
+          {renderContentWithMentions(part.slice(1, -1), profiles)}
+        </em>
+      );
+    }
+    if (part.startsWith("~~") && part.endsWith("~~") && part.length > 4) {
+      return (
+        <del key={idx} className="line-through opacity-75">
+          {renderContentWithMentions(part.slice(2, -2), profiles)}
+        </del>
+      );
+    }
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
+      return (
+        <code
+          key={idx}
+          className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/15 font-mono text-[11px]"
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    if (part.startsWith("<u>") && part.endsWith("</u>") && part.length > 7) {
+      return (
+        <span key={idx} className="underline underline-offset-2">
+          {renderContentWithMentions(part.slice(3, -4), profiles)}
+        </span>
+      );
+    }
+    return renderContentWithMentions(part, profiles);
+  });
 }
